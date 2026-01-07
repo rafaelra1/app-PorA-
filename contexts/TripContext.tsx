@@ -42,6 +42,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 const { data, error } = await supabase
                     .from('trips')
                     .select('*')
+                    .eq('user_id', user.id)
                     .order('start_date', { ascending: true });
 
                 if (error) throw error;
@@ -155,7 +156,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Helper to reload if needed (not exported but used internally)
     const fetchTrips = async () => {
         if (!user) return;
-        const { data } = await supabase.from('trips').select('*');
+        const { data } = await supabase.from('trips').select('*').eq('user_id', user.id);
         if (data) {
             const loadedTrips: Trip[] = data.map(row => ({
                 id: row.id,
