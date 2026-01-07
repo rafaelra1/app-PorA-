@@ -67,6 +67,31 @@ export interface DetailedDestination {
   image?: string;
 }
 
+export interface YouTubeVideo {
+  id: string; // The YouTube Video ID
+  url: string; // The full URL
+  title: string;
+  thumbnail: string;
+  addedAt: string;
+}
+
+export interface TaskItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  priority: 'high' | 'medium' | 'low';
+  isCritical?: boolean;
+  deadline?: string;
+  category?: 'visa' | 'booking' | 'health' | 'insurance' | 'packing' | 'other';
+}
+
+export interface LuggageItem {
+  id: string;
+  text: string;
+  packed: boolean;
+  category: 'documents' | 'clothes' | 'hygiene' | 'electronics' | 'other';
+}
+
 export interface Trip {
   id: string;
   title: string;
@@ -78,6 +103,9 @@ export interface Trip {
   status: TripStatus;
   coverImage: string;
   participants: Participant[];
+  videos?: YouTubeVideo[];
+  tasks?: TaskItem[];
+  luggage?: LuggageItem[];
 }
 
 export interface Flight {

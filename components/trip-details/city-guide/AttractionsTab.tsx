@@ -8,6 +8,7 @@ import ImportAttractionsModal from '../modals/ImportAttractionsModal';
 import AttractionDetailModal from '../modals/AttractionDetailModal';
 import AddToItineraryModal from '../modals/AddToItineraryModal';
 import { getGeminiService } from '../../../services/geminiService';
+import { googlePlacesService } from '../../../services/googlePlacesService';
 
 interface AttractionsTabProps {
     cityGuide: CityGuide | null;
@@ -94,6 +95,11 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     // Visitor Guide State
     const [visitorGuideContent, setVisitorGuideContent] = useState<string | null>(null);
     const [isGeneratingVisitorGuide, setIsGeneratingVisitorGuide] = useState(false);
+
+    // Store real images fetched from Google Places
+    const [realImages, setRealImages] = useState<Record<string, string>>({});
+
+
 
     // Get city name from cityGuide or default
 
@@ -212,6 +218,80 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
 
         return filtered;
     }, [cityGuide, attractionSearch, activeFilter, hasImported, importedAttractions]);
+
+    // Fetch real images for attractions that appear to be placeholders
+    useEffect(() => {
+        const fetchImages = async () => {
+            const attractionsToFetch = filteredAttractions.filter(attr => {
+                // Check if we already have a real image
+                if (realImages[attr.name]) return false;
+
+                // If the current image is likely generic/bad (loremflickr, or just missing)
+                const isGeneric = !attr.image || attr.image.includes('loremflickr') || attr.image.includes('placeholder');
+                return isGeneric;
+            });
+
+            if (attractionsToFetch.length === 0) return;
+
+            // Process in batches to avoid rate limits
+            const processBatch = async (items: Attraction[]) => {
+                const updates: Record<string, string> = {};
+
+                await Promise.all(items.map(async (attr) => {
+                    try {
+                        const searchQuery = `${attr.name} ${cityName}`;
+                        const placeData = await googlePlacesService.searchPlace(searchQuery);
+                        if (placeData && placeData.image && !placeData.image.includes('unsplash')) {
+                            updates[attr.name] = placeData.image;
+                        }
+                    } catch (e) {
+                        console.error(`Failed to fetch image for ${attr.name}`, e);
+                    }
+                }));
+
+                setRealImages(prev => ({ ...prev, ...updates }));
+            };
+
+            // Run for first 5 immediately
+            await processBatch(attractionsToFetch.slice(0, 5));
+        };
+
+        const timeoutId = setTimeout(() => {
+            fetchImages();
+        }, 1000); // Small delay to let initial render settle
+
+        return () => clearTimeout(timeoutId);
+    }, [filteredAttractions, cityName, realImages]);
+
+    const [isGeneratingAttractions, setIsGeneratingAttractions] = useState(false);
+
+    const handleGenerateAI = async () => {
+        setIsGeneratingAttractions(true);
+        try {
+            const service = getGeminiService();
+            // We use generateCityGuide to get a curated list of attractions
+            const guide = await service.generateCityGuide(cityName, 'local');
+
+            if (guide && guide.attractions) {
+                // Enrich with rough IDs and ensure properties
+                const newAttractions = guide.attractions.map((a, i) => ({
+                    ...a,
+                    id: `gen-${Date.now()}-${i}`,
+                    // Ensure we have at least defaults if API misses something
+                    rating: typeof a.rating === 'string' ? parseFloat(a.rating) : (a.rating || 4.5),
+                    price: a.price || 'Consultar'
+                }));
+
+                setImportedAttractions(newAttractions);
+                setHasImported(true);
+            }
+        } catch (error) {
+            console.error("Error generating attractions:", error);
+            alert("Não foi possível gerar as atrações. Tente novamente.");
+        } finally {
+            setIsGeneratingAttractions(false);
+        }
+    };
 
     const handleImportWrapper = (attractions: Attraction[]) => {
         setImportedAttractions(attractions);
@@ -389,7 +469,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                         description={attr.description}
                                         longDescription={attr.longDescription}
                                         reviewSummary={attr.reviewSummary}
-                                        image={attr.aiImage || attr.image}
+                                        image={realImages[attr.name] || attr.aiImage || attr.image}
                                         category={attr.category}
                                         rating={attr.rating}
                                         time={attr.time}
@@ -397,7 +477,11 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                         variant={viewMode === 'list' ? 'horizontal' : 'vertical'}
                                         onClick={() => handleAttractionClick(attr)}
                                         onEditImage={(e) => { e.stopPropagation(); onEditImage('attraction', idx, attr); }}
-                                        onMapClick={(e) => { e.stopPropagation(); onShowMap(); }}
+                                        onMapClick={(e) => {
+                                            e.stopPropagation();
+                                            const query = encodeURIComponent(`${attr.name} ${cityName}`);
+                                            window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+                                        }}
                                         onAddToItinerary={(e) => { e.stopPropagation(); handleOpenAddToItinerary(attr); }}
                                         onDelete={(e) => { e.stopPropagation(); handleDeleteAttraction(attr); }}
                                         isGenerating={attr.isGenerating}
@@ -439,8 +523,24 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                     onClick={() => setIsImportModalOpen(true)}
                                     className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
                                 >
-                                    <span className="material-symbols-outlined text-xl">download</span>
                                     Importar Lista de Atrações
+                                </button>
+                                <button
+                                    onClick={handleGenerateAI}
+                                    disabled={isGeneratingAttractions}
+                                    className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                                >
+                                    {isGeneratingAttractions ? (
+                                        <>
+                                            <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Gerando Roteiro...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-xl">auto_awesome</span>
+                                            Gerar Sugestões com IA
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </div>

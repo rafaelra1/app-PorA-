@@ -1,10 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Trip, Expense, City, HotelReservation, Transport } from '../../../types';
+import { Trip, Expense, City, HotelReservation, Transport, TaskItem, LuggageItem } from '../../../types';
 import { Card, Button } from '../../ui/Base';
 import AnimatedItineraryMap, { ItineraryStop } from '../itinerary/AnimatedItineraryMap';
 import TravelCoverage from '../dashboard/TravelCoverage';
 import { getGeminiService } from '../../../services/geminiService';
 import { getInitialTasks } from '../../../data/checklistData';
+import { useTrips } from '../../../contexts/TripContext';
+import { YouTubeVideo } from '../../../types';
+import { VideoGallery } from './VideoGallery';
 
 // =============================================================================
 // Types & Interfaces
@@ -30,12 +33,8 @@ interface WidgetProps {
     subtext?: string;
 }
 
-interface TaskItem {
-    id: string;
-    text: string;
-    completed: boolean;
-    priority: 'high' | 'medium' | 'low';
-}
+// TaskItem and CriticalTask interfaces removed as they are now imported/handled by types.ts
+// adapting to use importing types
 
 interface CriticalTask {
     id: string;
@@ -75,36 +74,6 @@ interface TimelineStop {
 
 
 
-const TRIP_HIGHLIGHTS: TripHighlight[] = [
-    {
-        id: 'h1',
-        title: 'Templo Senso-ji',
-        description: 'O templo budista mais antigo de Tóquio, com mais de 1.400 anos de história',
-        image: 'https://images.unsplash.com/photo-1545569341-9eb8b30979d9?w=400&h=300&fit=crop',
-        icon: 'temple_buddhist'
-    },
-    {
-        id: 'h2',
-        title: 'Monte Fuji',
-        description: 'Vista panorâmica do icônico vulcão sagrado do Japão',
-        image: 'https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=400&h=300&fit=crop',
-        icon: 'landscape'
-    },
-    {
-        id: 'h3',
-        title: 'Quioto Imperial',
-        description: 'Explore jardins zen e palácios imperiais milenares',
-        image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=400&h=300&fit=crop',
-        icon: 'park'
-    },
-    {
-        id: 'h4',
-        title: 'Gastronomia Local',
-        description: 'Experiência autêntica de ramen, sushi e kaiseki',
-        image: 'https://images.unsplash.com/photo-1617196034796-73dfa7b1fd56?w=400&h=300&fit=crop',
-        icon: 'ramen_dining'
-    }
-];
 
 const TRIP_ALERTS: TripAlert[] = [
     {
@@ -775,21 +744,30 @@ const PlanningStatusWidget: React.FC<{ hotels: HotelReservation[]; transports: T
     );
 };
 
-const TripChecklist: React.FC = () => {
-    // Initialize tasks with standard + random selection using useMemo to persist across renders
+const TripChecklist: React.FC<{ trip: Trip }> = ({ trip }) => {
+    const { updateTrip } = useTrips();
+
+    // Initialize tasks with trip data or default
     const initialTasks = useMemo(() => {
-        // Import dynamically or define interfaces to match
-        // For now, we'll map the imported structure to the local state
-        const generated = getInitialTasks();
-
-        // Map to the component's internal state structure if needed, or use directly
-        return generated.map(t => ({
+        if (trip.tasks && trip.tasks.length > 0) return trip.tasks;
+        return getInitialTasks().map(t => ({
             ...t,
-            deadline: t.deadline || '', // Ensure deadline string
+            deadline: t.deadline || '',
         }));
-    }, []);
+    }, [trip.tasks]);
 
-    const [tasks, setTasks] = React.useState(initialTasks);
+    const [tasks, setTasks] = React.useState<TaskItem[]>(initialTasks);
+
+    // Persist tasks on change
+    useEffect(() => {
+        // Only update if tasks different from props to avoid loops
+        if (JSON.stringify(tasks) !== JSON.stringify(trip.tasks)) {
+            const timer = setTimeout(() => {
+                updateTrip({ ...trip, tasks });
+            }, 1000); // Debounce
+            return () => clearTimeout(timer);
+        }
+    }, [tasks, trip, updateTrip]);
     const [showAddInput, setShowAddInput] = React.useState(false);
     const [newTaskText, setNewTaskText] = React.useState('');
     const [newTaskDeadline, setNewTaskDeadline] = React.useState('');
@@ -1023,12 +1001,7 @@ const TripChecklist: React.FC = () => {
 // Luggage Checklist Component
 // =============================================================================
 
-interface LuggageItem {
-    id: string;
-    text: string;
-    packed: boolean;
-    category: 'documents' | 'clothes' | 'hygiene' | 'electronics' | 'other';
-}
+// LuggageItem interface removed as it is now imported from types.ts
 
 const INITIAL_LUGGAGE_ITEMS: LuggageItem[] = [
     { id: 'l1', text: 'Passaporte', packed: true, category: 'documents' },
@@ -1046,8 +1019,19 @@ const INITIAL_LUGGAGE_ITEMS: LuggageItem[] = [
     { id: 'l13', text: 'Câmera fotográfica', packed: false, category: 'electronics' },
 ];
 
-const LuggageChecklist: React.FC = () => {
-    const [items, setItems] = React.useState<LuggageItem[]>(INITIAL_LUGGAGE_ITEMS);
+const LuggageChecklist: React.FC<{ trip: Trip }> = ({ trip }) => {
+    const { updateTrip } = useTrips();
+    const [items, setItems] = React.useState<LuggageItem[]>(trip.luggage && trip.luggage.length > 0 ? trip.luggage : INITIAL_LUGGAGE_ITEMS);
+
+    // Persist luggage on change
+    useEffect(() => {
+        if (JSON.stringify(items) !== JSON.stringify(trip.luggage)) {
+            const timer = setTimeout(() => {
+                updateTrip({ ...trip, luggage: items });
+            }, 1000); // Debounce
+            return () => clearTimeout(timer);
+        }
+    }, [items, trip, updateTrip]);
     const [showAddInput, setShowAddInput] = React.useState(false);
     const [newItemText, setNewItemText] = React.useState('');
     const [newItemCategory, setNewItemCategory] = React.useState<LuggageItem['category']>('other');
@@ -1376,126 +1360,7 @@ const LuggageChecklist: React.FC = () => {
     );
 };
 
-const TripHighlights: React.FC<{ cities: City[] }> = ({ cities }) => {
-    // City-specific highlights database
-    const cityHighlightsDB: { [key: string]: TripHighlight[] } = {
-        'Berlin': [
-            { id: 'berlin-1', title: 'Portão de Brandenburgo', description: 'Símbolo icônico da reunificação alemã', image: 'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=400&h=300&fit=crop', icon: 'account_balance' },
-            { id: 'berlin-2', title: 'East Side Gallery', description: 'A maior galeria de arte a céu aberto do mundo', image: 'https://images.unsplash.com/photo-1528728329032-2972f65dfb3f?w=400&h=300&fit=crop', icon: 'palette' },
-            { id: 'berlin-3', title: 'Ilha dos Museus', description: 'Patrimônio da UNESCO com 5 museus de classe mundial', image: 'https://images.unsplash.com/photo-1587330979470-3595ac045ab0?w=400&h=300&fit=crop', icon: 'museum' },
-        ],
-        'Paris': [
-            { id: 'paris-1', title: 'Torre Eiffel', description: 'O monumento mais visitado do mundo', image: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400&h=300&fit=crop', icon: 'cell_tower' },
-            { id: 'paris-2', title: 'Museu do Louvre', description: 'Lar da Mona Lisa e obras-primas da arte', image: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=400&h=300&fit=crop', icon: 'museum' },
-            { id: 'paris-3', title: 'Montmartre', description: 'Bairro artístico com vistas deslumbrantes', image: 'https://images.unsplash.com/photo-1550340499-a6c60fc8287c?w=400&h=300&fit=crop', icon: 'palette' },
-        ],
-        'Tokyo': [
-            { id: 'tokyo-1', title: 'Templo Senso-ji', description: 'O templo budista mais antigo de Tóquio', image: 'https://images.unsplash.com/photo-1545569341-9eb8b30979d9?w=400&h=300&fit=crop', icon: 'temple_buddhist' },
-            { id: 'tokyo-2', title: 'Shibuya Crossing', description: 'O cruzamento mais movimentado do mundo', image: 'https://images.unsplash.com/photo-1542051841857-5f90071e7989?w=400&h=300&fit=crop', icon: 'directions_walk' },
-            { id: 'tokyo-3', title: 'Monte Fuji', description: 'Vista panorâmica do vulcão sagrado', image: 'https://images.unsplash.com/photo-1490806843957-31f4c9a91c65?w=400&h=300&fit=crop', icon: 'landscape' },
-        ],
-        'London': [
-            { id: 'london-1', title: 'Big Ben & Westminster', description: 'Ícones do parlamento britânico', image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=400&h=300&fit=crop', icon: 'schedule' },
-            { id: 'london-2', title: 'Tower Bridge', description: 'A ponte mais famosa de Londres', image: 'https://images.unsplash.com/photo-1483972535757-f9e8cdeed1e0?w=400&h=300&fit=crop', icon: 'directions' },
-            { id: 'london-3', title: 'British Museum', description: 'Tesouros de todas as civilizações', image: 'https://images.unsplash.com/photo-1574248308584-f4fd8ebff5b5?w=400&h=300&fit=crop', icon: 'museum' },
-        ],
-        'Rome': [
-            { id: 'rome-1', title: 'Coliseu', description: 'O maior anfiteatro do mundo antigo', image: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=400&h=300&fit=crop', icon: 'stadium' },
-            { id: 'rome-2', title: 'Vaticano', description: 'Centro espiritual do catolicismo', image: 'https://images.unsplash.com/photo-1531572753322-ad063cecc140?w=400&h=300&fit=crop', icon: 'church' },
-            { id: 'rome-3', title: 'Fontana di Trevi', description: 'A fonte mais famosa do mundo', image: 'https://images.unsplash.com/photo-1525874684015-58379d421a52?w=400&h=300&fit=crop', icon: 'water_drop' },
-        ],
-        'New York': [
-            { id: 'ny-1', title: 'Estátua da Liberdade', description: 'Símbolo da liberdade e democracia', image: 'https://images.unsplash.com/photo-1503174971373-b1f69850bded?w=400&h=300&fit=crop', icon: 'attractions' },
-            { id: 'ny-2', title: 'Central Park', description: 'Oásis verde no coração de Manhattan', image: 'https://images.unsplash.com/photo-1568515387631-8b650bbcdb90?w=400&h=300&fit=crop', icon: 'park' },
-            { id: 'ny-3', title: 'Times Square', description: 'O cruzamento do mundo', image: 'https://images.unsplash.com/photo-1534430480872-3498386e7856?w=400&h=300&fit=crop', icon: 'wb_twilight' },
-        ],
-        'Barcelona': [
-            { id: 'bcn-1', title: 'Sagrada Família', description: 'Obra-prima inacabada de Gaudí', image: 'https://images.unsplash.com/photo-1583422409516-2895a77efded?w=400&h=300&fit=crop', icon: 'church' },
-            { id: 'bcn-2', title: 'Park Güell', description: 'Jardins coloridos de mosaicos', image: 'https://images.unsplash.com/photo-1579282240050-352db0a14c21?w=400&h=300&fit=crop', icon: 'park' },
-            { id: 'bcn-3', title: 'La Rambla', description: 'Passeio vibrante no coração da cidade', image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=300&fit=crop', icon: 'directions_walk' },
-        ],
-        'Amsterdam': [
-            { id: 'ams-1', title: 'Canais de Amsterdam', description: 'Patrimônio UNESCO e passeios de barco', image: 'https://images.unsplash.com/photo-1534351590666-13e3e96b5017?w=400&h=300&fit=crop', icon: 'sailing' },
-            { id: 'ams-2', title: 'Museu Van Gogh', description: 'A maior coleção do pintor holandês', image: 'https://images.unsplash.com/photo-1583037189850-1921ae7c6c22?w=400&h=300&fit=crop', icon: 'palette' },
-            { id: 'ams-3', title: 'Casa de Anne Frank', description: 'Museu histórico da Segunda Guerra', image: 'https://images.unsplash.com/photo-1576924542622-772281b13aa8?w=400&h=300&fit=crop', icon: 'history_edu' },
-        ],
-        'Napoli': [
-            { id: 'napoli-1', title: 'Pompeia', description: 'Ruínas preservadas pelo Vesúvio', image: 'https://images.unsplash.com/photo-1594735649946-48bf0cc31abe?w=400&h=300&fit=crop', icon: 'account_balance' },
-            { id: 'napoli-2', title: 'Costa Amalfitana', description: 'Vilas coloridas à beira-mar', image: 'https://images.unsplash.com/photo-1533104816931-20fa691ff6ca?w=400&h=300&fit=crop', icon: 'beach_access' },
-            { id: 'napoli-3', title: 'Pizza Napoletana', description: 'Berço da pizza original italiana', image: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=400&h=300&fit=crop', icon: 'local_pizza' },
-        ],
-    };
 
-    // Generate highlights based on cities
-    const generateHighlights = (): TripHighlight[] => {
-        if (cities.length === 0) return [];
-
-        const highlights: TripHighlight[] = [];
-
-        cities.forEach(city => {
-            const cityName = city.name;
-            const cityHighlights = cityHighlightsDB[cityName];
-
-            if (cityHighlights) {
-                // Add up to 2 highlights per city
-                highlights.push(...cityHighlights.slice(0, 2));
-            } else {
-                // Generic highlight for unknown cities
-                highlights.push({
-                    id: `generic-${city.id}`,
-                    title: `Explore ${cityName}`,
-                    description: `Descubra as maravilhas e cultura local de ${cityName}`,
-                    image: city.image || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&h=300&fit=crop',
-                    icon: 'explore'
-                });
-            }
-        });
-
-        // Limit to 4 highlights max for display
-        return highlights.slice(0, 4);
-    };
-
-    const highlights = generateHighlights();
-
-    if (highlights.length === 0) return null;
-
-    return (
-        <Card className="p-6">
-            <div className="flex items-center gap-3 mb-5">
-                <div className="size-12 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-2xl">auto_awesome</span>
-                </div>
-                <div>
-                    <h4 className="font-bold text-lg text-text-main dark:text-white">Destaques da Viagem</h4>
-                    <p className="text-sm text-text-muted dark:text-gray-400">Experiências imperdíveis que definem esta aventura</p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {highlights.map(highlight => (
-                    <div
-                        key={highlight.id}
-                        className="group relative rounded-xl overflow-hidden aspect-[4/3] cursor-pointer"
-                    >
-                        <img
-                            src={highlight.image}
-                            alt={highlight.title}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                        <div className="absolute bottom-0 left-0 right-0 p-3">
-                            <div className="flex items-center gap-1.5 mb-1">
-                                <span className="material-symbols-outlined text-amber-400 text-sm">{highlight.icon}</span>
-                                <h5 className="font-bold text-white text-sm truncate">{highlight.title}</h5>
-                            </div>
-                            <p className="text-xs text-white/80 line-clamp-2">{highlight.description}</p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </Card>
-    );
-};
 
 const AlertsSection: React.FC = () => {
     if (TRIP_ALERTS.length === 0) return null;
@@ -1889,6 +1754,41 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
     const [showAnimatedMap, setShowAnimatedMap] = useState(false);
     const [realStops, setRealStops] = useState<ItineraryStop[]>([]);
     const [isLoadingStops, setIsLoadingStops] = useState(false);
+    const { updateTrip } = useTrips();
+
+    const getYouTubeID = (url: string) => {
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    };
+
+    const handleAddVideo = async (url: string) => {
+        const videoId = getYouTubeID(url);
+        if (!videoId) return;
+
+        const newVideo: YouTubeVideo = {
+            id: `video-${Date.now()}`,
+            url: url,
+            title: 'Vídeo do YouTube',
+            thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+            addedAt: new Date().toISOString()
+        };
+
+        const updatedTrip = {
+            ...trip,
+            videos: [...(trip.videos || []), newVideo]
+        };
+
+        await updateTrip(updatedTrip);
+    };
+
+    const handleRemoveVideo = async (id: string) => {
+        const updatedTrip = {
+            ...trip,
+            videos: (trip.videos || []).filter(v => v.id !== id)
+        };
+        await updateTrip(updatedTrip);
+    };
 
     const totalSpent = useMemo(() =>
         expenses.filter(e => e.type === 'saida').reduce((sum, e) => sum + e.amount, 0),
@@ -2196,16 +2096,21 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
                 {/* Third Row: Checklist on left + Luggage on right */}
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                     <div className="lg:col-span-3">
-                        <TripChecklist />
+                        <TripChecklist trip={trip} />
                     </div>
                     <div className="lg:col-span-1">
-                        <LuggageChecklist />
+                        <LuggageChecklist trip={trip} />
                     </div>
                 </div>
             </div>
 
             {/* Fourth Row: Trip Highlights (Full Width) */}
-            <TripHighlights cities={cities} />
+            {/* Fourth Row: Video Gallery (Full Width) replace Trip Highlights */}
+            <VideoGallery
+                videos={trip.videos || []}
+                onAddVideo={handleAddVideo}
+                onRemoveVideo={handleRemoveVideo}
+            />
 
             {/* Animated Map Modal */}
             {

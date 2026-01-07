@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { getGeminiService } from '../services/geminiService';
+import { useTrips } from '../contexts/TripContext';
 import { MessageCircle, X, Send, Bot, RefreshCw, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -11,6 +12,7 @@ interface Message {
 
 const Chatbot: React.FC = () => {
     const geminiService = getGeminiService();
+    const { selectedTrip } = useTrips(); // Get current trip context
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([
         { role: 'assistant', content: 'Olá! Sou o assistente virtual do PorAí. Como posso ajudar na sua viagem hoje?' }
@@ -40,7 +42,7 @@ const Chatbot: React.FC = () => {
             // but keeping it simple for now)
             const history = messages.map(m => ({ role: m.role, content: m.content }));
 
-            const response = await geminiService.chat(userMessage, history);
+            const response = await geminiService.chat(userMessage, history, selectedTrip);
 
             setMessages(prev => [...prev, { role: 'assistant', content: response }]);
         } catch (error) {
@@ -115,8 +117,8 @@ const Chatbot: React.FC = () => {
                                 >
                                     <div
                                         className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${msg.role === 'user'
-                                                ? 'bg-emerald-600 text-white rounded-tr-none'
-                                                : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
+                                            ? 'bg-emerald-600 text-white rounded-tr-none'
+                                            : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
                                             }`}
                                     >
                                         {msg.role === 'assistant' && (

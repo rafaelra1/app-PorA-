@@ -623,14 +623,27 @@ IMPORTANTE:
 - Se o alerta for sobre VISTO, fale APENAS sobre documentação de entrada.`;
   },
 
-  chat: (history: Array<{ role: string; content: string }>, message: string) => {
+  chat: (history: Array<{ role: string; content: string }>, message: string, tripContext?: any) => {
     // Convert history to a string format for context
     const conversationContext = history
       .map((msg) => `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`)
       .join('\n');
 
+    let contextPrompt = '';
+    if (tripContext) {
+      contextPrompt = `
+    CONTEXTO DA VIAGEM ATUAL (Use estas informações para responder perguntas sobre o roteiro):
+    Destino: ${tripContext.destination}
+    Datas: ${tripContext.startDate} a ${tripContext.endDate}
+    Resumo do Roteiro:
+    ${JSON.stringify(tripContext.days, null, 2)}
+    `;
+    }
+
     return `Você é o assistente virtual do "PorAí", um aplicativo de planejamento de viagens.
     
+    ${contextPrompt}
+
     CONTEXTO DA CONVERSA:
     ${conversationContext}
     
@@ -640,9 +653,10 @@ IMPORTANTE:
     INSTRUÇÕES:
     1. Responda de forma útil, amigável e concisa em Português.
     2. Você pode ajudar com roteiros, dicas de cidades, informações sobre atrações e preparativos de viagem.
-    3. Se o usuário perguntar sobre algo fora do contexto de viagens, explique educadamente que seu foco é ajudar com viagens.
-    4. Mantenha respostas com no máximo 3 parágrafos curtos, a menos que o usuário peça algo muito detalhado.
-    5. Use formatação markdown simples se necessário (*itálico*, **negrito**).
+    3. Se o usuário perguntar sobre o roteiro (ex: "O que vou fazer amanhã?", "Qual meu voo?"), USE O CONTEXTO DA VIAGEM fornecido acima.
+    4. Se a informação não estiver no contexto, diga que não encontrou essa informação específica no roteiro, mas dê uma resposta geral útil se possível.
+    5. Mantenha respostas com no máximo 3 parágrafos curtos, a menos que o usuário peça algo muito detalhado.
+    6. Use formatação markdown simples se necessário (*itálico*, **negrito**).
     
     Retorne APENAS a sua resposta.`;
   },
@@ -821,15 +835,18 @@ export class GeminiService {
   }
 
   /**
-   * Chat with the AI assistant
+   * Chat with the AI assistant, optionally providing trip context
    */
-  async chat(message: string, history: Array<{ role: string; content: string }>): Promise<string> {
+  async chat(message: string, history: Array<{ role: string; content: string }>, tripContext?: any): Promise<string> {
     try {
-      const prompt = PROMPTS.chat(history, message);
-      return await this.callGeminiAPI(prompt, undefined, undefined, 'text/plain');
+      // Clean up trip context to avoid token limits if necessary
+      // For now passing it directly, but in production we might want to strip images or huge descriptions
+      const prompt = PROMPTS.chat(history, message, tripContext);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'text/plain');
+      return text;
     } catch (error) {
       console.error('Error in chat:', error);
-      throw new Error('Failed to send message');
+      throw new Error('Failed to chat');
     }
   }
 
@@ -862,7 +879,7 @@ export class GeminiService {
         overview: data.overview || '',
         attractions: (data.attractions || []).map((a, i) => ({
           ...a,
-          image: `https://loremflickr.com/800/600/${encodeURIComponent(a.name.split(' ')[0])},travel/all?sig=${i}`,
+          image: '',
         })),
         typicalDishes: (data.typicalDishes || []).map((d, i) => ({
           ...d,
@@ -934,7 +951,7 @@ export class GeminiService {
         price: a.price || 'Consultar',
         address: a.address || '',
         openingHours: a.openingHours || a.time || 'Consultar',
-        image: `https://loremflickr.com/800/600/${(a.name || names[i]).replace(/[^a-zA-Z0-9 ]/g, '').replace(/ /g, ',')},${city.replace(/[^a-zA-Z0-9 ]/g, '').replace(/ /g, ',')},travel?sig=${i + 60}`,
+        image: '',
       }));
     } catch (error) {
       console.error('Error enriching attractions:', error);
