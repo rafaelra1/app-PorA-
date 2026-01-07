@@ -4,6 +4,60 @@
 -- These policies ensure each user can only access their own data
 
 -- =============================================================================
+-- DROP EXISTING POLICIES (to avoid conflicts)
+-- =============================================================================
+
+DROP POLICY IF EXISTS "Users can view own trips" ON trips;
+DROP POLICY IF EXISTS "Users can create trips" ON trips;
+DROP POLICY IF EXISTS "Users can update own trips" ON trips;
+DROP POLICY IF EXISTS "Users can delete own trips" ON trips;
+
+DROP POLICY IF EXISTS "Users can view participants" ON participants;
+DROP POLICY IF EXISTS "Trip owners can add participants" ON participants;
+DROP POLICY IF EXISTS "Trip owners can update participants" ON participants;
+DROP POLICY IF EXISTS "Trip owners can delete participants" ON participants;
+
+DROP POLICY IF EXISTS "Users can view destinations" ON destinations;
+DROP POLICY IF EXISTS "Users can manage destinations" ON destinations;
+
+DROP POLICY IF EXISTS "Users can view documents" ON documents;
+DROP POLICY IF EXISTS "Users can manage documents" ON documents;
+
+DROP POLICY IF EXISTS "Users can view document_travelers" ON document_travelers;
+DROP POLICY IF EXISTS "Users can manage document_travelers" ON document_travelers;
+
+DROP POLICY IF EXISTS "Users can view expenses" ON expenses;
+DROP POLICY IF EXISTS "Users can manage expenses" ON expenses;
+
+DROP POLICY IF EXISTS "Users can view transports" ON transports;
+DROP POLICY IF EXISTS "Users can manage transports" ON transports;
+
+DROP POLICY IF EXISTS "Users can view accommodations" ON accommodations;
+DROP POLICY IF EXISTS "Users can manage accommodations" ON accommodations;
+
+DROP POLICY IF EXISTS "Users can view itinerary" ON itinerary_activities;
+DROP POLICY IF EXISTS "Users can manage itinerary" ON itinerary_activities;
+
+DROP POLICY IF EXISTS "Users can view journal entries" ON journal_entries;
+DROP POLICY IF EXISTS "Users can manage journal entries" ON journal_entries;
+
+DROP POLICY IF EXISTS "Users can view journal images" ON journal_images;
+DROP POLICY IF EXISTS "Users can manage journal images" ON journal_images;
+
+DROP POLICY IF EXISTS "Users can view journal tags" ON journal_tags;
+DROP POLICY IF EXISTS "Users can manage journal tags" ON journal_tags;
+
+DROP POLICY IF EXISTS "Users can view checklist tasks" ON checklist_tasks;
+DROP POLICY IF EXISTS "Users can manage checklist tasks" ON checklist_tasks;
+
+DROP POLICY IF EXISTS "Users can view luggage items" ON luggage_items;
+DROP POLICY IF EXISTS "Users can manage luggage items" ON luggage_items;
+
+DROP POLICY IF EXISTS "Authenticated users can read city guides" ON city_guides;
+DROP POLICY IF EXISTS "Authenticated users can create city guides" ON city_guides;
+DROP POLICY IF EXISTS "Authenticated users can update city guides" ON city_guides;
+
+-- =============================================================================
 -- ENABLE RLS ON ALL TABLES
 -- =============================================================================
 
