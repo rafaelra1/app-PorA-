@@ -20,17 +20,17 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { Trip } from './types';
 
 const AppContent: React.FC = () => {
-  const { trips, selectedTrip, selectTrip, editingTrip, setEditingTrip, addTrip, updateTrip, deleteTrip } = useTrips();
+  const { trips, selectedTrip, selectTrip, editingTrip, setEditingTrip, addTrip, updateTrip, deleteTrip, isLoading: isLoadingTrips } = useTrips();
   const { activeTab, setActiveTab, isAddModalOpen, openAddModal, closeAddModal } = useUI();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading: isLoadingAuth } = useAuth();
 
-  // Show loading state while checking authentication
-  if (isLoading) {
+  // Show loading state while checking authentication or loading trips
+  if (isLoadingAuth || (isAuthenticated && isLoadingTrips)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500">
         <div className="text-center">
           <div className="size-16 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4 mx-auto" />
-          <p className="text-white font-bold">Carregando...</p>
+          <p className="text-white font-bold">{isLoadingAuth ? 'Carregando...' : 'Carregando suas viagens...'}</p>
         </div>
       </div>
     );

@@ -25,7 +25,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [trips, setTripsState] = useState<Trip[]>([]);
     const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
     const [editingTrip, setEditingTrip] = useState<Trip | undefined>(undefined);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     const selectedTrip = trips.find(t => t.id === selectedTripId) || null;
 
@@ -33,6 +33,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     useEffect(() => {
         if (!user) {
             setTripsState([]);
+            setIsLoading(false);
             return;
         }
 
