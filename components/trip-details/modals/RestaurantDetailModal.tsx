@@ -1,6 +1,6 @@
 import React from 'react';
 import { MapPin, Clock, Star, Heart, Share2, X, Plus, FileText } from 'lucide-react';
-import Modal from '../modals/Modal';
+import Modal from './Modal';
 import { Button } from '../../ui/Base';
 import { Restaurant } from '../../../types';
 
