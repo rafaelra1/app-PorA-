@@ -810,6 +810,38 @@ const TripChecklist: React.FC = () => {
         setShowCompleted(false);
     };
 
+    // Auto-classify task category based on text keywords
+    const classifyTaskCategory = (text: string): 'visa' | 'booking' | 'health' | 'insurance' | 'packing' | 'other' => {
+        const lowerText = text.toLowerCase();
+
+        // Visa/Documents keywords
+        if (/visto|passaporte|embaixada|consulado|visto/.test(lowerText)) {
+            return 'visa';
+        }
+
+        // Booking keywords
+        if (/reserva|hotel|hostel|airbnb|voo|passagem|aéreo|check-in|checkout|transfer|aluguel|carro/.test(lowerText)) {
+            return 'booking';
+        }
+
+        // Health keywords
+        if (/vacina|médico|saúde|exame|remédio|medicamento|consulta|dentista|hospital/.test(lowerText)) {
+            return 'health';
+        }
+
+        // Insurance keywords
+        if (/seguro|apólice|cobertura|assistência/.test(lowerText)) {
+            return 'insurance';
+        }
+
+        // Packing keywords
+        if (/mala|bagagem|arrumar|separar|empacotar|levar|roupa|documento|impresso/.test(lowerText)) {
+            return 'packing';
+        }
+
+        return 'other';
+    };
+
     const addTask = () => {
         if (!newTaskText.trim()) return;
 
@@ -820,6 +852,9 @@ const TripChecklist: React.FC = () => {
             formattedDeadline = `${day}/${month}/${year}`;
         }
 
+        // Auto-classify the task category
+        const detectedCategory = classifyTaskCategory(newTaskText);
+
         const newTask = {
             id: `custom-${Date.now()}`,
             text: newTaskText.trim(),
@@ -827,7 +862,7 @@ const TripChecklist: React.FC = () => {
             priority: 'medium' as const,
             isCritical: false,
             deadline: formattedDeadline,
-            category: 'other' as const
+            category: detectedCategory
         };
 
         setTasks(prev => [...prev, newTask]);
@@ -1050,10 +1085,36 @@ const LuggageChecklist: React.FC = () => {
     const [items, setItems] = React.useState<LuggageItem[]>(INITIAL_LUGGAGE_ITEMS);
     const [showAddInput, setShowAddInput] = React.useState(false);
     const [newItemText, setNewItemText] = React.useState('');
-    const [newItemCategory, setNewItemCategory] = React.useState<LuggageItem['category']>('other');
     const [activeCategory, setActiveCategory] = React.useState<LuggageItem['category'] | 'all'>('all');
     const [showImportInput, setShowImportInput] = React.useState(false);
     const [importText, setImportText] = React.useState('');
+
+    // Auto-classify luggage item category based on text keywords
+    const classifyLuggageCategory = (text: string): LuggageItem['category'] => {
+        const lowerText = text.toLowerCase();
+
+        // Documents keywords
+        if (/passaporte|rg|cnh|cartão|carteira|documento|identidade|cpf|certidão|seguro|apólice|voucher|reserva|ingresso|ticket|bilhete/.test(lowerText)) {
+            return 'documents';
+        }
+
+        // Clothes keywords
+        if (/roupa|camisa|camiseta|calça|short|bermuda|vestido|saia|casaco|jaqueta|blusa|moletom|pijama|cueca|calcinha|meia|sapato|tênis|sandália|chinelo|bota|boné|chapéu|óculos|cinto|gravata|terno|blazer|íntima|biquíni|maiô|sunga/.test(lowerText)) {
+            return 'clothes';
+        }
+
+        // Hygiene keywords
+        if (/escova|pasta|shampoo|condicionador|sabonete|desodorante|perfume|protetor|filtro solar|creme|hidratante|maquiagem|remédio|medicamento|band-aid|curativo|absorvente|fio dental|cotonete|gilete|barbeador|toalha|lenço/.test(lowerText)) {
+            return 'hygiene';
+        }
+
+        // Electronics keywords
+        if (/celular|carregador|cabo|fone|headphone|airpod|câmera|notebook|laptop|tablet|ipad|kindle|powerbank|bateria|adaptador|tomada|relógio|smartwatch|gopro|drone|pendrive|hd externo/.test(lowerText)) {
+            return 'electronics';
+        }
+
+        return 'other';
+    };
 
     const toggleItem = (id: string) => {
         setItems(prev => prev.map(item =>
@@ -1069,7 +1130,7 @@ const LuggageChecklist: React.FC = () => {
             id: `luggage-import-${Date.now()}-${index}`,
             text: line.trim(),
             packed: false,
-            category: newItemCategory
+            category: classifyLuggageCategory(line.trim())
         }));
 
         setItems(prev => [...prev, ...newItems]);
@@ -1092,11 +1153,14 @@ const LuggageChecklist: React.FC = () => {
     const addItem = () => {
         if (!newItemText.trim()) return;
 
+        // Auto-classify the item category based on text
+        const detectedCategory = classifyLuggageCategory(newItemText);
+
         const newItem: LuggageItem = {
             id: `luggage-${Date.now()}`,
             text: newItemText.trim(),
             packed: false,
-            category: newItemCategory
+            category: detectedCategory
         };
 
         setItems(prev => [...prev, newItem]);
@@ -1244,7 +1308,13 @@ const LuggageChecklist: React.FC = () => {
             {/* Add Item Input */}
             {showAddInput && (
                 <div className="mt-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex items-center gap-1.5 mb-2">
+                    <div className="flex items-center gap-1.5">
+                        {/* Preview detected category icon */}
+                        {newItemText.trim() && (
+                            <div className={`size-6 rounded-md flex items-center justify-center shrink-0 ${getCategoryColor(classifyLuggageCategory(newItemText))}`}>
+                                <span className="material-symbols-outlined text-xs">{getCategoryIcon(classifyLuggageCategory(newItemText))}</span>
+                            </div>
+                        )}
                         <input
                             type="text"
                             value={newItemText}
@@ -1255,30 +1325,17 @@ const LuggageChecklist: React.FC = () => {
                             autoFocus
                         />
                         <button
+                            onClick={addItem}
+                            disabled={!newItemText.trim()}
+                            className="px-2 py-1 text-[10px] font-semibold bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        >
+                            Adicionar
+                        </button>
+                        <button
                             onClick={() => { setShowAddInput(false); setNewItemText(''); }}
                             className="p-1 text-text-muted hover:text-text-main transition-colors shrink-0"
                         >
                             <span className="material-symbols-outlined text-base">close</span>
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <select
-                            value={newItemCategory}
-                            onChange={(e) => setNewItemCategory(e.target.value as LuggageItem['category'])}
-                            className="text-[10px] bg-white border border-gray-200 rounded-md px-1.5 py-1 text-text-main focus:outline-none focus:border-primary"
-                        >
-                            <option value="documents">Docs</option>
-                            <option value="clothes">Roupas</option>
-                            <option value="hygiene">Higiene</option>
-                            <option value="electronics">Eletr.</option>
-                            <option value="other">Outros</option>
-                        </select>
-                        <button
-                            onClick={addItem}
-                            disabled={!newItemText.trim()}
-                            className="ml-auto px-2 py-1 text-[10px] font-semibold bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                        >
-                            Adicionar
                         </button>
                     </div>
                 </div>
