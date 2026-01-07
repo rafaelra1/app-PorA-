@@ -1,0 +1,201 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { Trip } from '../types';
+import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
+import { toISODate, fromISODate } from '../lib/dateUtils';
+
+interface TripContextType {
+    trips: Trip[];
+    selectedTripId: string | null;
+    selectedTrip: Trip | null;
+    editingTrip: Trip | undefined;
+    isLoading: boolean;
+    setTrips: (trips: Trip[]) => void;
+    addTrip: (trip: Trip) => Promise<void>;
+    updateTrip: (trip: Trip) => Promise<void>;
+    deleteTrip: (id: string) => Promise<void>;
+    selectTrip: (id: string | null) => void;
+    setEditingTrip: (trip: Trip | undefined) => void;
+}
+
+const TripContext = createContext<TripContextType | null>(null);
+
+export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const { user } = useAuth();
+    const [trips, setTripsState] = useState<Trip[]>([]);
+    const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+    const [editingTrip, setEditingTrip] = useState<Trip | undefined>(undefined);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const selectedTrip = trips.find(t => t.id === selectedTripId) || null;
+
+    // Fetch trips when user changes
+    useEffect(() => {
+        if (!user) {
+            setTripsState([]);
+            return;
+        }
+
+        const fetchTrips = async () => {
+            setIsLoading(true);
+            try {
+                const { data, error } = await supabase
+                    .from('trips')
+                    .select('*')
+                    .order('start_date', { ascending: true });
+
+                if (error) throw error;
+
+                if (data) {
+                    // Map db rows back to Trip objects
+                    // We merge top-level columns with the JSONB 'data' column
+                    const loadedTrips: Trip[] = data.map(row => ({
+                        id: row.id,
+                        title: row.title,
+                        destination: row.destination,
+                        startDate: fromISODate(row.start_date),
+                        endDate: fromISODate(row.end_date),
+                        status: row.status,
+                        coverImage: row.cover_image,
+                        ...row.data // Spread the complex JSONB data
+                    }));
+                    setTripsState(loadedTrips);
+                }
+            } catch (error) {
+                console.error('Error fetching trips:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchTrips();
+    }, [user]);
+
+    const setTrips = (newTrips: Trip[]) => {
+        setTripsState(newTrips);
+    };
+
+    const addTrip = async (newTrip: Trip) => {
+        if (!user) return;
+
+        // Optimistic update
+        setTripsState(prev => [newTrip, ...prev]);
+
+        try {
+            // Split data into columns and JSONB payload
+            const { id, title, destination, startDate, endDate, status, coverImage, ...rest } = newTrip;
+
+            const { error } = await supabase.from('trips').insert({
+                user_id: user.id,
+                title,
+                destination,
+                start_date: toISODate(startDate),
+                end_date: toISODate(endDate),
+                status,
+                cover_image: coverImage,
+                data: rest // Store remainder as JSONB
+            });
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error adding trip:', error);
+            // Revert on error (could be improved)
+            fetchTrips();
+        }
+    };
+
+    const updateTrip = async (updatedTrip: Trip) => {
+        if (!user) return;
+
+        setTripsState(prev => prev.map(t => t.id === updatedTrip.id ? updatedTrip : t));
+
+        try {
+            const { id, title, destination, startDate, endDate, status, coverImage, ...rest } = updatedTrip;
+
+            const { error } = await supabase
+                .from('trips')
+                .update({
+                    title,
+                    destination,
+                    start_date: toISODate(startDate),
+                    end_date: toISODate(endDate),
+                    status,
+                    cover_image: coverImage,
+                    data: rest,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', id);
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error updating trip:', error);
+        }
+    };
+
+    const deleteTrip = async (id: string) => {
+        if (!user) return;
+
+        setTripsState(prev => prev.filter(t => t.id !== id));
+        if (selectedTripId === id) {
+            setSelectedTripId(null);
+        }
+
+        try {
+            const { error } = await supabase.from('trips').delete().eq('id', id);
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error deleting trip:', error);
+        }
+    };
+
+    const selectTrip = (id: string | null) => {
+        setSelectedTripId(id);
+    };
+
+    // Helper to reload if needed (not exported but used internally)
+    const fetchTrips = async () => {
+        if (!user) return;
+        const { data } = await supabase.from('trips').select('*');
+        if (data) {
+            const loadedTrips: Trip[] = data.map(row => ({
+                id: row.id,
+                title: row.title,
+                destination: row.destination,
+                startDate: fromISODate(row.start_date),
+                endDate: fromISODate(row.end_date),
+                status: row.status,
+                coverImage: row.cover_image,
+                ...row.data
+            }));
+            setTripsState(loadedTrips);
+        }
+    };
+
+    return (
+        <TripContext.Provider
+            value={{
+                trips,
+                selectedTripId,
+                selectedTrip,
+                editingTrip,
+                isLoading,
+                setTrips,
+                addTrip,
+                updateTrip,
+                deleteTrip,
+                selectTrip,
+                setEditingTrip,
+            }}
+        >
+            {children}
+        </TripContext.Provider>
+    );
+};
+
+export const useTrips = () => {
+    const context = useContext(TripContext);
+    if (!context) {
+        throw new Error('useTrips must be used within TripProvider');
+    }
+    return context;
+};
