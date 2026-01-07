@@ -812,30 +812,30 @@ const TripChecklist: React.FC = () => {
 
     // Auto-classify task category based on text keywords
     const classifyTaskCategory = (text: string): 'visa' | 'booking' | 'health' | 'insurance' | 'packing' | 'other' => {
-        const lowerText = text.toLowerCase();
+        const lowerText = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
         // Visa/Documents keywords
-        if (/visto|passaporte|embaixada|consulado|visto/.test(lowerText)) {
+        if (/visto|passaporte|embaixada|consulado|visa|autorizacao|eta|esta/.test(lowerText)) {
             return 'visa';
         }
 
         // Booking keywords
-        if (/reserva|hotel|hostel|airbnb|voo|passagem|aéreo|check-in|checkout|transfer|aluguel|carro/.test(lowerText)) {
+        if (/reserva|hotel|hostel|airbnb|voo|passagem|aereo|check-in|checkout|transfer|aluguel|carro|confirmar|hospedagem|pousada|resort/.test(lowerText)) {
             return 'booking';
         }
 
         // Health keywords
-        if (/vacina|médico|saúde|exame|remédio|medicamento|consulta|dentista|hospital/.test(lowerText)) {
+        if (/vacina|medico|saude|exame|remedio|medicamento|consulta|dentista|hospital|clinica|receita|alergia/.test(lowerText)) {
             return 'health';
         }
 
         // Insurance keywords
-        if (/seguro|apólice|cobertura|assistência/.test(lowerText)) {
+        if (/seguro|apolice|cobertura|assistencia/.test(lowerText)) {
             return 'insurance';
         }
 
         // Packing keywords
-        if (/mala|bagagem|arrumar|separar|empacotar|levar|roupa|documento|impresso/.test(lowerText)) {
+        if (/mala|bagagem|arrumar|separar|empacotar|levar|roupa|documento|impresso|imprimir|organizar|preparar|fazer as malas|lista/.test(lowerText)) {
             return 'packing';
         }
 
@@ -1091,25 +1091,25 @@ const LuggageChecklist: React.FC = () => {
 
     // Auto-classify luggage item category based on text keywords
     const classifyLuggageCategory = (text: string): LuggageItem['category'] => {
-        const lowerText = text.toLowerCase();
+        const lowerText = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
         // Documents keywords
-        if (/passaporte|rg|cnh|cartão|carteira|documento|identidade|cpf|certidão|seguro|apólice|voucher|reserva|ingresso|ticket|bilhete/.test(lowerText)) {
+        if (/passaporte|rg|cnh|cartao|cartoes|carteira|documento|identidade|cpf|certidao|seguro|apolice|voucher|reserva|ingresso|ticket|bilhete|visto|visa/.test(lowerText)) {
             return 'documents';
         }
 
-        // Clothes keywords
-        if (/roupa|camisa|camiseta|calça|short|bermuda|vestido|saia|casaco|jaqueta|blusa|moletom|pijama|cueca|calcinha|meia|sapato|tênis|sandália|chinelo|bota|boné|chapéu|óculos|cinto|gravata|terno|blazer|íntima|biquíni|maiô|sunga/.test(lowerText)) {
+        // Clothes keywords (with plural variations)
+        if (/roupa|camisa|camiseta|calca|short|bermuda|vestido|saia|casaco|jaqueta|blusa|moletom|pijama|cueca|calcinha|meia|sapato|tenis|sandalia|chinelo|bota|bone|chapeu|oculos|cinto|gravata|terno|blazer|intima|biquini|maio|sunga|canga|regata|cropped|top|legging|cachecol|luva|gorro|sobretudo|colete|jardineira|macacao|conjunto/.test(lowerText)) {
             return 'clothes';
         }
 
         // Hygiene keywords
-        if (/escova|pasta|shampoo|condicionador|sabonete|desodorante|perfume|protetor|filtro solar|creme|hidratante|maquiagem|remédio|medicamento|band-aid|curativo|absorvente|fio dental|cotonete|gilete|barbeador|toalha|lenço/.test(lowerText)) {
+        if (/escova|pasta|shampoo|condicionador|sabonete|desodorante|perfume|protetor|filtro|creme|hidratante|maquiagem|remedio|medicamento|band-aid|curativo|absorvente|fio dental|cotonete|gilete|barbeador|toalha|lenco|algodao|acetona|esmalte|lixa|pincel|pente|secador/.test(lowerText)) {
             return 'hygiene';
         }
 
         // Electronics keywords
-        if (/celular|carregador|cabo|fone|headphone|airpod|câmera|notebook|laptop|tablet|ipad|kindle|powerbank|bateria|adaptador|tomada|relógio|smartwatch|gopro|drone|pendrive|hd externo/.test(lowerText)) {
+        if (/celular|carregador|cabo|fone|headphone|airpod|camera|notebook|laptop|tablet|ipad|kindle|powerbank|bateria|adaptador|tomada|relogio|smartwatch|gopro|drone|pendrive|hd externo|caixa de som|controle|mouse|teclado/.test(lowerText)) {
             return 'electronics';
         }
 
