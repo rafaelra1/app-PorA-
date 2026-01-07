@@ -133,20 +133,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const loginWithApple = async () => {
-        setIsLoading(true);
-        try {
-            const { error } = await supabase.auth.signInWithOAuth({
-                provider: 'apple',
-                options: {
-                    redirectTo: window.location.origin,
-                    scopes: 'name email'
-                }
-            });
-            if (error) throw error;
-        } catch (error) {
-            console.error('Apple login error:', error);
-            setIsLoading(false);
-        }
+        // Requires Apple Developer Account - not implemented
+        console.warn('Apple login requires Apple Developer Account');
     };
 
     const loginWithBiometric = async () => {
