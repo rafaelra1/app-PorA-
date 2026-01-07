@@ -133,10 +133,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const loginWithApple = async () => {
-        // Not fully configured yet - requires Apple Developer Account
-        console.warn('Apple login requires further configuration in Supabase');
-        alert('Login com Apple requer configuração adicional no painel do Supabase.');
-        setIsLoading(false);
+        setIsLoading(true);
+        try {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'apple',
+                options: {
+                    redirectTo: window.location.origin,
+                    scopes: 'name email'
+                }
+            });
+            if (error) throw error;
+        } catch (error) {
+            console.error('Apple login error:', error);
+            setIsLoading(false);
+        }
     };
 
     const loginWithBiometric = async () => {
