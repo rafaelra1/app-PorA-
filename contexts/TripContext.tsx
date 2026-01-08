@@ -12,8 +12,8 @@ interface TripContextType {
     isLoading: boolean;
     setTrips: (trips: Trip[]) => void;
     addTrip: (trip: Trip) => Promise<{ success: boolean; error?: string }>;
-    updateTrip: (trip: Trip) => Promise<void>;
-    deleteTrip: (id: string) => Promise<void>;
+    updateTrip: (trip: Trip) => Promise<{ success: boolean; error?: string }>;
+    deleteTrip: (id: string) => Promise<{ success: boolean; error?: string }>;
     selectTrip: (id: string | null) => void;
     setEditingTrip: (trip: Trip | undefined) => void;
 }
@@ -116,9 +116,11 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     };
 
-    const updateTrip = async (updatedTrip: Trip) => {
-        if (!user) return;
+    const updateTrip = async (updatedTrip: Trip): Promise<{ success: boolean; error?: string }> => {
+        if (!user) return { success: false, error: 'Usuário não autenticado' };
 
+        // Save previous state for rollback
+        const previousTrips = trips;
         setTripsState(prev => prev.map(t => t.id === updatedTrip.id ? updatedTrip : t));
 
         try {
@@ -139,13 +141,21 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 .eq('id', id);
 
             if (error) throw error;
+            return { success: true };
         } catch (error) {
             console.error('Error updating trip:', error);
+            // Rollback on error
+            setTripsState(previousTrips);
+            return { success: false, error: 'Erro ao atualizar viagem. Tente novamente.' };
         }
     };
 
-    const deleteTrip = async (id: string) => {
-        if (!user) return;
+    const deleteTrip = async (id: string): Promise<{ success: boolean; error?: string }> => {
+        if (!user) return { success: false, error: 'Usuário não autenticado' };
+
+        // Save previous state for rollback
+        const previousTrips = trips;
+        const previousSelectedId = selectedTripId;
 
         setTripsState(prev => prev.filter(t => t.id !== id));
         if (selectedTripId === id) {
@@ -155,8 +165,13 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
             const { error } = await supabase.from('trips').delete().eq('id', id);
             if (error) throw error;
+            return { success: true };
         } catch (error) {
             console.error('Error deleting trip:', error);
+            // Rollback on error
+            setTripsState(previousTrips);
+            setSelectedTripId(previousSelectedId);
+            return { success: false, error: 'Erro ao excluir viagem. Tente novamente.' };
         }
     };
 
