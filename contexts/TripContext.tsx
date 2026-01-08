@@ -11,9 +11,9 @@ interface TripContextType {
     editingTrip: Trip | undefined;
     isLoading: boolean;
     setTrips: (trips: Trip[]) => void;
-    addTrip: (trip: Trip) => Promise<{ success: boolean; error?: string }>;
-    updateTrip: (trip: Trip) => Promise<{ success: boolean; error?: string }>;
-    deleteTrip: (id: string) => Promise<{ success: boolean; error?: string }>;
+    addTrip: (trip: Omit<Trip, 'id'>) => Promise<string | null>;
+    updateTrip: (trip: Trip) => Promise<void>;
+    deleteTrip: (id: string) => Promise<void>;
     selectTrip: (id: string | null) => void;
     setEditingTrip: (trip: Trip | undefined) => void;
 }
@@ -77,47 +77,50 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setTripsState(newTrips);
     };
 
-    const addTrip = async (newTrip: Trip): Promise<{ success: boolean; error?: string }> => {
-        if (!user) return { success: false, error: 'Usuário não autenticado' };
+    const addTrip = async (newTripData: Omit<Trip, 'id'>) => {
+        if (!user) return null;
+
+        // 1. Optimistic Update with Temp ID
+        const tempId = `temp-${Date.now()}`;
+        const optimisticTrip: Trip = { ...newTripData, id: tempId };
+
+        setTripsState(prev => [optimisticTrip, ...prev]);
 
         try {
-            // Split data into columns and JSONB payload
-            const { id, title, destination, startDate, endDate, status, coverImage, ...rest } = newTrip;
+            // 2. Prepare Data for Supabase
+            const { title, destination, startDate, endDate, status, coverImage, ...rest } = newTripData;
 
-            // Insert and get the generated ID back
-            const { data, error } = await supabase
-                .from('trips')
-                .insert({
-                    user_id: user.id,
-                    title,
-                    destination,
-                    start_date: toISODate(startDate),
-                    end_date: toISODate(endDate),
-                    status,
-                    cover_image: coverImage,
-                    data: rest
-                })
-                .select()
-                .single();
+            // 3. Insert and Select Single (to get real ID)
+            const { data, error } = await supabase.from('trips').insert({
+                user_id: user.id,
+                title,
+                destination,
+                start_date: toISODate(startDate),
+                end_date: toISODate(endDate),
+                status,
+                cover_image: coverImage,
+                data: rest // Store remainder as JSONB
+            }).select('id').single();
 
             if (error) throw error;
 
-            // Add trip with the real ID from Supabase
-            const tripWithRealId: Trip = {
-                ...newTrip,
-                id: data.id
-            };
-            setTripsState(prev => [tripWithRealId, ...prev]);
+            // 4. Update State with Real ID
+            if (data) {
+                setTripsState(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
+                return data.id;
+            }
+            return null;
 
-            return { success: true };
         } catch (error) {
             console.error('Error adding trip:', error);
-            return { success: false, error: 'Erro ao salvar viagem. Tente novamente.' };
+            // 5. Rollback on Error
+            setTripsState(prev => prev.filter(t => t.id !== tempId));
+            throw error; // Re-throw to let component know
         }
     };
 
-    const updateTrip = async (updatedTrip: Trip): Promise<{ success: boolean; error?: string }> => {
-        if (!user) return { success: false, error: 'Usuário não autenticado' };
+    const updateTrip = async (updatedTrip: Trip): Promise<void> => {
+        if (!user) throw new Error('Usuário não autenticado');
 
         // Save previous state for rollback
         const previousTrips = trips;
@@ -141,17 +144,16 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 .eq('id', id);
 
             if (error) throw error;
-            return { success: true };
         } catch (error) {
             console.error('Error updating trip:', error);
             // Rollback on error
             setTripsState(previousTrips);
-            return { success: false, error: 'Erro ao atualizar viagem. Tente novamente.' };
+            throw error;
         }
     };
 
-    const deleteTrip = async (id: string): Promise<{ success: boolean; error?: string }> => {
-        if (!user) return { success: false, error: 'Usuário não autenticado' };
+    const deleteTrip = async (id: string): Promise<void> => {
+        if (!user) throw new Error('Usuário não autenticado');
 
         // Save previous state for rollback
         const previousTrips = trips;
@@ -165,13 +167,12 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
             const { error } = await supabase.from('trips').delete().eq('id', id);
             if (error) throw error;
-            return { success: true };
         } catch (error) {
             console.error('Error deleting trip:', error);
             // Rollback on error
             setTripsState(previousTrips);
             setSelectedTripId(previousSelectedId);
-            return { success: false, error: 'Erro ao excluir viagem. Tente novamente.' };
+            throw error;
         }
     };
 

@@ -30,12 +30,7 @@ const CityGuideLayout: React.FC<CityGuideLayoutProps> = ({
                 {/* City Switcher */}
                 {allCities && allCities.length > 0 && (
                     <div className="flex bg-gray-100 p-1 rounded-lg overflow-x-auto no-scrollbar">
-                        <button
-                            onClick={onBack}
-                            className="px-4 py-1.5 rounded-md text-xs font-bold whitespace-nowrap transition-all text-text-muted hover:text-text-main hover:bg-gray-200/50"
-                        >
-                            Todas
-                        </button>
+
                         {allCities.map(city => (
                             <button
                                 key={city.id}

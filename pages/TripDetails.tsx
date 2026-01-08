@@ -48,6 +48,9 @@ import AddExpenseModal from '../components/trip-details/modals/AddExpenseModal';
 import ShareTripModal from '../components/trip-details/modals/ShareTripModal';
 import AddAccommodationModal from '../components/trip-details/modals/AddAccommodationModal';
 import AddTransportModal from '../components/trip-details/modals/AddTransportModal';
+import { AccommodationProvider, useAccommodation } from '../contexts/AccommodationContext';
+import { TransportProvider, useTransport } from '../contexts/TransportContext';
+import TransportView from '../components/trip-details/transport/TransportView';
 import Modal from '../components/trip-details/modals/Modal';
 import { Button } from '../components/ui/Base';
 import AddActivityModal from '../components/trip-details/modals/AddActivityModal';
@@ -58,7 +61,7 @@ interface TripDetailsProps {
   onEdit: () => void;
 }
 
-const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
+const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
   // Inner Trip Details State (Tabs)
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('overview');
   const [activeCityTab, setActiveCityTab] = useState<CityTab>('info');
@@ -144,7 +147,35 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
 
   // Documents state
   const [extraDocuments, setExtraDocuments] = useLocalStorage<any[]>(`porai_trip_${trip.id}_documents`, []);
-  const [hotels, setHotels] = useLocalStorage<HotelReservation[]>(`porai_trip_${trip.id}_hotels`, []);
+
+  // Accommodations (Context)
+  const {
+    accommodations: hotels,
+    addAccommodation: addAccContext,
+    deleteAccommodation: deleteAccContext,
+    updateAccommodation: updateAccContext,
+    fetchAccommodations,
+    migrateFromLocalStorage
+  } = useAccommodation();
+
+  // Local storage for migration checking only
+  const [localHotels, setLocalHotels] = useLocalStorage<HotelReservation[]>(`porai_trip_${trip.id}_hotels`, []);
+
+  // Fetch accommodations on mount
+  useEffect(() => {
+    if (trip.id) {
+      fetchAccommodations(trip.id);
+
+      // Migration Check
+      if (localHotels.length > 0) {
+        console.log('Migrating local hotels to Supabase...');
+        migrateFromLocalStorage(trip.id, localHotels).then(() => {
+          setLocalHotels([]); // Clear local after migration
+        });
+      }
+    }
+  }, [trip.id]);
+
   const [selectedAccommodation, setSelectedAccommodation] = useState<HotelReservation | null>(null);
   const [targetCityId, setTargetCityId] = useState<string | null>(null);
 
@@ -158,9 +189,24 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('todas');
   const [totalBudget] = useState(5000);
 
-  // Transport state
-  const [transports, setTransports] = useLocalStorage<Transport[]>(`porai_trip_${trip.id}_transports`, []);
-  const [transportFilter, setTransportFilter] = useState<TransportType | 'all'>('all');
+  // Transport state (Context)
+  const {
+    transports,
+    addTransport: addTransportContext,
+    updateTransport: updateTransportContext,
+    deleteTransport: deleteTransportContext,
+    fetchTransports: fetchTransportsContext
+  } = useTransport();
+
+  // Fetch transports on load
+  useEffect(() => {
+    if (trip.id) {
+      fetchTransportsContext(trip.id);
+    }
+  }, [trip.id]);
+
+  // Remove local filter state as it's handled in TransportView now
+  // const [transportFilter, setTransportFilter] = useState<TransportType | 'all'>('all');
 
   // Modals
   const [isAddCityModalOpen, setIsAddCityModalOpen] = useState(false);
@@ -366,20 +412,22 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
   };
 
   const handleConfirmDeleteAccommodation = () => {
-    if (deletingAccommodationId) {
-      setHotels(prev => prev.filter(h => h.id !== deletingAccommodationId));
+    if (deletingAccommodationId && trip.id) {
+      deleteAccContext(trip.id, deletingAccommodationId);
       setDeletingAccommodationId(null);
     }
   };
 
   const handleAddAccommodation = async (newAccommodation: Omit<HotelReservation, 'id'>) => {
-    const hotelId = `h-${Math.random().toString(36).substr(2, 9)}`;
-    const accommodationWithId: HotelReservation = {
+    if (!trip.id) return;
+
+    const accommodationData = {
       ...newAccommodation,
-      id: hotelId,
       cityId: targetCityId || undefined
     };
-    setHotels(prev => [...prev, accommodationWithId]);
+
+    // Add via Context
+    const newId = await addAccContext(trip.id, accommodationData);
 
     // Auto-fetch rating and stars via Gemini + Google Places after saving
     try {
@@ -414,18 +462,26 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
         else if (googleData.rating >= 4.0 && finalStars < 4) finalStars = 4;
       }
 
-      setHotels(prev => prev.map(h => h.id === hotelId ? {
-        ...h,
-        rating: googleData.rating || h.rating,
-        address: googleData.address || h.address,
-        stars: finalStars,
-        image: googleData.image || h.image
-      } : h));
+      if (newId) {
+        const updatedHotel: HotelReservation = {
+          id: newId,
+          ...accommodationData,
+          rating: googleData.rating || accommodationData.rating,
+          address: googleData.address || accommodationData.address,
+          stars: finalStars,
+          image: googleData.image || accommodationData.image,
+          status: accommodationData.status || 'confirmed'
+        };
+
+        await updateAccContext(trip.id, updatedHotel);
+      }
 
     } catch (error) {
       console.error('Error auto-fetching hotel metadata:', error);
     }
   };
+
+
 
   const handleAddExpense = (newExpense: Omit<Expense, 'id'>) => {
     const expenseWithId: Expense = {
@@ -439,16 +495,14 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
   const [editingTransport, setEditingTransport] = useState<Transport | null>(null);
   const [deletingTransportId, setDeletingTransportId] = useState<string | null>(null);
 
-  const handleAddTransport = (newTransport: Omit<Transport, 'id'>) => {
-    const transportWithId: Transport = {
-      ...newTransport,
-      id: `t-${Math.random().toString(36).substr(2, 9)}`,
-    };
-    setTransports(prev => [...prev, transportWithId]);
+  const handleAddTransport = async (newTransport: Omit<Transport, 'id'>) => {
+    if (!trip.id) return;
+    await addTransportContext(trip.id, newTransport);
   };
 
-  const handleUpdateTransport = (updatedTransport: Transport) => {
-    setTransports(prev => prev.map(t => t.id === updatedTransport.id ? updatedTransport : t));
+  const handleUpdateTransport = async (updatedTransport: Transport) => {
+    if (!trip.id) return;
+    await updateTransportContext(trip.id, updatedTransport);
     setEditingTransport(null);
     setIsAddTransportModalOpen(false);
   };
@@ -457,9 +511,9 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
     setDeletingTransportId(transportId);
   };
 
-  const handleConfirmDeleteTransport = () => {
-    if (deletingTransportId) {
-      setTransports(prev => prev.filter(t => t.id !== deletingTransportId));
+  const handleConfirmDeleteTransport = async () => {
+    if (deletingTransportId && trip.id) {
+      await deleteTransportContext(trip.id, deletingTransportId);
       setDeletingTransportId(null);
     }
   };
@@ -470,7 +524,7 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
   };
 
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'date_asc'>('newest');
 
   // Accommodation State
   const [accommodationFilter, setAccommodationFilter] = useState<'all' | 'hotel' | 'home'>('all');
@@ -593,7 +647,6 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
               }}
               onViewTransport={() => {
                 setActiveSubTab('transport');
-                setTransportFilter('all');
               }}
             />
           )}
@@ -844,248 +897,12 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
           </div >
         );
       case 'transport':
-        const transportTypeConfig: Record<TransportType, { icon: string; label: string; color: string }> = {
-          flight: { icon: 'flight', label: 'Voo', color: 'bg-blue-500' },
-          train: { icon: 'train', label: 'Trem', color: 'bg-green-500' },
-          car: { icon: 'directions_car', label: 'Carro', color: 'bg-amber-500' },
-          transfer: { icon: 'local_taxi', label: 'Transfer', color: 'bg-purple-500' },
-          bus: { icon: 'directions_bus', label: 'Ônibus', color: 'bg-orange-500' },
-          ferry: { icon: 'directions_boat', label: 'Balsa', color: 'bg-cyan-500' },
-        };
-        const transportStatusConfig: Record<string, { label: string; color: string }> = {
-          confirmed: { label: 'Confirmado', color: 'bg-green-100 text-green-700' },
-          scheduled: { label: 'Agendado', color: 'bg-blue-100 text-blue-700' },
-          booked: { label: 'Reservado', color: 'bg-purple-100 text-purple-700' },
-          pending: { label: 'Pendente', color: 'bg-amber-100 text-amber-700' },
-          cancelled: { label: 'Cancelado', color: 'bg-rose-100 text-rose-700' },
-        };
-        let displayedTransports = transportFilter === 'all'
-          ? transports.filter(t => t && t.type)
-          : transports.filter(t => t && t.type && t.type === transportFilter);
-
-        // Apply sorting based on insertion order (reverse for newest)
-        if (sortOrder === 'newest') {
-          displayedTransports = [...displayedTransports].reverse();
-        }
-
         return (
-          <div className="space-y-6">
-            <div className="flex flex-col gap-4">
-              {/* Title removed per user request */}
-
-              {/* Controls Bar */}
-              <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100">
-                {/* Filters */}
-                <div className="flex gap-2 overflow-x-auto hide-scrollbar w-full md:w-auto px-1">
-                  {[
-                    { value: 'all', label: 'Todos' },
-                    { value: 'flight', label: 'Voos', icon: 'flight' },
-                    { value: 'train', label: 'Trens', icon: 'train' },
-                    { value: 'car', label: 'Carros', icon: 'directions_car' },
-                    { value: 'transfer', label: 'Transfers', icon: 'local_taxi' },
-                  ].map((filter) => (
-                    <button
-                      key={filter.value}
-                      onClick={() => setTransportFilter(filter.value as TransportType | 'all')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${transportFilter === filter.value
-                        ? 'bg-text-main text-white shadow-sm'
-                        : 'bg-white text-text-muted hover:bg-gray-100 border border-gray-200/50'
-                        }`}
-                    >
-                      {filter.icon && <span className="material-symbols-outlined text-sm">{filter.icon}</span>}
-                      {filter.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Right Actions */}
-                <div className="flex items-center gap-2 w-full md:w-auto justify-end px-1">
-                  {/* Sort */}
-                  <button
-                    onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-xs font-bold text-text-muted transition-all shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-base">swap_vert</span>
-                    {sortOrder === 'newest' ? 'Recentes' : 'Antigos'}
-                  </button>
-
-                  {/* View Mode */}
-                  <div className="flex bg-white rounded-xl border border-gray-200 p-0.5 shadow-sm">
-                    <button
-                      onClick={() => setViewMode('list')}
-                      className={`p-1 rounded-lg transition-all ${viewMode === 'list' ? 'bg-gray-100 text-primary' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                      <span className="material-symbols-outlined text-lg">view_list</span>
-                    </button>
-                    <button
-                      onClick={() => setViewMode('grid')}
-                      className={`p-1 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-gray-100 text-primary' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                      <span className="material-symbols-outlined text-lg">grid_view</span>
-                    </button>
-                  </div>
-
-                  <div className="w-px h-6 bg-gray-200 mx-1"></div>
-
-                  <button
-                    onClick={() => setIsAddTransportModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary text-text-main rounded-xl font-bold text-xs hover:bg-primary-dark transition-colors shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-sm">add</span>
-                    Adicionar
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Transport Cards */}
-            <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-4" : "space-y-4"}>
-              {displayedTransports.length > 0 ? displayedTransports.map((transport) => {
-                const typeConfig = transportTypeConfig[transport.type] || { icon: 'help', label: 'Outro', color: 'bg-gray-500' };
-                const statusConfig = transportStatusConfig[transport.status] || { label: 'Desconhecido', color: 'bg-gray-100 text-gray-500' };
-
-                return (
-                  <div key={transport.id} className="bg-white rounded-2xl shadow-soft border border-gray-100/50 overflow-hidden">
-                    {/* Card Header */}
-                    <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-text-main">{transport.reference}</span>
-                        {transport.route && <span className="text-text-muted text-sm">{transport.route}</span>}
-                        {transport.duration && (
-                          <span className="text-xs text-text-muted bg-gray-100 px-2 py-0.5 rounded-full">{transport.duration}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleEditTransport(transport)}
-                          className="size-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-text-muted transition-colors"
-                          title="Editar transporte"
-                        >
-                          <span className="material-symbols-outlined text-lg">edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTransport(transport.id)}
-                          className="size-8 rounded-lg hover:bg-rose-50 flex items-center justify-center text-text-muted hover:text-rose-500 transition-colors"
-                          title="Remover transporte"
-                        >
-                          <span className="material-symbols-outlined text-lg">delete</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Card Body */}
-                    <div className="p-5 flex flex-col md:flex-row gap-6">
-                      {/* Left: Icon + Operator */}
-                      <div className="flex flex-col items-center shrink-0 w-24">
-                        <div className={`size-12 ${typeConfig.color} rounded-xl flex items-center justify-center text-white mb-2`}>
-                          <span className="material-symbols-outlined text-2xl">{typeConfig.icon}</span>
-                        </div>
-                        <p className="text-xs font-bold text-text-main text-center">{transport.operator}</p>
-                        <span className={`mt-2 text-xs font-bold px-2 py-0.5 rounded-full ${statusConfig.color}`}>
-                          {statusConfig.label}
-                        </span>
-                      </div>
-
-                      {/* Center: Times */}
-                      <div className="flex-1 flex items-center gap-6">
-                        {/* Departure */}
-                        <div className="flex-1">
-                          <p className="text-xs text-text-muted uppercase tracking-wider mb-1">
-                            {transport.type === 'car' ? 'Retirada' : 'Partida'}
-                          </p>
-                          <p className="text-2xl font-black text-text-main">{transport.departureTime}</p>
-                          <p className="text-sm text-text-muted">{transport.departureDate}</p>
-                          <p className="text-xs text-text-main font-bold mt-1">{transport.departureLocation}</p>
-                        </div>
-
-                        {/* Arrow */}
-                        <div className="flex flex-col items-center">
-                          <span className="material-symbols-outlined text-gray-300 text-3xl">arrow_forward</span>
-                        </div>
-
-                        {/* Arrival */}
-                        <div className="flex-1">
-                          <p className="text-xs text-text-muted uppercase tracking-wider mb-1">
-                            {transport.type === 'car' ? 'Devolução' : 'Chegada'}
-                          </p>
-                          <p className="text-2xl font-black text-text-main">{transport.arrivalTime}</p>
-                          <p className="text-sm text-text-muted">{transport.arrivalDate}</p>
-                          <p className="text-xs text-text-main font-bold mt-1">{transport.arrivalLocation}</p>
-                        </div>
-                      </div>
-
-                      {/* Right: Details */}
-                      <div className="shrink-0 w-40 text-right space-y-2 border-l border-gray-100 pl-6">
-                        {transport.class && (
-                          <div>
-                            <p className="text-xs text-text-muted">Classe</p>
-                            <p className="text-sm font-bold text-text-main">{transport.class}</p>
-                          </div>
-                        )}
-                        {transport.seat && (
-                          <div>
-                            <p className="text-xs text-text-muted">Assento</p>
-                            <p className="text-sm font-bold text-text-main">{transport.seat}</p>
-                          </div>
-                        )}
-                        {transport.vehicle && (
-                          <div>
-                            <p className="text-xs text-text-muted">Veículo</p>
-                            <p className="text-sm font-bold text-text-main">{transport.vehicle}</p>
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-xs text-text-muted">Código</p>
-                          <p className="text-sm font-bold text-text-main">{transport.confirmation}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Card Actions */}
-                    {transport.type !== 'flight' && (
-                      <div className="px-5 py-3 border-t border-gray-100 flex gap-2">
-                        {transport.type === 'train' && (
-                          <>
-                            <button className="px-4 py-2 bg-primary text-text-main rounded-xl text-sm font-bold hover:bg-primary-dark transition-colors">
-                              Ver Bilhete
-                            </button>
-                            <button className="px-4 py-2 border border-gray-200 text-text-main rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors">
-                              Mapa da Estação
-                            </button>
-                          </>
-                        )}
-                        {transport.type === 'car' && (
-                          <>
-                            <button className="px-4 py-2 bg-primary text-text-main rounded-xl text-sm font-bold hover:bg-primary-dark transition-colors">
-                              Ver Reserva
-                            </button>
-                            <button className="px-4 py-2 border border-gray-200 text-text-main rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors">
-                              Política de Cancelamento
-                            </button>
-                          </>
-                        )}
-                        {transport.type === 'transfer' && (
-                          <button className="px-4 py-2 border border-gray-200 text-text-main rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors">
-                            Contatar Motorista
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              }) : (
-                <div className="bg-white rounded-2xl p-12 shadow-soft border border-gray-100/50 text-center">
-                  <span className="material-symbols-outlined text-6xl text-gray-300 mb-4">commute</span>
-                  <p className="text-text-muted font-bold">Nenhum transporte encontrado</p>
-                  <p className="text-sm text-text-muted mt-1">
-                    {transportFilter === 'all'
-                      ? 'Adicione voos, trens, aluguel de carros ou transfers'
-                      : `Nenhum ${transportTypeConfig[transportFilter as TransportType]?.label?.toLowerCase() || 'item'} adicionado`}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+          <TransportView
+            trip={trip}
+            onAddClick={() => setIsAddTransportModalOpen(true)}
+            onEditClick={handleEditTransport}
+          />
         );
       case 'docs':
         return <DocumentsView hotels={hotels} extraDocuments={extraDocuments} docsFilter={docsFilter} onFilterChange={setDocsFilter} onAddDocument={() => setIsAddDocumentModalOpen(true)} travelers={trip.participants} />;
@@ -1428,5 +1245,13 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
     </div>
   );
 };
+
+const TripDetails: React.FC<TripDetailsProps> = (props) => (
+  <AccommodationProvider>
+    <TransportProvider>
+      <TripDetailsContent {...props} />
+    </TransportProvider>
+  </AccommodationProvider>
+);
 
 export default TripDetails;

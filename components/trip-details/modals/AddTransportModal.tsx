@@ -461,20 +461,47 @@ const AddTransportModal: React.FC<AddTransportModalProps> = ({
         return baseObject;
     };
 
-    const handleSubmit = useCallback((e: React.FormEvent) => {
+    const [error, setError] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.operator || !formData.departureDate || !formData.departureTime) return;
+        setError(null);
 
-        const transportObj = createTransportObject(formData);
-
-        if (formData.id && onEdit) {
-            onEdit(transportObj as Transport);
-        } else {
-            onAdd(transportObj);
+        // Basic Validation
+        if (!formData.operator || !formData.departureDate || !formData.departureTime) {
+            setError('Preencha os campos obrigatórios.');
+            return;
         }
 
-        resetForm();
-        onClose();
+        // Date & Time Validation
+        const start = new Date(`${formData.departureDate}T${formData.departureTime}`);
+        if (formData.arrivalDate && formData.arrivalTime) {
+            const end = new Date(`${formData.arrivalDate}T${formData.arrivalTime}`);
+            if (end < start) {
+                setError('A data/hora de chegada não pode ser anterior à partida.');
+                return;
+            }
+        }
+
+        setIsSubmitting(true);
+        try {
+            const transportObj = createTransportObject(formData);
+
+            if (formData.id && onEdit) {
+                await onEdit(transportObj as Transport);
+            } else {
+                await onAdd(transportObj);
+            }
+
+            resetForm();
+            onClose();
+        } catch (err) {
+            console.error(err);
+            setError('Ocorreu um erro ao salvar. Tente novamente.');
+        } finally {
+            setIsSubmitting(false);
+        }
     }, [formData, onAdd, onEdit, onClose, resetForm]);
 
     const handleBatchAdd = () => {
@@ -578,12 +605,20 @@ const AddTransportModal: React.FC<AddTransportModalProps> = ({
                     <Button variant="outline" onClick={handleClose}>
                         Cancelar
                     </Button>
-                    <Button type="submit" form="transport-form">
-                        Adicionar
+                    <Button type="submit" form="transport-form" disabled={isSubmitting}>
+                        {isSubmitting ? 'Salvando...' : (formData.id ? 'Salvar Alterações' : 'Adicionar')}
                     </Button>
                 </>
             }
         >
+            {/* Validation Error */}
+            {error && (
+                <div className="mb-5 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2">
+                    <span className="material-symbols-outlined text-rose-500 text-lg mt-0.5">error</span>
+                    <p className="text-sm text-rose-600">{error}</p>
+                </div>
+            )}
+
             {/* Mode Toggle */}
             <ToggleGroup
                 options={MODE_OPTIONS}

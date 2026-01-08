@@ -11,8 +11,8 @@ import usePlacesAutocomplete from 'use-places-autocomplete';
 interface AddTripModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (trip: Trip) => Promise<void> | void;
-  onUpdate?: (trip: Trip) => Promise<void> | void;
+  onAdd: (trip: Omit<Trip, 'id'> | Trip) => void;
+  onUpdate?: (trip: Trip) => void;
   initialTrip?: Trip;
 }
 
@@ -25,7 +25,7 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
   const [newParticipantEmail, setNewParticipantEmail] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+
   const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>('1K');
   const [isParticipantsExpanded, setIsParticipantsExpanded] = useState(false);
   const [detailedDestinations, setDetailedDestinations] = useState<DetailedDestination[]>([]);
@@ -36,6 +36,9 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "",
     libraries: GOOGLE_MAPS_LIBRARIES
   });
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -98,6 +101,15 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
   }, [initialTrip, isOpen, user, setValue]);
 
   const duration = calcDuration(formData.startDate, formData.endDate);
+
+
+
+  useEffect(() => {
+    if (!isOpen) {
+      setError(null);
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -297,49 +309,53 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSaving) return;
+    setError(null);
 
-    // Validações
+    // Validation
     if (!formData.title.trim()) {
-      alert('Por favor, informe um título para a viagem.');
+      setError('O título da viagem é obrigatório.');
       return;
     }
-
-    if (detailedDestinations.length === 0) {
-      alert('Por favor, adicione pelo menos um destino.');
-      return;
-    }
-
-    if (!isFlexibleDates) {
-      if (!formData.startDate || !formData.endDate) {
-        alert('Por favor, informe as datas de início e fim da viagem.');
-        return;
-      }
-      if (new Date(formData.startDate) > new Date(formData.endDate)) {
-        alert('A data de início deve ser anterior à data de fim.');
+    if (!formData.startDate || !formData.endDate) {
+      if (!isFlexibleDates) {
+        setError('Selecione as datas de início e fim.');
         return;
       }
     }
+    if (formData.endDate && formData.startDate && new Date(formData.endDate) < new Date(formData.startDate)) {
+      setError('A data de fim não pode ser anterior à data de início.');
+      return;
+    }
 
-    const tripData: Trip = {
-      id: initialTrip?.id || '', // ID será gerado pelo Supabase
-      ...formData,
-      destination: detailedDestinations.map(d => d.name).join(', '),
-      detailedDestinations: detailedDestinations,
-      isFlexibleDates: isFlexibleDates,
-      startDate: isFlexibleDates ? '' : formatToDisplayDate(formData.startDate),
-      endDate: isFlexibleDates ? '' : formatToDisplayDate(formData.endDate)
-    };
+    setIsSubmitting(true);
 
-    setIsSaving(true);
     try {
+      const tripData: any = {
+        ...formData,
+        destination: detailedDestinations.map(d => d.name).join(', '),
+        detailedDestinations: detailedDestinations,
+        isFlexibleDates: isFlexibleDates,
+        startDate: isFlexibleDates ? '' : formatToDisplayDate(formData.startDate),
+        endDate: isFlexibleDates ? '' : formatToDisplayDate(formData.endDate)
+      };
+
+      // If editing, we keep the ID. If new, we omit it.
+      if (initialTrip && initialTrip.id) {
+        tripData.id = initialTrip.id;
+      }
+
       if (initialTrip && onUpdate) {
-        await onUpdate(tripData);
+        await onUpdate(tripData as Trip);
       } else {
         await onAdd(tripData);
       }
+
+      onClose();
+    } catch (err) {
+      console.error("Error saving trip:", err);
+      setError("Erro ao salvar viagem. Tente novamente.");
     } finally {
-      setIsSaving(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -647,17 +663,22 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
 
           {/* Submit buttons */}
           <div className="flex gap-3 pt-4">
-            <Button variant="outline" onClick={onClose} className="flex-1 !py-2.5 !text-xs" type="button" disabled={isSaving}>Cancelar</Button>
-            <Button variant="dark" className="flex-1 !py-2.5 !text-xs" type="submit" disabled={isSaving}>
-              {isSaving ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
+            <Button variant="outline" onClick={onClose} className="flex-1 !py-2.5 !text-xs" type="button">Cancelar</Button>
+            <Button variant="dark" className="flex-1 !py-2.5 !text-xs" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <div className="flex items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
                   Salvando...
-                </span>
+                </div>
               ) : (
                 initialTrip ? 'Salvar Alterações' : 'Criar Viagem'
               )}
             </Button>
+            {error && (
+              <div className="text-red-500 text-xs text-center mt-2 w-full absolute -bottom-6">
+                {error}
+              </div>
+            )}
           </div>
         </form>
       </Card>

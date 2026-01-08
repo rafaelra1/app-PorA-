@@ -50,6 +50,60 @@ interface TouristTask {
     completed: boolean;
 }
 
+
+// Helper to get icon and color based on category
+const getCategoryIcon = (category: string = '') => {
+    const cat = category.toLowerCase();
+
+    // Nature & Outdoors
+    if (cat.match(/parque|jardim|nature|floresta|montanha|trilh|praia|beach|garden|park/)) {
+        return { icon: 'park', color: 'emerald' };
+    }
+
+    // History & Culture
+    if (cat.match(/museu|galeria|museum|gallery|art|arte|cultura/)) {
+        return { icon: 'museum', color: 'purple' };
+    }
+    if (cat.match(/históric|historic|antig|ancient|ruína|ruin|arqueol|archaeol/)) {
+        return { icon: 'history_edu', color: 'amber' };
+    }
+    if (cat.match(/palácio|palace|castelo|castle|forte|fort/)) {
+        return { icon: 'castle', color: 'rose' };
+    }
+    if (cat.match(/igreja|church|catedral|cathedral|templo|temple|religi|sagrad/)) {
+        return { icon: 'church', color: 'indigo' };
+    }
+
+    // Urban & Entertainment
+    if (cat.match(/praça|square|mercado|market|rua|street|avenida/)) {
+        return { icon: 'storefront', color: 'orange' };
+    }
+    if (cat.match(/shop|compras|mall/)) {
+        return { icon: 'shopping_bag', color: 'pink' };
+    }
+    if (cat.match(/teatro|theatre|cinema|show|espetáculo/)) {
+        return { icon: 'theater_comedy', color: 'red' };
+    }
+    if (cat.match(/estádio|stadium|esporte|sport|arena/)) {
+        return { icon: 'sports_soccer', color: 'blue' };
+    }
+
+    // Landmarks & Views
+    if (cat.match(/mirante|view|vista|torre|tower|observat/)) {
+        return { icon: 'visibility', color: 'cyan' };
+    }
+    if (cat.match(/monumento|monument|marco|landmark|estátua|statue/)) {
+        return { icon: 'assistant_photo', color: 'slate' };
+    }
+
+    // Water
+    if (cat.match(/rio|river|lago|lake|mar|sea|barco|boat|cruzeiro|cruise/)) {
+        return { icon: 'sailing', color: 'blue' };
+    }
+
+    return { icon: 'attractions', color: 'indigo' };
+};
+
 const AttractionsTab: React.FC<AttractionsTabProps> = ({
     cityGuide,
     isLoadingGuide,
@@ -462,34 +516,40 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                     }>
                         {isLoadingGuide ? [1, 2, 3, 4].map(i => <div key={i} className="h-48 bg-gray-100 rounded-[1.5rem] animate-pulse"></div>) : (
                             <>
-                                {filteredAttractions.map((attr, idx) => (
-                                    <PlaceCard
-                                        key={idx}
-                                        title={attr.name}
-                                        description={attr.description}
-                                        longDescription={attr.longDescription}
-                                        reviewSummary={attr.reviewSummary}
-                                        image={realImages[attr.name] || attr.aiImage || attr.image}
-                                        category={attr.category}
-                                        rating={attr.rating}
-                                        time={attr.time}
-                                        price={attr.price}
-                                        variant={viewMode === 'list' ? 'horizontal' : 'vertical'}
-                                        onClick={() => handleAttractionClick(attr)}
-                                        onEditImage={(e) => { e.stopPropagation(); onEditImage('attraction', idx, attr); }}
-                                        onMapClick={(e) => {
-                                            e.stopPropagation();
-                                            const query = encodeURIComponent(`${attr.name} ${cityName}`);
-                                            window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
-                                        }}
-                                        onAddToItinerary={(e) => { e.stopPropagation(); handleOpenAddToItinerary(attr); }}
-                                        onDelete={(e) => { e.stopPropagation(); handleDeleteAttraction(attr); }}
-                                        isGenerating={attr.isGenerating}
-                                    />
-                                ))}
+                                {filteredAttractions.map((attr, idx) => {
+                                    const style = getCategoryIcon(attr.category);
+                                    return (
+                                        <PlaceCard
+                                            key={idx}
+                                            title={attr.name}
+                                            description={attr.description}
+                                            longDescription={attr.longDescription}
+                                            reviewSummary={attr.reviewSummary}
+                                            image={realImages[attr.name] || attr.aiImage || attr.image}
+                                            category={attr.category}
+                                            rating={attr.rating}
+                                            time={attr.time}
+                                            price={attr.price}
+                                            icon={style.icon}
+                                            color={style.color}
+                                            variant={viewMode === 'list' ? 'horizontal' : 'vertical'}
+                                            onClick={() => handleAttractionClick(attr)}
+                                            onEditImage={(e) => { e.stopPropagation(); onEditImage('attraction', idx, attr); }}
+                                            onMapClick={(e) => {
+                                                e.stopPropagation();
+                                                const query = encodeURIComponent(`${attr.name} ${cityName}`);
+                                                window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+                                            }}
+                                            onAddToItinerary={(e) => { e.stopPropagation(); handleOpenAddToItinerary(attr); }}
+                                            onDelete={(e) => { e.stopPropagation(); handleDeleteAttraction(attr); }}
+                                            isGenerating={attr.isGenerating}
+                                        />
+                                    );
+                                })}
                             </>
                         )}
                     </div>
+
 
                     {/* Load More Footer */}
                     {!isLoadingGuide && filteredAttractions.length > 0 && (

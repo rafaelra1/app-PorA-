@@ -41,22 +41,22 @@ const AppContent: React.FC = () => {
     return <Login />;
   }
 
-  const handleAddTrip = async (newTrip: Trip) => {
-    const result = await addTrip(newTrip);
-    if (result.success) {
+  const handleAddTrip = async (newTrip: Omit<Trip, 'id'> | Trip) => {
+    try {
+      await addTrip(newTrip);
       closeAddModal();
-    } else {
-      alert(result.error || 'Erro ao criar viagem');
+    } catch (error) {
+      alert('Erro ao criar viagem');
     }
   };
 
   const handleUpdateTrip = async (updatedTrip: Trip) => {
-    const result = await updateTrip(updatedTrip);
-    if (result.success) {
+    try {
+      await updateTrip(updatedTrip);
       setEditingTrip(undefined);
       closeAddModal();
-    } else {
-      alert(result.error || 'Erro ao atualizar viagem');
+    } catch (error) {
+      alert('Erro ao atualizar viagem');
     }
   };
 
@@ -78,9 +78,10 @@ const AppContent: React.FC = () => {
 
     if (!window.confirm(confirmMessage)) return;
 
-    const result = await deleteTrip(id);
-    if (!result.success) {
-      alert(result.error || 'Erro ao excluir viagem');
+    try {
+      await deleteTrip(id);
+    } catch (e) {
+      alert('Erro ao excluir viagem');
     }
   };
 

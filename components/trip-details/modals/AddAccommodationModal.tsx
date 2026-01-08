@@ -206,6 +206,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
     const [mode, setMode] = useState<InputMode>('manual');
     const [formData, setFormData] = useState<AccommodationFormData>(INITIAL_FORM_STATE);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Populate form when initialData is provided (for editing/viewing)
     useEffect(() => {
@@ -225,10 +226,12 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
                 status: initialData.status || 'pending',
             });
             setMode('manual');
+            setError(null);
         } else if (!isOpen) {
             // Reset form when modal closes
             setFormData(INITIAL_FORM_STATE);
             setMode('manual');
+            setError(null);
         }
     }, [initialData, isOpen]);
 
@@ -242,6 +245,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
     const resetForm = useCallback(() => {
         setFormData(INITIAL_FORM_STATE);
         setMode('manual');
+        setError(null);
     }, []);
 
     const handleFileUpload = useCallback(async (file: File) => {
@@ -360,9 +364,34 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
         }
     }, [formData.name, formData.address, updateField]);
 
+    // Auto-calculate nights
+    useEffect(() => {
+        if (formData.checkIn && formData.checkOut) {
+            const start = new Date(formData.checkIn);
+            const end = new Date(formData.checkOut);
+
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
+                const diffTime = Math.abs(end.getTime() - start.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                // Only update if different to avoid loop/unnecessary renders (though checkIn/Out diff triggers it)
+                if (formData.nights !== diffDays) {
+                    updateField('nights', diffDays);
+                }
+            }
+        }
+    }, [formData.checkIn, formData.checkOut, formData.nights, updateField]);
+
     const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.checkIn || !formData.checkOut) return;
+        if (!formData.name || !formData.checkIn || !formData.checkOut) {
+            setError('Preencha os campos obrigatórios.');
+            return;
+        }
+
+        if (new Date(formData.checkOut) <= new Date(formData.checkIn)) {
+            setError('A data de saída deve ser posterior à data de entrada.');
+            return;
+        }
 
         const formatDisplayDate = (dateStr: string) =>
             formatDate(dateStr, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -419,6 +448,13 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
                     isAnalyzing={isAnalyzing}
                     onFileSelect={handleFileUpload}
                 />
+            )}
+
+            {error && (
+                <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm font-medium flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                    <span className="material-symbols-outlined text-base">error</span>
+                    {error}
+                </div>
             )}
 
             <form id="accommodation-form" onSubmit={handleSubmit} className="space-y-5">
