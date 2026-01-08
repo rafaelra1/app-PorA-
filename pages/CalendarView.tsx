@@ -3,8 +3,12 @@ import { Trip, CalendarEvent } from '../types';
 import { Card } from '../components/ui/Base';
 import { BRAZILIAN_HOLIDAYS } from '../constants';
 import { useCalendar } from '../contexts/CalendarContext';
+import { useCalendarNotifications, useNotificationPermission } from '../hooks/useCalendarNotifications';
 import AddEventModal from '../components/AddEventModal';
 import WeekView from '../components/calendar/WeekView';
+import FilterPanel from '../components/calendar/FilterPanel';
+import ExportModal from '../components/calendar/ExportModal';
+import EventDetailsModal from '../components/calendar/EventDetailsModal';
 
 interface CalendarViewProps {
   trips: Trip[];
@@ -19,12 +23,21 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
     filters,
     setFilters,
     getEventsForDate,
-    syncFromTrips
+    syncFromTrips,
+    events
   } = useCalendar();
 
   const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
   const [selectedDateForEvent, setSelectedDateForEvent] = useState<string>('');
   const [selectedTimeForEvent, setSelectedTimeForEvent] = useState<string>('');
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [isEventDetailsOpen, setIsEventDetailsOpen] = useState(false);
+
+  // Enable calendar notifications
+  useCalendarNotifications(events);
+  useNotificationPermission();
 
   const months = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -112,10 +125,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
   };
 
   const handleEventClick = (event: CalendarEvent) => {
-    // Navigate to trip if event has tripId
-    if (event.tripId) {
-      onViewTrip(event.tripId);
-    }
+    // Open event details modal
+    setSelectedEvent(event);
+    setIsEventDetailsOpen(true);
   };
 
   const year = currentDate.getFullYear();
@@ -168,17 +180,29 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
             </button>
           </div>
 
-          {/* Status Filter */}
-          <select
-            value={filters.status || 'all'}
-            onChange={(e) => setFilters({ status: e.target.value as any })}
-            className="px-3 py-2 rounded-xl bg-white border border-gray-100 text-xs font-bold text-text-main shadow-soft focus:ring-2 focus:ring-primary cursor-pointer"
+          {/* Filter Button */}
+          <button
+            onClick={() => setIsFilterPanelOpen(true)}
+            className="px-4 py-2 rounded-xl bg-white border border-gray-100 text-xs font-bold text-text-main shadow-soft hover:bg-gray-50 transition-colors flex items-center gap-2"
           >
-            <option value="all">Todas</option>
-            <option value="confirmed">Confirmadas</option>
-            <option value="planning">Planejando</option>
-            <option value="completed">Concluídas</option>
-          </select>
+            <span className="material-symbols-outlined text-sm">filter_list</span>
+            Filtros
+            {((filters.type && filters.type !== 'all') ||
+              (filters.status && filters.status !== 'all') ||
+              (filters.tripId && filters.tripId !== 'all') ||
+              filters.searchQuery) && (
+              <span className="size-2 rounded-full bg-primary animate-pulse" />
+            )}
+          </button>
+
+          {/* Export Button */}
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-white border border-gray-100 text-xs font-bold text-text-main shadow-soft hover:bg-gray-50 transition-colors flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-sm">file_download</span>
+            Exportar
+          </button>
         </div>
       </div>
 
@@ -414,6 +438,36 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
         initialDate={selectedDateForEvent}
         initialTime={selectedTimeForEvent}
         trips={trips}
+      />
+
+      {/* Filter Panel */}
+      <FilterPanel
+        isOpen={isFilterPanelOpen}
+        onClose={() => setIsFilterPanelOpen(false)}
+        trips={trips}
+      />
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        events={events}
+      />
+
+      {/* Event Details Modal */}
+      <EventDetailsModal
+        isOpen={isEventDetailsOpen}
+        onClose={() => {
+          setIsEventDetailsOpen(false);
+          setSelectedEvent(null);
+        }}
+        event={selectedEvent}
+        trip={selectedEvent?.tripId ? trips.find(t => t.id === selectedEvent.tripId) : undefined}
+        onViewTrip={onViewTrip}
+        onEdit={() => {
+          setIsEventDetailsOpen(false);
+          // TODO: Open edit modal with selected event
+        }}
       />
     </div>
   );
