@@ -41,9 +41,13 @@ const AppContent: React.FC = () => {
     return <Login />;
   }
 
-  const handleAddTrip = (newTrip: Trip) => {
-    addTrip(newTrip);
-    closeAddModal();
+  const handleAddTrip = async (newTrip: Trip) => {
+    const result = await addTrip(newTrip);
+    if (result.success) {
+      closeAddModal();
+    } else {
+      alert(result.error || 'Erro ao criar viagem');
+    }
   };
 
   const handleUpdateTrip = (updatedTrip: Trip) => {
