@@ -11,7 +11,7 @@ import usePlacesAutocomplete from 'use-places-autocomplete';
 interface AddTripModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (trip: Trip) => void;
+  onAdd: (trip: Trip) => Promise<void> | void;
   onUpdate?: (trip: Trip) => void;
   initialTrip?: Trip;
 }
@@ -25,6 +25,7 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
   const [newParticipantEmail, setNewParticipantEmail] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>('1K');
   const [isParticipantsExpanded, setIsParticipantsExpanded] = useState(false);
   const [detailedDestinations, setDetailedDestinations] = useState<DetailedDestination[]>([]);
@@ -294,11 +295,12 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
 
     const tripData: Trip = {
-      id: initialTrip?.id || Math.random().toString(36).substr(2, 9),
+      id: initialTrip?.id || '', // ID será gerado pelo Supabase
       ...formData,
       destination: detailedDestinations.map(d => d.name).join(', '),
       detailedDestinations: detailedDestinations,
@@ -309,11 +311,15 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
 
     if (initialTrip && onUpdate) {
       onUpdate(tripData);
+      onClose();
     } else {
-      onAdd(tripData);
+      setIsSaving(true);
+      try {
+        await onAdd(tripData);
+      } finally {
+        setIsSaving(false);
+      }
     }
-
-    onClose();
   };
 
   const displayedParticipants = !isParticipantsExpanded && formData.participants.length > 5
@@ -620,9 +626,16 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
 
           {/* Submit buttons */}
           <div className="flex gap-3 pt-4">
-            <Button variant="outline" onClick={onClose} className="flex-1 !py-2.5 !text-xs" type="button">Cancelar</Button>
-            <Button variant="dark" className="flex-1 !py-2.5 !text-xs" type="submit">
-              {initialTrip ? 'Salvar Alterações' : 'Criar Viagem'}
+            <Button variant="outline" onClick={onClose} className="flex-1 !py-2.5 !text-xs" type="button" disabled={isSaving}>Cancelar</Button>
+            <Button variant="dark" className="flex-1 !py-2.5 !text-xs" type="submit" disabled={isSaving}>
+              {isSaving ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
+                  Salvando...
+                </span>
+              ) : (
+                initialTrip ? 'Salvar Alterações' : 'Criar Viagem'
+              )}
             </Button>
           </div>
         </form>

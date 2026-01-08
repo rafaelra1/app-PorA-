@@ -11,7 +11,7 @@ interface TripContextType {
     editingTrip: Trip | undefined;
     isLoading: boolean;
     setTrips: (trips: Trip[]) => void;
-    addTrip: (trip: Trip) => Promise<void>;
+    addTrip: (trip: Trip) => Promise<{ success: boolean; error?: string }>;
     updateTrip: (trip: Trip) => Promise<void>;
     deleteTrip: (id: string) => Promise<void>;
     selectTrip: (id: string | null) => void;
@@ -77,32 +77,42 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setTripsState(newTrips);
     };
 
-    const addTrip = async (newTrip: Trip) => {
-        if (!user) return;
-
-        // Optimistic update
-        setTripsState(prev => [newTrip, ...prev]);
+    const addTrip = async (newTrip: Trip): Promise<{ success: boolean; error?: string }> => {
+        if (!user) return { success: false, error: 'Usuário não autenticado' };
 
         try {
             // Split data into columns and JSONB payload
             const { id, title, destination, startDate, endDate, status, coverImage, ...rest } = newTrip;
 
-            const { error } = await supabase.from('trips').insert({
-                user_id: user.id,
-                title,
-                destination,
-                start_date: toISODate(startDate),
-                end_date: toISODate(endDate),
-                status,
-                cover_image: coverImage,
-                data: rest // Store remainder as JSONB
-            });
+            // Insert and get the generated ID back
+            const { data, error } = await supabase
+                .from('trips')
+                .insert({
+                    user_id: user.id,
+                    title,
+                    destination,
+                    start_date: toISODate(startDate),
+                    end_date: toISODate(endDate),
+                    status,
+                    cover_image: coverImage,
+                    data: rest
+                })
+                .select()
+                .single();
 
             if (error) throw error;
+
+            // Add trip with the real ID from Supabase
+            const tripWithRealId: Trip = {
+                ...newTrip,
+                id: data.id
+            };
+            setTripsState(prev => [tripWithRealId, ...prev]);
+
+            return { success: true };
         } catch (error) {
             console.error('Error adding trip:', error);
-            // Revert on error (could be improved)
-            fetchTrips();
+            return { success: false, error: 'Erro ao salvar viagem. Tente novamente.' };
         }
     };
 
