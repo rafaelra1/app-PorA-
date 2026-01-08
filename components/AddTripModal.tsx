@@ -12,7 +12,7 @@ interface AddTripModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (trip: Trip) => Promise<void> | void;
-  onUpdate?: (trip: Trip) => void;
+  onUpdate?: (trip: Trip) => Promise<void> | void;
   initialTrip?: Trip;
 }
 
@@ -299,6 +299,28 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
     e.preventDefault();
     if (isSaving) return;
 
+    // Validações
+    if (!formData.title.trim()) {
+      alert('Por favor, informe um título para a viagem.');
+      return;
+    }
+
+    if (detailedDestinations.length === 0) {
+      alert('Por favor, adicione pelo menos um destino.');
+      return;
+    }
+
+    if (!isFlexibleDates) {
+      if (!formData.startDate || !formData.endDate) {
+        alert('Por favor, informe as datas de início e fim da viagem.');
+        return;
+      }
+      if (new Date(formData.startDate) > new Date(formData.endDate)) {
+        alert('A data de início deve ser anterior à data de fim.');
+        return;
+      }
+    }
+
     const tripData: Trip = {
       id: initialTrip?.id || '', // ID será gerado pelo Supabase
       ...formData,
@@ -309,16 +331,15 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
       endDate: isFlexibleDates ? '' : formatToDisplayDate(formData.endDate)
     };
 
-    if (initialTrip && onUpdate) {
-      onUpdate(tripData);
-      onClose();
-    } else {
-      setIsSaving(true);
-      try {
+    setIsSaving(true);
+    try {
+      if (initialTrip && onUpdate) {
+        await onUpdate(tripData);
+      } else {
         await onAdd(tripData);
-      } finally {
-        setIsSaving(false);
       }
+    } finally {
+      setIsSaving(false);
     }
   };
 

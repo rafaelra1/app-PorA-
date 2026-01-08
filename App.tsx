@@ -50,10 +50,14 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleUpdateTrip = (updatedTrip: Trip) => {
-    updateTrip(updatedTrip);
-    setEditingTrip(undefined);
-    closeAddModal();
+  const handleUpdateTrip = async (updatedTrip: Trip) => {
+    const result = await updateTrip(updatedTrip);
+    if (result.success) {
+      setEditingTrip(undefined);
+      closeAddModal();
+    } else {
+      alert(result.error || 'Erro ao atualizar viagem');
+    }
   };
 
   const openAddModalWithTrip = (trip?: Trip) => {
@@ -66,8 +70,18 @@ const AppContent: React.FC = () => {
     setActiveTab('trip-details');
   };
 
-  const handleDeleteTrip = (id: string) => {
-    deleteTrip(id);
+  const handleDeleteTrip = async (id: string) => {
+    const trip = trips.find(t => t.id === id);
+    const confirmMessage = trip
+      ? `Tem certeza que deseja excluir a viagem "${trip.title}"?`
+      : 'Tem certeza que deseja excluir esta viagem?';
+
+    if (!window.confirm(confirmMessage)) return;
+
+    const result = await deleteTrip(id);
+    if (!result.success) {
+      alert(result.error || 'Erro ao excluir viagem');
+    }
   };
 
   const handleTabChange = (tabId: string) => {
