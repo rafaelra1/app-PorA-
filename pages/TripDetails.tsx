@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { calculateNights, formatToDisplayDate } from '../lib/dateUtils';
+import { useAccommodations } from '../contexts/AccommodationContext';
 
 import {
   Trip,
@@ -144,9 +145,20 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
 
   // Documents state
   const [extraDocuments, setExtraDocuments] = useLocalStorage<any[]>(`porai_trip_${trip.id}_documents`, []);
-  const [hotels, setHotels] = useLocalStorage<HotelReservation[]>(`porai_trip_${trip.id}_hotels`, []);
+
+  // Accommodations from Supabase
+  const {
+    getAccommodationsByTripId,
+    addAccommodation: addAccommodationToDb,
+    updateAccommodation: updateAccommodationInDb,
+    deleteAccommodation: deleteAccommodationFromDb,
+    isLoading: isLoadingAccommodations
+  } = useAccommodations();
+  const hotels = getAccommodationsByTripId(trip.id);
+
   const [selectedAccommodation, setSelectedAccommodation] = useState<HotelReservation | null>(null);
   const [targetCityId, setTargetCityId] = useState<string | null>(null);
+  const [isSavingAccommodation, setIsSavingAccommodation] = useState(false);
 
   // Journal state
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
@@ -360,71 +372,89 @@ const TripDetails: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
 
   // Delete State
   const [deletingAccommodationId, setDeletingAccommodationId] = useState<string | null>(null);
+  const [isDeletingAccommodation, setIsDeletingAccommodation] = useState(false);
 
   const handleDeleteAccommodation = (id: string) => {
     setDeletingAccommodationId(id);
   };
 
-  const handleConfirmDeleteAccommodation = () => {
+  const handleConfirmDeleteAccommodation = async () => {
     if (deletingAccommodationId) {
-      setHotels(prev => prev.filter(h => h.id !== deletingAccommodationId));
+      setIsDeletingAccommodation(true);
+      const result = await deleteAccommodationFromDb(deletingAccommodationId);
+      setIsDeletingAccommodation(false);
+
+      if (!result.success) {
+        alert(result.error || 'Erro ao excluir hospedagem');
+      }
       setDeletingAccommodationId(null);
     }
   };
 
-  const handleAddAccommodation = async (newAccommodation: Omit<HotelReservation, 'id'>) => {
-    const hotelId = `h-${Math.random().toString(36).substr(2, 9)}`;
-    const accommodationWithId: HotelReservation = {
+  const handleAddAccommodation = async (newAccommodation: Omit<HotelReservation, 'id'>): Promise<{ success: boolean; error?: string }> => {
+    setIsSavingAccommodation(true);
+
+    const accommodationData = {
       ...newAccommodation,
-      id: hotelId,
       cityId: targetCityId || undefined
     };
-    setHotels(prev => [...prev, accommodationWithId]);
+
+    const result = await addAccommodationToDb(trip.id, accommodationData);
+    setIsSavingAccommodation(false);
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
 
     // Auto-fetch rating and stars via Gemini + Google Places after saving
-    try {
-      const { getGeminiService } = await import('../services/geminiService');
-      const { googlePlacesService } = await import('../services/googlePlacesService');
+    if (result.data) {
+      try {
+        const { getGeminiService } = await import('../services/geminiService');
+        const { googlePlacesService } = await import('../services/googlePlacesService');
 
-      const geminiService = getGeminiService();
+        const geminiService = getGeminiService();
 
-      const cleanName = newAccommodation.name;
-      const cleanAddress = newAccommodation.address && newAccommodation.address.length > 5 && !newAccommodation.address.includes('não informado')
-        ? newAccommodation.address
-        : '';
+        const cleanName = newAccommodation.name;
+        const cleanAddress = newAccommodation.address && newAccommodation.address.length > 5 && !newAccommodation.address.includes('não informado')
+          ? newAccommodation.address
+          : '';
 
-      // Primary search
-      let googleData = await googlePlacesService.searchPlace(cleanAddress ? `${cleanName} ${cleanAddress}` : `${cleanName} hotel`);
+        // Primary search
+        let googleData = await googlePlacesService.searchPlace(cleanAddress ? `${cleanName} ${cleanAddress}` : `${cleanName} hotel`);
 
-      // Retry logic: if strict search failed to get rating, try relaxed search
-      if (!googleData.rating && cleanAddress) {
-        console.log('Retrying Google Search with simpler query...');
-        const relaxedData = await googlePlacesService.searchPlace(`${cleanName} hotel`);
-        if (relaxedData.rating) {
-          googleData = relaxedData;
+        // Retry logic: if strict search failed to get rating, try relaxed search
+        if (!googleData.rating && cleanAddress) {
+          console.log('Retrying Google Search with simpler query...');
+          const relaxedData = await googlePlacesService.searchPlace(`${cleanName} hotel`);
+          if (relaxedData.rating) {
+            googleData = relaxedData;
+          }
         }
+
+        const geminiMetadata = await geminiService.getHotelMetadata(cleanName, cleanAddress);
+
+        // Heuristic: Auto-correct stars based on Rating if stars are default (3) or missing
+        let finalStars = geminiMetadata?.stars || newAccommodation.stars;
+        if (googleData.rating) {
+          if (googleData.rating >= 4.7) finalStars = 5;
+          else if (googleData.rating >= 4.0 && finalStars < 4) finalStars = 4;
+        }
+
+        // Update with enriched data
+        await updateAccommodationInDb({
+          ...result.data,
+          rating: googleData.rating || result.data.rating,
+          address: googleData.address || result.data.address,
+          stars: finalStars,
+          image: googleData.image || result.data.image
+        });
+
+      } catch (error) {
+        console.error('Error auto-fetching hotel metadata:', error);
       }
-
-      const geminiMetadata = await geminiService.getHotelMetadata(cleanName, cleanAddress);
-
-      // Heuristic: Auto-correct stars based on Rating if stars are default (3) or missing
-      let finalStars = geminiMetadata?.stars || newAccommodation.stars;
-      if (googleData.rating) {
-        if (googleData.rating >= 4.7) finalStars = 5;
-        else if (googleData.rating >= 4.0 && finalStars < 4) finalStars = 4;
-      }
-
-      setHotels(prev => prev.map(h => h.id === hotelId ? {
-        ...h,
-        rating: googleData.rating || h.rating,
-        address: googleData.address || h.address,
-        stars: finalStars,
-        image: googleData.image || h.image
-      } : h));
-
-    } catch (error) {
-      console.error('Error auto-fetching hotel metadata:', error);
     }
+
+    return { success: true };
   };
 
   const handleAddExpense = (newExpense: Omit<Expense, 'id'>) => {

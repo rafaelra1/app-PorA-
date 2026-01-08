@@ -17,6 +17,7 @@ import { UIProvider, useUI } from './contexts/UIContext';
 import { AIProvider } from './contexts/AIContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { AccommodationProvider } from './contexts/AccommodationContext';
 import { Trip } from './types';
 
 const AppContent: React.FC = () => {
@@ -165,11 +166,13 @@ const App: React.FC = () => {
     <ThemeProvider>
       <AuthProvider>
         <TripProvider>
-          <UIProvider>
-            <AIProvider>
-              <AppContent />
-            </AIProvider>
-          </UIProvider>
+          <AccommodationProvider>
+            <UIProvider>
+              <AIProvider>
+                <AppContent />
+              </AIProvider>
+            </UIProvider>
+          </AccommodationProvider>
         </TripProvider>
       </AuthProvider>
     </ThemeProvider>

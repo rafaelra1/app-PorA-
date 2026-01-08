@@ -14,7 +14,7 @@ import { formatDate, formatToDisplayDate } from '../../../lib/dateUtils';
 interface AddAccommodationModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAdd: (accommodation: Omit<HotelReservation, 'id'>) => void;
+    onAdd: (accommodation: Omit<HotelReservation, 'id'>) => Promise<{ success: boolean; error?: string }> | void;
     initialData?: HotelReservation | null;
 }
 
@@ -206,6 +206,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
     const [mode, setMode] = useState<InputMode>('manual');
     const [formData, setFormData] = useState<AccommodationFormData>(INITIAL_FORM_STATE);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Populate form when initialData is provided (for editing/viewing)
     useEffect(() => {
@@ -360,14 +361,35 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
         }
     }, [formData.name, formData.address, updateField]);
 
-    const handleSubmit = useCallback((e: React.FormEvent) => {
+    const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.checkIn || !formData.checkOut) return;
+        if (isSaving) return;
 
-        const formatDisplayDate = (dateStr: string) =>
-            formatDate(dateStr, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        // Validações
+        if (!formData.name.trim()) {
+            alert('Por favor, informe o nome do hotel.');
+            return;
+        }
 
-        onAdd({
+        if (!formData.checkIn) {
+            alert('Por favor, informe a data de check-in.');
+            return;
+        }
+
+        if (!formData.checkOut) {
+            alert('Por favor, informe a data de check-out.');
+            return;
+        }
+
+        // Validar se check-out é depois de check-in
+        if (new Date(formData.checkOut) < new Date(formData.checkIn)) {
+            alert('A data de check-out deve ser igual ou posterior à data de check-in.');
+            return;
+        }
+
+        setIsSaving(true);
+
+        const accommodationData = {
             name: formData.name,
             address: formData.address || 'Endereço não informado',
             image: formData.image || FALLBACK_HOTEL_IMAGE,
@@ -380,11 +402,26 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
             checkOutTime: `até ${formData.checkOutTime}`,
             confirmation: formData.confirmation || `RES-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
             status: formData.status
-        });
+        };
 
-        resetForm();
-        onClose();
-    }, [formData, onAdd, onClose, resetForm]);
+        try {
+            const result = await onAdd(accommodationData);
+
+            if (result && !result.success) {
+                alert(result.error || 'Erro ao salvar hospedagem');
+                setIsSaving(false);
+                return;
+            }
+
+            resetForm();
+            onClose();
+        } catch (error) {
+            console.error('Error saving accommodation:', error);
+            alert('Erro ao salvar hospedagem. Tente novamente.');
+        } finally {
+            setIsSaving(false);
+        }
+    }, [formData, onAdd, onClose, resetForm, isSaving]);
 
     const handleClose = useCallback(() => {
         resetForm();
@@ -393,11 +430,18 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
 
     const footer = (
         <>
-            <Button variant="outline" onClick={handleClose}>
+            <Button variant="outline" onClick={handleClose} disabled={isSaving}>
                 Cancelar
             </Button>
-            <Button type="submit" form="accommodation-form">
-                Adicionar
+            <Button type="submit" form="accommodation-form" disabled={isSaving}>
+                {isSaving ? (
+                    <span className="flex items-center gap-2">
+                        <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
+                        Salvando...
+                    </span>
+                ) : (
+                    'Adicionar'
+                )}
             </Button>
         </>
     );
