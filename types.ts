@@ -730,3 +730,70 @@ export interface TravelPreferencesV2 {
   accommodation?: AccommodationPreference;
   transport?: TransportPreferences;
 }
+
+// =============================================================================
+// Calendar Event Types
+// =============================================================================
+
+export type CalendarEventType =
+  | 'trip'
+  | 'flight'
+  | 'train'
+  | 'bus'
+  | 'ferry'
+  | 'transfer'
+  | 'accommodation'
+  | 'meal'
+  | 'restaurant'
+  | 'sightseeing'
+  | 'culture'
+  | 'attraction'
+  | 'nature'
+  | 'shopping'
+  | 'nightlife'
+  | 'activity'
+  | 'task'
+  | 'reminder'
+  | 'other';
+
+export type RecurrencePattern = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface RecurrenceRule {
+  pattern: RecurrencePattern;
+  interval: number; // Every X days/weeks/months/years
+  endDate?: string; // When recurrence stops
+  occurrences?: number; // Or stop after N occurrences
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  startDate: string; // DD/MM/YYYY or YYYY-MM-DD
+  endDate?: string; // For multi-day events
+  startTime?: string; // HH:mm
+  endTime?: string; // HH:mm
+  allDay: boolean;
+  type: CalendarEventType;
+  tripId?: string; // Link to specific trip
+  activityId?: string; // Link to itinerary activity
+  transportId?: string; // Link to transport
+  color?: string; // Custom color for this event
+  location?: string;
+  locationDetail?: string;
+  reminder?: number; // Minutes before event
+  recurrence?: RecurrenceRule;
+  completed: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarFilter {
+  status?: 'all' | 'confirmed' | 'planning' | 'completed';
+  type?: CalendarEventType | 'all';
+  tripId?: string | 'all';
+  searchQuery?: string;
+}
+
+export type CalendarViewMode = 'day' | 'week' | 'month' | 'year';

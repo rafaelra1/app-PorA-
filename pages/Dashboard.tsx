@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import DayAgenda from '../components/dashboard/DayAgenda';
 import { Trip, ItineraryActivity, Transport } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useCalendar } from '../contexts/CalendarContext';
 import { BRAZILIAN_HOLIDAYS } from '../constants';
 
 interface DashboardProps {
@@ -13,28 +14,18 @@ interface DashboardProps {
   onNavigate?: (tab: string) => void;
 }
 
-// Brazilian Holidays 2025-2026
-// Holidays are imported from constants.tsx
-
-// Sample tasks data
-const SAMPLE_TASKS = [
-  { id: '1', date: 'out', day: '12', title: 'Check-in Voo', location: 'Online', status: 'pending' },
-  { id: '2', date: 'out', day: '14', title: 'Traslado Hotel', location: 'Confirmar horário', status: 'pending' },
-  { id: '3', date: 'out', day: '15', title: 'Reserva Jantar Kyoto', location: 'Pontocho', status: 'done' },
-];
-
 const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEditTrip, onDeleteTrip, trips, onNavigate }) => {
   const { user } = useAuth();
+  const { syncFromTrips, syncFromActivities, syncFromTransports, getEventsForDate } = useCalendar();
   const nextTrip = trips.find(t => t.status === 'confirmed') || trips[0];
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'planning' | 'completed'>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
   const [allActivities, setAllActivities] = useState<ItineraryActivity[]>([]);
   const [allTransports, setAllTransports] = useState<Transport[]>([]);
 
-  // Load activities and transports from localStorage
+  // Load activities and transports from localStorage and sync with CalendarContext
   useEffect(() => {
     const loadData = () => {
       const collectedActivities: ItineraryActivity[] = [];
@@ -49,6 +40,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
               const parsed = JSON.parse(storedActivities);
               if (Array.isArray(parsed)) {
                 collectedActivities.push(...parsed);
+                // Sync activities with calendar
+                syncFromActivities(parsed, trip.id);
               }
             }
 
@@ -58,6 +51,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
               const parsed = JSON.parse(storedTransports);
               if (Array.isArray(parsed)) {
                 collectedTransports.push(...parsed);
+                // Sync transports with calendar
+                syncFromTransports(parsed, trip.id);
               }
             }
           } catch (e) {
@@ -70,12 +65,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
       setAllTransports(collectedTransports);
     };
 
+    // Sync trips with calendar
+    syncFromTrips(trips);
+
     loadData();
 
     // Listen for storage events to update real-time
     window.addEventListener('storage', loadData);
     return () => window.removeEventListener('storage', loadData);
-  }, [trips]);
+  }, [trips, syncFromTrips, syncFromActivities, syncFromTransports]);
 
   // Stats calculations
   const totalTrips = trips.length;

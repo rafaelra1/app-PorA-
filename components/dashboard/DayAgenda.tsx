@@ -24,9 +24,38 @@ const DayAgenda: React.FC<DayAgendaProps> = ({ date, onClose, events = [] }) => 
         return hours * 60 + minutes;
     };
 
-    // Configuration
-    const startHour = 8; // 08:00
-    const endHour = 20; // 20:00
+    // Dynamic hour range based on events
+    const calculateHourRange = () => {
+        if (events.length === 0) {
+            return { start: 8, end: 20 }; // Default range
+        }
+
+        const eventTimes = events
+            .filter(e => e.startTime && e.endTime)
+            .flatMap(e => [timeToMinutes(e.startTime), timeToMinutes(e.endTime)]);
+
+        if (eventTimes.length === 0) {
+            return { start: 8, end: 20 }; // Default if no timed events
+        }
+
+        const minMinutes = Math.min(...eventTimes);
+        const maxMinutes = Math.max(...eventTimes);
+
+        // Add 1 hour buffer before first event and after last event
+        let startHour = Math.max(0, Math.floor(minMinutes / 60) - 1);
+        let endHour = Math.min(23, Math.ceil(maxMinutes / 60) + 1);
+
+        // Ensure minimum range of 8 hours
+        if (endHour - startHour < 8) {
+            const midpoint = Math.floor((startHour + endHour) / 2);
+            startHour = Math.max(0, midpoint - 4);
+            endHour = Math.min(23, midpoint + 4);
+        }
+
+        return { start: startHour, end: endHour };
+    };
+
+    const { start: startHour, end: endHour } = calculateHourRange();
     const hourHeight = 80; // Height in pixels for one hour
     const startMinutes = startHour * 60;
 
