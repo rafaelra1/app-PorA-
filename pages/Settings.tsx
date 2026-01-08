@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Button } from '../components/ui/Base';
+import { useNotifications } from '../contexts/NotificationContext';
 
 interface ToggleSwitchProps {
     enabled: boolean;
     onChange: (enabled: boolean) => void;
     label: string;
     description?: string;
+    disabled?: boolean;
 }
 
-const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ enabled, onChange, label, description }) => {
+const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ enabled, onChange, label, description, disabled }) => {
     return (
         <div className="flex items-center justify-between py-3">
             <div className="flex-1">
@@ -17,8 +19,9 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ enabled, onChange, label, d
             </div>
             <button
                 onClick={() => onChange(!enabled)}
+                disabled={disabled}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-primary' : 'bg-gray-200'
-                    }`}
+                    } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
                 <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'
@@ -30,6 +33,9 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ enabled, onChange, label, d
 };
 
 const Settings: React.FC = () => {
+    const { preferences, preferencesLoading, updatePreferences } = useNotifications();
+
+    // Local state for form (synced with context)
     const [notifications, setNotifications] = useState({
         tripReminders: true,
         documentAlerts: true,
@@ -50,12 +56,48 @@ const Settings: React.FC = () => {
         shareData: true
     });
 
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    // Sync local state with context preferences when loaded
+    useEffect(() => {
+        if (preferences) {
+            setNotifications({
+                tripReminders: preferences.tripReminders,
+                documentAlerts: preferences.documentAlerts,
+                journalActivity: preferences.journalActivity,
+                emailNotifications: preferences.emailNotifications,
+                pushNotifications: preferences.pushNotifications,
+            });
+        }
+    }, [preferences]);
+
     const handleNotificationChange = (key: keyof typeof notifications) => {
         setNotifications({ ...notifications, [key]: !notifications[key] });
     };
 
-    const handleSaveSettings = () => {
-        // TODO: Implement settings persistence
+    const handleSaveSettings = async () => {
+        setIsSaving(true);
+        setSaveMessage(null);
+
+        try {
+            await updatePreferences({
+                tripReminders: notifications.tripReminders,
+                documentAlerts: notifications.documentAlerts,
+                journalActivity: notifications.journalActivity,
+                emailNotifications: notifications.emailNotifications,
+                pushNotifications: notifications.pushNotifications,
+            });
+            setSaveMessage({ type: 'success', text: 'Configurações salvas com sucesso!' });
+
+            // Clear message after 3 seconds
+            setTimeout(() => setSaveMessage(null), 3000);
+        } catch (error) {
+            console.error('Failed to save settings:', error);
+            setSaveMessage({ type: 'error', text: 'Erro ao salvar configurações. Tente novamente.' });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -66,14 +108,31 @@ const Settings: React.FC = () => {
                     <h2 className="text-2xl font-extrabold text-text-main">Configurações</h2>
                     <p className="text-sm text-text-muted mt-1">Personalize sua experiência no PorAí</p>
                 </div>
-                <Button
-                    variant="primary"
-                    onClick={handleSaveSettings}
-                    className="!px-6 !py-2.5 !text-sm"
-                >
-                    <span className="material-symbols-outlined text-lg">save</span>
-                    Salvar Alterações
-                </Button>
+                <div className="flex items-center gap-3">
+                    {saveMessage && (
+                        <span className={`text-sm font-medium ${saveMessage.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                            {saveMessage.text}
+                        </span>
+                    )}
+                    <Button
+                        variant="primary"
+                        onClick={handleSaveSettings}
+                        disabled={isSaving || preferencesLoading}
+                        className="!px-6 !py-2.5 !text-sm"
+                    >
+                        {isSaving ? (
+                            <>
+                                <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                Salvando...
+                            </>
+                        ) : (
+                            <>
+                                <span className="material-symbols-outlined text-lg">save</span>
+                                Salvar Alterações
+                            </>
+                        )}
+                    </Button>
+                </div>
             </div>
 
             {/* Account Settings */}

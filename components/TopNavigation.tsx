@@ -1,6 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import NotificationFeed, { MOCK_NOTIFICATIONS } from './NotificationFeed';
+import { useNotifications } from '../contexts/NotificationContext';
+import NotificationFeed from './NotificationFeed';
+import { NAV_ITEMS } from '../constants';
 
 interface TopNavigationProps {
     activeTab: string;
@@ -8,13 +10,16 @@ interface TopNavigationProps {
     onOpenAddModal: () => void;
 }
 
-import { NAV_ITEMS } from '../constants';
-
-
 const TopNavigation: React.FC<TopNavigationProps> = ({ activeTab, onTabChange, onOpenAddModal }) => {
     const { user, logout } = useAuth();
+    const { unreadCount } = useNotifications();
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
+
+    const handleViewAllNotifications = () => {
+        setShowNotifications(false);
+        onTabChange('notifications');
+    };
 
     return (
         <header className="bg-white border-b border-gray-100 flex-none relative z-[100]">
@@ -58,15 +63,23 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ activeTab, onTabChange, o
                                 className="size-10 rounded-full bg-sl-bg hover:bg-sl-pastel-yellow flex items-center justify-center text-text-muted hover:text-yellow-600 transition-colors relative"
                             >
                                 <span className="material-symbols-outlined text-xl">notifications</span>
-                                {MOCK_NOTIFICATIONS.some(n => !n.read) && (
-                                    <span className="absolute top-1 right-1 size-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+                                {unreadCount > 0 && (
+                                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full border-2 border-white flex items-center justify-center">
+                                        <span className="text-[10px] font-bold text-white">
+                                            {unreadCount > 9 ? '9+' : unreadCount}
+                                        </span>
+                                    </span>
                                 )}
                             </button>
 
                             {showNotifications && (
                                 <>
                                     <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)}></div>
-                                    <NotificationFeed isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
+                                    <NotificationFeed
+                                        isOpen={showNotifications}
+                                        onClose={() => setShowNotifications(false)}
+                                        onViewAll={handleViewAllNotifications}
+                                    />
                                 </>
                             )}
                         </div>

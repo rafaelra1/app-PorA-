@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
@@ -9,6 +9,7 @@ import { useLoadScript } from '@react-google-maps/api';
 import usePlacesAutocomplete from 'use-places-autocomplete';
 import { getGeminiService } from '../../../services/geminiService';
 import { calculateNights } from '../../../lib/dateUtils';
+import { checkDateOverlap, getOverlapWarning, DateOverlap } from '../../../lib/dateValidation';
 
 // =============================================================================
 // Types & Interfaces
@@ -20,6 +21,7 @@ interface AddCityModalProps {
     onAdd: (city: Omit<City, 'id'>) => void;
     tripStartDate?: string;
     tripEndDate?: string;
+    existingCities?: City[];
 }
 
 interface CityFormData {
@@ -178,7 +180,8 @@ const AddCityModal: React.FC<AddCityModalProps> = ({
     onClose,
     onAdd,
     tripStartDate,
-    tripEndDate
+    tripEndDate,
+    existingCities = []
 }) => {
     const { isLoaded, loadError } = useLoadScript({
         googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "",
@@ -190,6 +193,14 @@ const AddCityModal: React.FC<AddCityModalProps> = ({
 
     const [formData, setFormData] = useState<CityFormData>(INITIAL_FORM_STATE(minDate));
     const { isGenerating, generateImage } = useImageGeneration();
+
+    // Date overlap validation
+    const dateOverlaps = useMemo((): DateOverlap[] => {
+        if (!formData.arrivalDate || !formData.departureDate) return [];
+        return checkDateOverlap(existingCities, formData.arrivalDate, formData.departureDate);
+    }, [existingCities, formData.arrivalDate, formData.departureDate]);
+
+    const overlapWarning = useMemo(() => getOverlapWarning(dateOverlaps), [dateOverlaps]);
 
     // Reset form dates when modal opens
     useEffect(() => {
@@ -371,6 +382,17 @@ const AddCityModal: React.FC<AddCityModalProps> = ({
                         />
                     </div>
                 </div>
+
+                {/* Date Overlap Warning */}
+                {overlapWarning && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
+                        <span className="material-symbols-outlined text-amber-500 text-lg shrink-0 mt-0.5">warning</span>
+                        <div>
+                            <p className="text-sm font-medium text-amber-800">{overlapWarning}</p>
+                            <p className="text-xs text-amber-600 mt-1">Você pode continuar, mas verifique se as datas estão corretas.</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Description */}
                 <Textarea

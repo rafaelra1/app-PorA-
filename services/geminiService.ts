@@ -660,6 +660,47 @@ IMPORTANTE:
     
     Retorne APENAS a sua resposta.`;
   },
+
+  countryInfo: (country: string) => `Forneça informações práticas para viajantes brasileiros sobre ${country}.
+
+Retorne APENAS um JSON com o seguinte formato:
+{
+  "currency": { "code": "EUR", "symbol": "€", "name": "Euro" },
+  "language": "Idioma principal",
+  "timezone": "Fuso horário (ex: GMT+1)",
+  "plugType": "Tipo de tomada (ex: Tipo C/F, 230V)",
+  "visaRequired": true ou false (para brasileiros em turismo até 90 dias),
+  "emergencyNumber": "Número de emergência geral",
+  "drivingSide": "left" ou "right"
+}
+
+IMPORTANTE: Dados reais e precisos para turistas brasileiros.`,
+
+  costOfLiving: (city: string, country: string) => `Forneça índices de custo de vida para ${city}, ${country} comparados com o Brasil.
+
+Retorne APENAS um JSON:
+{
+  "restaurant": 25, // Custo médio de refeição em restaurante simples (USD)
+  "transport": 5,   // Bilhete de transporte público (USD)
+  "hotel": 80,      // Diária média hotel 3 estrelas (USD)
+  "overall": 130    // Índice geral (100 = igual ao Brasil, 130 = 30% mais caro)
+}
+
+Use dados aproximados mas realistas.`,
+
+  localEvents: (city: string, dates: string) => `Liste 3 a 5 eventos especiais que ocorrerão em ${city} durante as datas: ${dates}.
+Inclua feriados, festivais, shows importantes, exposições temporárias ou eventos sazonais.
+Se não houver eventos específicos confirmados, sugira eventos sazonais típicos da época.
+
+Retorne APENAS um JSON:
+[
+  {
+    "title": "Nome do Evento",
+    "date": "Data ou período (ex: 15 Out)",
+    "description": "Breve descrição (1 frase)",
+    "type": "festival" | "music" | "art" | "holiday" | "other"
+  }
+]`,
 };
 
 // =============================================================================
@@ -992,6 +1033,47 @@ export class GeminiService {
   }
 
   /**
+   * Generate country information for travelers
+   */
+  async generateCountryInfo(country: string): Promise<{
+    currency: { code: string; symbol: string; name: string };
+    language: string;
+    timezone: string;
+    plugType: string;
+    visaRequired: boolean;
+    emergencyNumber: string;
+    drivingSide: 'left' | 'right';
+  } | null> {
+    try {
+      const prompt = PROMPTS.countryInfo(country);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely(text, null);
+    } catch (error) {
+      console.error('Error generating country info:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate cost of living data for a city
+   */
+  async generateCostOfLiving(city: string, country: string): Promise<{
+    restaurant: number;
+    transport: number;
+    hotel: number;
+    overall: number;
+  } | null> {
+    try {
+      const prompt = PROMPTS.costOfLiving(city, country);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely(text, null);
+    } catch (error) {
+      console.error('Error generating cost of living:', error);
+      return null;
+    }
+  }
+
+  /**
    * Generate "What to know before you go" tips
    */
   async generateWhatToKnow(city: string): Promise<string> {
@@ -1260,6 +1342,26 @@ export class GeminiService {
     } catch (error) {
       console.error('Error generating alert details:', error);
       return "Não foi possível gerar detalhes adicionais no momento. Por favor, consulte fontes oficiais.";
+    }
+  }
+
+
+  /**
+   * Search for local events in a city for specific dates
+   */
+  async searchLocalEvents(city: string, dates: string): Promise<Array<{
+    title: string;
+    date: string;
+    description: string;
+    type: 'festival' | 'music' | 'art' | 'holiday' | 'other';
+  }> | null> {
+    try {
+      const prompt = PROMPTS.localEvents(city, dates);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely(text, null);
+    } catch (error) {
+      console.error('Error finding local events:', error);
+      return null;
     }
   }
 }

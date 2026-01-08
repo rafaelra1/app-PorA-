@@ -9,14 +9,17 @@ import CalendarView from './pages/CalendarView';
 import Documents from './pages/Documents';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
+import Notifications from './pages/Notifications';
 import Login from './pages/Login';
 import AddTripModal from './components/AddTripModal';
 import Chatbot from './components/Chatbot';
+import OfflineIndicator from './components/ui/OfflineIndicator';
 import { TripProvider, useTrips } from './contexts/TripContext';
 import { UIProvider, useUI } from './contexts/UIContext';
 import { AIProvider } from './contexts/AIContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import { Trip } from './types';
 
 const AppContent: React.FC = () => {
@@ -112,6 +115,8 @@ const AppContent: React.FC = () => {
         return <Profile />;
       case 'settings':
         return <Settings />;
+      case 'notifications':
+        return <Notifications />;
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full py-20 text-center">
@@ -157,6 +162,8 @@ const AppContent: React.FC = () => {
 
       {/* Global Chatbot */}
       <Chatbot />
+
+      <OfflineIndicator />
     </div>
   );
 };
@@ -168,7 +175,9 @@ const App: React.FC = () => {
         <TripProvider>
           <UIProvider>
             <AIProvider>
-              <AppContent />
+              <NotificationProvider>
+                <AppContent />
+              </NotificationProvider>
             </AIProvider>
           </UIProvider>
         </TripProvider>

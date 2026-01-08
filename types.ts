@@ -2,6 +2,48 @@
 export type TripStatus = 'confirmed' | 'planning' | 'completed';
 export type ActivityType = 'flight' | 'hotel' | 'food' | 'transport' | 'culture';
 
+// =============================================================================
+// Notification Types
+// =============================================================================
+
+export type NotificationType =
+  | 'alert'
+  | 'flight_change'
+  | 'reminder'
+  | 'hotel_reminder'
+  | 'document_expiry'
+  | 'weather_alert'
+  | 'itinerary_reminder'
+  | 'social';
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  deleted: boolean;
+  createdAt: string;
+  actionUrl?: string;
+  tripId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type EmailFrequency = 'immediate' | 'daily' | 'weekly';
+
+export interface UserPreferences {
+  userId: string;
+  tripReminders: boolean;
+  documentAlerts: boolean;
+  journalActivity: boolean;
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  emailFrequency: EmailFrequency;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+}
+
 // Tab types for TripDetails navigation
 export type SubTab = 'overview' | 'itinerary' | 'cities' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal';
 export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'tips';
@@ -266,6 +308,25 @@ export interface ItineraryActivity {
   price?: string;
   image?: string;
   isGeneratingImage?: boolean;
+  duration?: number; // Duration in minutes
+}
+
+// Country and Cost of Living Information
+export interface CountryInfo {
+  currency: { code: string; symbol: string; name: string };
+  language: string;
+  timezone: string;
+  plugType: string;
+  visaRequired: boolean;
+  emergencyNumber: string;
+  drivingSide: 'left' | 'right';
+}
+
+export interface CostOfLiving {
+  restaurant: number; // Average meal cost in USD
+  transport: number;  // Day pass cost
+  hotel: number;      // Average hotel night
+  overall: number;    // Index compared to Brazil (100 = same)
 }
 
 // City and Guide types
@@ -281,6 +342,8 @@ export interface City {
   editorialContent?: string;
   attractionsCount?: number;
   restaurantsCount?: number;
+  countryInfo?: CountryInfo;
+  costOfLiving?: CostOfLiving;
 }
 
 export interface Attraction {

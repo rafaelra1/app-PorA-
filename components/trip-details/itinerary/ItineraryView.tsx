@@ -4,7 +4,29 @@ import { Button, Card } from '../../ui/Base';
 import { getGeminiService } from '../../../services/geminiService';
 import AddActivityModal from '../modals/AddActivityModal';
 import ActivityDetailsModal from '../modals/ActivityDetailsModal';
+import { JournalEntryModal } from '../modals/JournalEntryModal';
 import { formatDate, parseDisplayDate } from '../../../lib/dateUtils';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+    DragOverEvent,
+    DragOverlay,
+    defaultDropAnimationSideEffects,
+    DropAnimation,
+    UniqueIdentifier
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { ItineraryActivityItem } from './ItineraryActivityItem';
 
 interface ItineraryViewProps {
     itinerary: ItineraryDay[];
@@ -20,7 +42,8 @@ interface ItineraryViewProps {
     transports?: Transport[];
     cities?: { name: string; arrivalDate: string | Date; departureDate: string | Date }[];
     customActivities?: ItineraryActivity[];
-    onUpdateCustomActivities?: (activities: ItineraryActivity[]) => void;
+    onDeleteActivity?: (id: string) => void;
+    onUpdateActivity?: (activity: ItineraryActivity) => void;
 }
 
 // Activity type configuration for colors and icons
@@ -53,15 +76,147 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     cities = [],
     customActivities = [],
     onUpdateCustomActivities,
+    onDeleteActivity,
+    onUpdateActivity,
+    onAddActivity,
 }) => {
     const [selectedDay, setSelectedDay] = useState(1);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingActivity, setEditingActivity] = useState<ItineraryActivity | null>(null);
     const [deletingActivityId, setDeletingActivityId] = useState<string | null>(null);
 
+    // DND Sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    // DND Handle Drag End
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (!over || active.id === over.id) {
+            return;
+        }
+
+        // Find source and destination days
+        const sourceDayIndex = itineraryData.findIndex(d => d.itineraryActivities.some(a => a.id === active.id));
+        const destDayIndex = itineraryData.findIndex(d => d.itineraryActivities.some(a => a.id === over.id));
+
+        if (sourceDayIndex === -1 || destDayIndex === -1) return;
+
+        const sourceDay = itineraryData[sourceDayIndex];
+        const destDay = itineraryData[destDayIndex];
+
+        const activeActivity = sourceDay.itineraryActivities.find(a => a.id === active.id);
+        if (!activeActivity) return;
+
+        // Calculate new index
+        const oldIndex = sourceDay.itineraryActivities.findIndex(a => a.id === active.id);
+        const newIndex = destDay.itineraryActivities.findIndex(a => a.id === over.id);
+
+        if (sourceDayIndex === destDayIndex) {
+            // Same day reordering
+            const newActivities: ItineraryActivity[] = arrayMove(sourceDay.itineraryActivities, oldIndex, newIndex);
+
+            // Calculate new time
+            let newTime = activeActivity.time;
+            const prevActivity = newActivities[newIndex - 1] as ItineraryActivity | undefined;
+            const nextActivity = newActivities[newIndex + 1] as ItineraryActivity | undefined;
+
+            if (prevActivity && nextActivity) {
+                // Average time
+                const prevMinutes = parseInt(prevActivity.time.split(':')[0]) * 60 + parseInt(prevActivity.time.split(':')[1]);
+                const nextMinutes = parseInt(nextActivity.time.split(':')[0]) * 60 + parseInt(nextActivity.time.split(':')[1]);
+                const avgMinutes = Math.floor((prevMinutes + nextMinutes) / 2);
+                const h = Math.floor(avgMinutes / 60).toString().padStart(2, '0');
+                const m = (avgMinutes % 60).toString().padStart(2, '0');
+                newTime = `${h}:${m}`;
+            } else if (prevActivity) {
+                // Add 30 mins
+                const prevMinutes = parseInt(prevActivity.time.split(':')[0]) * 60 + parseInt(prevActivity.time.split(':')[1]);
+                const newMinutes = prevMinutes + 30;
+                const h = Math.floor(newMinutes / 60).toString().padStart(2, '0');
+                const m = (newMinutes % 60).toString().padStart(2, '0');
+                newTime = `${h}:${m}`;
+            } else if (nextActivity) {
+                // Subtract 30 mins
+                const nextMinutes = parseInt(nextActivity.time.split(':')[0]) * 60 + parseInt(nextActivity.time.split(':')[1]);
+                const newMinutes = Math.max(0, nextMinutes - 30);
+                const h = Math.floor(newMinutes / 60).toString().padStart(2, '0');
+                const m = (newMinutes % 60).toString().padStart(2, '0');
+                newTime = `${h}:${m}`;
+            }
+
+            // Optimistic update
+            const updatedActivity = { ...activeActivity, time: newTime };
+            setItineraryData(prev => {
+                const newData = [...prev];
+                newData[sourceDayIndex] = {
+                    ...sourceDay,
+                    itineraryActivities: newActivities.map(a => a.id === active.id ? updatedActivity : a)
+                };
+                return newData;
+            });
+
+            // Persist
+            if (onUpdateActivity) {
+                onUpdateActivity(updatedActivity);
+            }
+        } else {
+            // Moved to another day
+            // This is trickier with simple list sortable. 
+            // We'll skip cross-day for now or implement if needed. 
+            // Ideally we need to remove from source and add to dest.
+        }
+    };
+
+    // Conflict Detection
+    const detectConflicts = (activities: ItineraryActivity[]) => {
+        const conflicts = new Set<string>();
+        const sorted = [...activities].sort((a, b) => a.time.localeCompare(b.time));
+
+        for (let i = 0; i < sorted.length; i++) {
+            const current = sorted[i];
+            if (!current.duration) continue;
+
+            const [h1, m1] = current.time.split(':').map(Number);
+            const start1 = h1 * 60 + m1;
+            const end1 = start1 + current.duration;
+
+            for (let j = i + 1; j < sorted.length; j++) {
+                const next = sorted[j];
+                const [h2, m2] = next.time.split(':').map(Number);
+                const start2 = h2 * 60 + m2;
+
+                if (end1 > start2) {
+                    conflicts.add(current.id);
+                    conflicts.add(next.id);
+                } else {
+                    // Since sorted by time, subsequent activities will also start after this one ends (mostly)
+                    // But wait, what if 'next' is very short? No, sorted by start time.
+                    // If start2 >= end1, then all subsequent startN >= start2 >= end1.
+                    // So we can break optimization.
+                    break;
+                }
+            }
+        }
+        return conflicts;
+    };
+
     // Details Modal State
     const [detailsModalOpen, setDetailsModalOpen] = useState(false);
     const [selectedActivityForDetails, setSelectedActivityForDetails] = useState<ItineraryActivity | null>(null);
+
+    // Journal Modal State
+    const [journalModalOpen, setJournalModalOpen] = useState(false);
+    const [selectedActivityForJournal, setSelectedActivityForJournal] = useState<ItineraryActivity | null>(null);
 
     const openDetailsModal = (activity: ItineraryActivity) => {
         setSelectedActivityForDetails(activity);
@@ -69,8 +224,14 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     };
 
     const handleJournalEntry = (activity: ItineraryActivity) => {
-        // Future: Open Journal Modal pre-filled with this activity context
-        alert(`Abrir diário para avaliar: ${activity.title}`);
+        setSelectedActivityForJournal(activity);
+        setJournalModalOpen(true);
+    };
+
+    const handleSaveJournalEntry = (entry: any) => {
+        console.log('Saving journal entry:', entry, 'for activity:', selectedActivityForJournal);
+        // TODO: Persist to Supabase or Context
+        setJournalModalOpen(false);
     };
 
     // Generate itinerary days from trip dates with integrated data
@@ -238,35 +399,46 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
 
     // Add new activity
     const handleAddActivity = (newActivity: Omit<ItineraryActivity, 'id'>) => {
-        const id = `a-${Math.random().toString(36).substr(2, 9)}`;
-        setItineraryData(prev => prev.map(day => {
-            if (day.day === newActivity.day) {
-                return {
-                    ...day,
-                    itineraryActivities: [...day.itineraryActivities, { ...newActivity, id }].sort((a, b) => a.time.localeCompare(b.time))
-                };
-            }
-            return day;
-        }));
+        if (onAddActivity) {
+            onAddActivity(newActivity);
+        } else {
+            // Fallback for local state (demo mode)
+            const id = `a-${Math.random().toString(36).substr(2, 9)}`;
+            setItineraryData(prev => prev.map(day => {
+                if (day.day === newActivity.day) {
+                    return {
+                        ...day,
+                        itineraryActivities: [...day.itineraryActivities, { ...newActivity, id }].sort((a, b) => a.time.localeCompare(b.time))
+                    };
+                }
+                return day;
+            }));
+        }
         setIsAddModalOpen(false);
     };
 
     // Edit existing activity
     const handleEditActivity = (updatedActivity: ItineraryActivity) => {
-        setItineraryData(prev => prev.map(day => ({
-            ...day,
-            itineraryActivities: day.itineraryActivities.map(act =>
-                act.id === updatedActivity.id ? updatedActivity : act
-            ).sort((a, b) => a.time.localeCompare(b.time))
-        })));
+        if (onUpdateActivity) {
+            onUpdateActivity(updatedActivity);
+        } else {
+            setItineraryData(prev => prev.map(day => ({
+                ...day,
+                itineraryActivities: day.itineraryActivities.map(act =>
+                    act.id === updatedActivity.id ? updatedActivity : act
+                ).sort((a, b) => a.time.localeCompare(b.time))
+            })));
+        }
         setEditingActivity(null);
         setIsAddModalOpen(false);
     };
 
     // Remove activity
     const handleRemoveActivity = (activityId: string) => {
-        // Check if it's a custom activity
-        if (customActivities.some(a => a.id === activityId) && onUpdateCustomActivities) {
+        if (onDeleteActivity) {
+            onDeleteActivity(activityId);
+        } else if (customActivities.some(a => a.id === activityId) && onUpdateCustomActivities) {
+            // Fallback
             onUpdateCustomActivities(customActivities.filter(a => a.id !== activityId));
         }
 
@@ -416,239 +588,123 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
 
             {/* Mobile Search (Below bar on small screens if needed, but for now hidden on mobile or just wrapped) */}
 
-            {filteredItinerary.map((day) => {
-                const isExpanded = expandedDay === day.day;
-                const hasActivities = day.itineraryActivities.length > 0;
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+            >
+                {filteredItinerary.map((day) => {
+                    const isExpanded = expandedDay === day.day;
+                    const hasActivities = day.itineraryActivities.length > 0;
+                    const conflicts = detectConflicts(day.itineraryActivities);
 
-                return (
-                    <div key={day.day} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
-                        {/* Day Header - Click to toggle */}
-                        <div
-                            onClick={() => toggleDay(day.day)}
-                            className={`flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors ${isExpanded ? 'bg-gray-50/50' : ''}`}
-                        >
-                            <div className="flex items-center gap-4">
-                                <div className={`flex flex-col items-center justify-center size-12 rounded-xl border transition-colors ${isExpanded
-                                    ? 'bg-purple-600 text-white border-purple-600 shadow-md'
-                                    : 'bg-white text-text-main border-gray-200'
-                                    }`}>
-                                    <span className={`text-[10px] uppercase font-bold tracking-wider ${isExpanded ? 'text-white/80' : 'text-text-muted'}`}>Dia</span>
-                                    <span className="text-xl font-black leading-none">{day.day}</span>
+                    return (
+                        <div key={day.day} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
+                            {/* Day Header - Click to toggle */}
+                            <div
+                                onClick={() => toggleDay(day.day)}
+                                className={`flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors ${isExpanded ? 'bg-gray-50/50' : ''}`}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <div className={`flex flex-col items-center justify-center size-12 rounded-xl border transition-colors ${isExpanded
+                                        ? 'bg-purple-600 text-white border-purple-600 shadow-md'
+                                        : 'bg-white text-text-main border-gray-200'
+                                        }`}>
+                                        <span className={`text-[10px] uppercase font-bold tracking-wider ${isExpanded ? 'text-white/80' : 'text-text-muted'}`}>Dia</span>
+                                        <span className="text-xl font-black leading-none">{day.day}</span>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-lg text-text-main">{day.date}</h3>
+                                        <p className="text-sm text-text-muted flex items-center gap-1">
+                                            {day.city ? (
+                                                <>
+                                                    <span className="material-symbols-outlined text-sm text-primary">location_on</span>
+                                                    <span className="font-medium text-text-main">{day.city}</span>
+                                                    <span className="text-gray-300 mx-1">•</span>
+                                                </>
+                                            ) : (
+                                                <span className="material-symbols-outlined text-sm text-gray-400">flag</span>
+                                            )}
+                                            <span>{hasActivities ? `${day.itineraryActivities.length} atividades` : 'Destino da Viagem'}</span>
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="font-bold text-lg text-text-main">{day.date}</h3>
-                                    <p className="text-sm text-text-muted flex items-center gap-1">
-                                        {day.city ? (
-                                            <>
-                                                <span className="material-symbols-outlined text-sm text-primary">location_on</span>
-                                                <span className="font-medium text-text-main">{day.city}</span>
-                                                <span className="text-gray-300 mx-1">•</span>
-                                            </>
-                                        ) : (
-                                            <span className="material-symbols-outlined text-sm text-gray-400">flag</span>
-                                        )}
-                                        <span>{hasActivities ? `${day.itineraryActivities.length} atividades` : 'Destino da Viagem'}</span>
-                                    </p>
+                                <div className={`size-8 rounded-full flex items-center justify-center transition-transform duration-300 ${isExpanded ? 'rotate-180 bg-gray-200' : 'bg-gray-100'}`}>
+                                    <span className="material-symbols-outlined text-text-muted">keyboard_arrow_down</span>
                                 </div>
                             </div>
-                            <div className={`size-8 rounded-full flex items-center justify-center transition-transform duration-300 ${isExpanded ? 'rotate-180 bg-gray-200' : 'bg-gray-100'}`}>
-                                <span className="material-symbols-outlined text-text-muted">keyboard_arrow_down</span>
-                            </div>
-                        </div>
 
-                        {/* Accordion Body */}
-                        <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                            <div className="overflow-hidden">
-                                <div className="p-5 pt-0 border-t border-gray-100">
-                                    <div className="space-y-3 mt-4">
-                                        {hasActivities ? (
-                                            day.itineraryActivities.map((activity) => {
-                                                const config = activityTypeConfig[activity.type];
-                                                const hour = parseInt(activity.time.split(':')[0]);
-                                                const period = hour < 12 ? 'Manhã' : hour < 18 ? 'Tarde' : 'Noite';
+                            {/* Accordion Body */}
+                            <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                                <div className="overflow-hidden">
+                                    <div className="p-5 pt-0 border-t border-gray-100">
+                                        <div className="space-y-3 mt-4">
+                                            {hasActivities ? (
+                                                <SortableContext
+                                                    items={day.itineraryActivities.map(a => a.id)}
+                                                    strategy={verticalListSortingStrategy}
+                                                >
+                                                    {day.itineraryActivities.map((activity) => {
+                                                        const config = activityTypeConfig[activity.type];
+                                                        const hour = parseInt(activity.time.split(':')[0]);
+                                                        const period = hour < 12 ? 'Manhã' : hour < 18 ? 'Tarde' : 'Noite';
 
-                                                return (
-                                                    <div key={activity.id} className="group flex gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all bg-white">
-                                                        {/* Left: Time & Type Decoration */}
-                                                        <div className="flex flex-col items-center gap-2 min-w-[70px] border-r border-gray-100 pr-4">
-                                                            <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide ${config.bgColor} ${config.textColor}`}>
-                                                                {activity.time}
-                                                            </div>
-                                                            <div className="flex-1 w-0.5 bg-gray-100 rounded-full my-1 group-hover:bg-gray-200 transition-colors" />
-                                                            <div className={`size-8 rounded-full flex items-center justify-center shrink-0 ${config.bgColor} text-${config.textColor}`}>
-                                                                <span className={`material-symbols-outlined text-lg ${config.textColor}`}>{config.icon}</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Right: Content */}
-                                                        <div className="flex-1 min-w-0">
-                                                            {/* Header */}
-                                                            <div className="flex items-start justify-between gap-3 mb-2">
-                                                                <div>
-                                                                    <div className="flex items-center gap-2 mb-0.5">
-                                                                        <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">{period} • {config.label}</span>
-                                                                        {activity.completed && (
-                                                                            <span className="flex items-center gap-0.5 text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
-                                                                                <span className="material-symbols-outlined text-[10px]">check</span>
-                                                                                Feito
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <h4 className={`font-bold text-text-main leading-tight ${activity.completed ? 'line-through text-text-muted' : ''}`}>
-                                                                        {activity.title}
-                                                                    </h4>
-                                                                </div>
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); toggleActivityComplete(activity.id); }}
-                                                                    className={`size-6 rounded-lg border flex items-center justify-center shrink-0 transition-all ${activity.completed
-                                                                        ? 'bg-green-500 border-green-500 text-white'
-                                                                        : 'border-gray-200 text-gray-300 hover:border-green-400 hover:text-green-400'
-                                                                        }`}
-                                                                >
-                                                                    <span className="material-symbols-outlined text-sm">check</span>
-                                                                </button>
-                                                            </div>
-
-                                                            {/* Details */}
-                                                            {activity.location && (
-                                                                <div className="flex items-center gap-1.5 text-xs text-text-muted mb-2">
-                                                                    <span className="material-symbols-outlined text-sm shrink-0">location_on</span>
-                                                                    <span className="truncate">{activity.location}</span>
-                                                                    {activity.locationDetail && (
-                                                                        <>
-                                                                            <span className="text-gray-300">•</span>
-                                                                            <span className="truncate">{activity.locationDetail}</span>
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                            )}
-
-                                                            {/* Notes */}
-                                                            {activity.notes && (
-                                                                <div className="p-2 bg-gray-50 rounded-lg text-xs text-gray-600 italic border border-gray-100 mb-2">
-                                                                    {activity.notes}
-                                                                </div>
-                                                            )}
-
-                                                            {/* Image */}
-                                                            {activity.image && (
-                                                                <div className="rounded-lg overflow-hidden mb-2 relative group/image h-32 w-full">
-                                                                    <img src={activity.image} alt={activity.title} className="w-full h-full object-cover" />
-                                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent p-3 flex items-end">
-                                                                        <span className="text-[10px] text-white font-medium bg-black/30 backdrop-blur-md px-2 py-0.5 rounded-full">Foto IA</span>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-
-                                                        </div>
-
-                                                        {/* Actions Bar - Enhanced */}
-                                                        {/* Actions Bar */}
-                                                        <div className="flex items-center flex-wrap gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            {/* Google Maps Link */}
-                                                            <a
-                                                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((activity.location || activity.title) + (day.city ? ` ${day.city}` : ''))}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                                                            >
-                                                                <span className="material-symbols-outlined text-xs">directions</span>
-                                                                Como chegar
-                                                            </a>
-
-                                                            {/* Details Button */}
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openDetailsModal(activity); }}
-                                                                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold text-gray-500 hover:text-purple-600 hover:bg-purple-50 transition-colors"
-                                                            >
-                                                                <span className="material-symbols-outlined text-xs">info</span>
-                                                                Detalhes
-                                                            </button>
-
-                                                            {/* Journal/Review Button */}
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); handleJournalEntry(activity); }}
-                                                                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold text-gray-500 hover:text-orange-600 hover:bg-orange-50 transition-colors"
-                                                            >
-                                                                <span className="material-symbols-outlined text-xs">rate_review</span>
-                                                                Avaliar
-                                                            </button>
-
-                                                            {/* Generate Photo Button */}
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); generateActivityImage(activity.id); }}
-                                                                disabled={activity.isGeneratingImage}
-                                                                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold text-gray-500 hover:text-primary hover:bg-primary/5 transition-colors"
-                                                            >
-                                                                <span className={`material-symbols-outlined text-xs ${activity.isGeneratingImage ? 'animate-spin' : ''}`}>
-                                                                    {activity.isGeneratingImage ? 'progress_activity' : 'auto_awesome'}
-                                                                </span>
-                                                                {activity.isGeneratingImage ? 'Gerando...' : 'Gerar Foto'}
-                                                            </button>
-
-                                                            {/* Edit Button */}
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openEditModal(activity); }}
-                                                                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                                                            >
-                                                                <span className="material-symbols-outlined text-xs">edit</span>
-                                                                Editar
-                                                            </button>
-
-                                                            {/* Delete Button */}
-                                                            {deletingActivityId === activity.id ? (
-                                                                <div className="flex items-center gap-1 ml-1 animate-in fade-in slide-in-from-right-2">
-                                                                    <button onClick={() => handleRemoveActivity(activity.id)} className="size-6 bg-rose-500 text-white rounded flex items-center justify-center hover:bg-rose-600 shadow-sm"><span className="material-symbols-outlined text-[10px]">check</span></button>
-                                                                    <button onClick={() => setDeletingActivityId(null)} className="size-6 bg-gray-200 text-gray-600 rounded flex items-center justify-center hover:bg-gray-300"><span className="material-symbols-outlined text-[10px]">close</span></button>
-                                                                </div>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); setDeletingActivityId(activity.id); }}
-                                                                    className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold text-gray-500 hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                                                                >
-                                                                    <span className="material-symbols-outlined text-xs">delete</span>
-                                                                    Remover
-                                                                </button>
-                                                            )}
-                                                        </div>
+                                                        return (
+                                                            <ItineraryActivityItem
+                                                                key={activity.id}
+                                                                activity={activity}
+                                                                dayCity={day.city}
+                                                                config={config}
+                                                                period={period}
+                                                                onToggleComplete={toggleActivityComplete}
+                                                                onDetails={openDetailsModal}
+                                                                onReview={handleJournalEntry}
+                                                                onGenerateImage={generateActivityImage}
+                                                                onEdit={openEditModal}
+                                                                onDelete={handleRemoveActivity}
+                                                                deletingActivityId={deletingActivityId}
+                                                                setDeletingActivityId={setDeletingActivityId}
+                                                                isConflict={conflicts.has(activity.id)}
+                                                            />
+                                                        );
+                                                    })}
+                                                </SortableContext>
+                                            ) : (
+                                                <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                                    <div className="size-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-gray-300">
+                                                        <span className="material-symbols-outlined text-2xl">event_busy</span>
                                                     </div>
-                                                );
-                                            })
-                                        ) : (
-                                            <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                                <div className="size-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-gray-300">
-                                                    <span className="material-symbols-outlined text-2xl">event_busy</span>
+                                                    <p className="text-sm text-text-muted font-medium">Nenhuma atividade planejada</p>
+                                                    <button
+                                                        onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
+                                                        className="text-xs font-bold text-primary hover:underline mt-1"
+                                                    >
+                                                        Adicionar a primeira
+                                                    </button>
                                                 </div>
-                                                <p className="text-sm text-text-muted font-medium">Nenhuma atividade planejada</p>
+                                            )}
+
+                                            {/* Add Activity Button (Bottom of list) */}
+                                            {hasActivities && (
                                                 <button
                                                     onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
-                                                    className="text-xs font-bold text-primary hover:underline mt-1"
+                                                    className="w-full flex items-center justify-center gap-2 p-3 mt-2 rounded-xl border border-dashed border-gray-300 text-gray-500 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all group"
                                                 >
-                                                    Adicionar a primeira
+                                                    <div className="size-6 rounded-full bg-gray-100 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
+                                                        <span className="material-symbols-outlined text-sm">add</span>
+                                                    </div>
+                                                    <span className="text-xs font-bold">Adicionar atividade no Dia {day.day}</span>
                                                 </button>
-                                            </div>
-                                        )}
-
-                                        {/* Add Activity Button (Bottom of list) */}
-                                        {hasActivities && (
-                                            <button
-                                                onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
-                                                className="w-full flex items-center justify-center gap-2 p-3 mt-2 rounded-xl border border-dashed border-gray-300 text-gray-500 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all group"
-                                            >
-                                                <div className="size-6 rounded-full bg-gray-100 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                                                    <span className="material-symbols-outlined text-sm">add</span>
-                                                </div>
-                                                <span className="text-xs font-bold">Adicionar atividade no Dia {day.day}</span>
-                                            </button>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })}
+
+            </DndContext>
 
             {/* Empty State if no days generated */}
             {
@@ -676,6 +732,14 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                 title={selectedActivityForDetails?.title || ''}
                 location={selectedActivityForDetails?.location}
                 type={selectedActivityForDetails ? activityTypeConfig[selectedActivityForDetails.type]?.label : ''}
+            />
+
+            {/* Journal Modal */}
+            <JournalEntryModal
+                isOpen={journalModalOpen}
+                onClose={() => setJournalModalOpen(false)}
+                activity={selectedActivityForJournal}
+                onSave={handleSaveJournalEntry}
             />
         </div >
     );

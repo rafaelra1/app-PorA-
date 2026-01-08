@@ -11,6 +11,14 @@ export interface WeatherData {
     isNight?: boolean;
 }
 
+export interface ForecastDay {
+    date: string; // YYYY-MM-DD
+    tempMax: number;
+    tempMin: number;
+    condition: string;
+    icon: string;
+}
+
 // WMO Weather interpretation codes (WW)
 // https://open-meteo.com/en/docs
 const WEATHER_CODES: Record<number, { label: string; icon: string }> = {
@@ -39,8 +47,8 @@ const WEATHER_CODES: Record<number, { label: string; icon: string }> = {
 };
 
 // Simple cache to avoid spamming the API on re-renders
-// Key: "city_date" -> Value: WeatherData
 const weatherCache = new Map<string, { data: WeatherData; timestamp: number }>();
+const forecastCache = new Map<string, { data: ForecastDay[]; timestamp: number }>();
 const CACHE_DURATION = 1000 * 60 * 30; // 30 minutes
 
 export const weatherService = {
@@ -101,6 +109,65 @@ export const weatherService = {
 
         } catch (error) {
             console.error('WeatherService Error:', error);
+            return null;
+        }
+    },
+
+    /**
+     * Get 7-day forecast for a city
+     */
+    async getForecast(cityName: string): Promise<ForecastDay[] | null> {
+        if (!cityName) return null;
+
+        const cacheKey = `forecast_${cityName.toLowerCase()}_${new Date().toISOString().slice(0, 10)}`;
+        const cached = forecastCache.get(cacheKey);
+
+        if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
+            return cached.data;
+        }
+
+        try {
+            // 1. Geocode City
+            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=pt&format=json`);
+            const geoData = await geoRes.json();
+
+            if (!geoData.results || geoData.results.length === 0) {
+                console.warn(`WeatherService: City not found for forecast: ${cityName}`);
+                return null;
+            }
+
+            const { latitude, longitude } = geoData.results[0];
+
+            // 2. Fetch 7-day forecast
+            const weatherRes = await fetch(
+                `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7`
+            );
+            const weatherData = await weatherRes.json();
+
+            if (!weatherData.daily) {
+                throw new Error('No daily forecast data in response');
+            }
+
+            const { time, weather_code, temperature_2m_max, temperature_2m_min } = weatherData.daily;
+
+            const forecast: ForecastDay[] = time.map((date: string, i: number) => {
+                const code = weather_code[i];
+                const codeInfo = WEATHER_CODES[code] || { label: 'Desconhecido', icon: 'question_mark' };
+
+                return {
+                    date,
+                    tempMax: Math.round(temperature_2m_max[i]),
+                    tempMin: Math.round(temperature_2m_min[i]),
+                    condition: codeInfo.label,
+                    icon: codeInfo.icon,
+                };
+            });
+
+            forecastCache.set(cacheKey, { data: forecast, timestamp: Date.now() });
+            return forecast;
+
+        } catch (error) {
+            console.error('WeatherService Forecast Error:', error);
             return null;
         }
     }

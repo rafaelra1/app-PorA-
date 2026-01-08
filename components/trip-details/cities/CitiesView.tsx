@@ -6,13 +6,17 @@ interface CitiesViewProps {
     cities: City[];
     onCityClick: (city: City) => void;
     onAddCity: () => void;
+    onEditCity?: (city: City) => void;
+    onDeleteCity?: (city: City) => void;
+    onReorder?: (cities: City[]) => void;
 }
 
-const CitiesView: React.FC<CitiesViewProps> = ({ cities, onCityClick, onAddCity }) => {
+const CitiesView: React.FC<CitiesViewProps> = ({ cities, onCityClick, onAddCity, onEditCity, onDeleteCity, onReorder }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [sortOrder, setSortOrder] = useState<'date' | 'name' | 'nights'>('date');
     const [filter, setFilter] = useState<'all' | 'past' | 'future'>('all');
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
     // Filter and Sort cities
     const filteredCities = useMemo(() => {
@@ -47,6 +51,22 @@ const CitiesView: React.FC<CitiesViewProps> = ({ cities, onCityClick, onAddCity 
     }, [cities, searchQuery, filter, sortOrder]);
 
     const totalNights = cities.reduce((sum, city) => sum + city.nights, 0);
+
+    // Reorder function
+    const moveCity = (cityId: string, direction: 'up' | 'down') => {
+        if (!onReorder) return;
+        const index = cities.findIndex(c => c.id === cityId);
+        if (index === -1) return;
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        if (newIndex < 0 || newIndex >= cities.length) return;
+
+        const reordered = [...cities];
+        [reordered[index], reordered[newIndex]] = [reordered[newIndex], reordered[index]];
+        onReorder(reordered);
+    };
+
+    // Only allow reorder when viewing by date without filters
+    const canReorder = onReorder && !searchQuery && filter === 'all' && sortOrder === 'date';
 
     return (
         <div className="flex flex-col gap-6 animate-in fade-in duration-300">
@@ -148,10 +168,69 @@ const CitiesView: React.FC<CitiesViewProps> = ({ cities, onCityClick, onAddCity 
                                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                                 />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
+                                {/* Action Buttons */}
+                                <div className="absolute top-3 right-3 flex items-center gap-1">
+                                    {/* Reorder Buttons */}
+                                    {canReorder && (
+                                        <div className="flex gap-0.5 bg-black/20 backdrop-blur-md rounded-full px-1">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); moveCity(city.id, 'up'); }}
+                                                disabled={index === 0}
+                                                className="size-6 flex items-center justify-center text-white disabled:opacity-30 hover:bg-white/20 rounded-full transition-colors"
+                                                title="Mover para cima"
+                                            >
+                                                <span className="material-symbols-outlined text-sm">arrow_upward</span>
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); moveCity(city.id, 'down'); }}
+                                                disabled={index === filteredCities.length - 1}
+                                                className="size-6 flex items-center justify-center text-white disabled:opacity-30 hover:bg-white/20 rounded-full transition-colors"
+                                                title="Mover para baixo"
+                                            >
+                                                <span className="material-symbols-outlined text-sm">arrow_downward</span>
+                                            </button>
+                                        </div>
+                                    )}
 
-                                <button className="absolute top-3 right-3 size-8 bg-black/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/40 transition-colors">
-                                    <span className="material-symbols-outlined text-lg">more_vert</span>
-                                </button>
+                                    {/* More Menu */}
+                                    <div className="relative">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setOpenMenuId(openMenuId === city.id ? null : city.id);
+                                            }}
+                                            className="size-8 bg-black/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/40 transition-colors"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">more_vert</span>
+                                        </button>
+
+                                        {openMenuId === city.id && (
+                                            <div
+                                                className="absolute top-10 right-0 w-36 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                {onEditCity && (
+                                                    <button
+                                                        onClick={() => { onEditCity(city); setOpenMenuId(null); }}
+                                                        className="w-full px-4 py-2 text-left text-sm font-medium text-text-main hover:bg-gray-50 flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-base text-blue-500">edit</span>
+                                                        Editar
+                                                    </button>
+                                                )}
+                                                {onDeleteCity && (
+                                                    <button
+                                                        onClick={() => { onDeleteCity(city); setOpenMenuId(null); }}
+                                                        className="w-full px-4 py-2 text-left text-sm font-medium text-rose-600 hover:bg-rose-50 flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-base">delete</span>
+                                                        Excluir
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
 
                                 <div className="absolute bottom-4 left-4 text-white">
                                     {index === 0 && (

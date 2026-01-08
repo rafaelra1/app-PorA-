@@ -2,6 +2,18 @@ import { useState, useCallback } from 'react';
 import { getGeminiService } from '../services/geminiService';
 import { City, CityGuide, GroundingInfo } from '../types';
 
+// =============================================================================
+// Types & Constants
+// =============================================================================
+
+interface CachedCityGuide {
+    guide: CityGuide;
+    cachedAt: number; // timestamp
+}
+
+const CACHE_KEY_PREFIX = 'city-guide-';
+const CACHE_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 interface UseCityGuideReturn {
     cityGuide: CityGuide | null;
     groundingInfo: string;
@@ -9,20 +21,97 @@ interface UseCityGuideReturn {
     isLoadingGuide: boolean;
     isLoadingGrounding: boolean;
     error: string | null;
-    fetchCityGuide: (city: City) => Promise<void>;
+    isCached: boolean;
+    lastUpdated: Date | null;
+    fetchCityGuide: (city: City, forceRefresh?: boolean) => Promise<void>;
     fetchGroundingInfo: (cityName: string) => Promise<void>;
+    invalidateCache: (cityId: string) => void;
     reset: () => void;
 }
 
+// =============================================================================
+// Cache Helper Functions
+// =============================================================================
+
+const getCacheKey = (cityId: string): string => `${CACHE_KEY_PREFIX}${cityId}`;
+
+const getFromCache = (cityId: string): CachedCityGuide | null => {
+    try {
+        const cached = localStorage.getItem(getCacheKey(cityId));
+        if (!cached) return null;
+
+        const parsed: CachedCityGuide = JSON.parse(cached);
+        const age = Date.now() - parsed.cachedAt;
+
+        // Return null if cache is expired
+        if (age > CACHE_DURATION_MS) {
+            localStorage.removeItem(getCacheKey(cityId));
+            return null;
+        }
+
+        return parsed;
+    } catch (error) {
+        console.error('Error reading cache:', error);
+        return null;
+    }
+};
+
+const saveToCache = (cityId: string, guide: CityGuide): void => {
+    try {
+        const cached: CachedCityGuide = {
+            guide,
+            cachedAt: Date.now(),
+        };
+        localStorage.setItem(getCacheKey(cityId), JSON.stringify(cached));
+    } catch (error) {
+        console.error('Error saving to cache:', error);
+        // Handle quota exceeded - clear old caches
+        if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+            clearOldCaches();
+        }
+    }
+};
+
+const clearOldCaches = (): void => {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith(CACHE_KEY_PREFIX));
+    const caches: { key: string; cachedAt: number }[] = [];
+
+    keys.forEach(key => {
+        try {
+            const cached = JSON.parse(localStorage.getItem(key) || '{}');
+            caches.push({ key, cachedAt: cached.cachedAt || 0 });
+        } catch {
+            // Remove invalid entries
+            localStorage.removeItem(key);
+        }
+    });
+
+    // Sort by oldest first and remove half of them
+    caches.sort((a, b) => a.cachedAt - b.cachedAt);
+    const toRemove = Math.ceil(caches.length / 2);
+    caches.slice(0, toRemove).forEach(c => localStorage.removeItem(c.key));
+};
+
+// =============================================================================
+// Main Hook
+// =============================================================================
+
 /**
- * Custom hook for managing city guide data
+ * Custom hook for managing city guide data with localStorage caching
  * Handles fetching city guide information and grounding data from AI service
  * 
- * @returns Object with city guide data, loading states, and fetch functions
+ * Features:
+ * - 7-day cache with automatic expiration
+ * - Force refresh option
+ * - Cache invalidation
+ * 
+ * @returns Object with city guide data, loading states, cache info, and fetch functions
  * 
  * @example
- * const { cityGuide, isLoadingGuide, fetchCityGuide } = useCityGuide();
- * await fetchCityGuide({ name: 'Paris', country: 'France', ... });
+ * const { cityGuide, isLoadingGuide, isCached, fetchCityGuide, invalidateCache } = useCityGuide();
+ * await fetchCityGuide(city); // Uses cache if available
+ * await fetchCityGuide(city, true); // Forces refresh
+ * invalidateCache(city.id); // Clears cache for this city
  */
 export function useCityGuide(): UseCityGuideReturn {
     const [cityGuide, setCityGuide] = useState<CityGuide | null>(null);
@@ -31,15 +120,36 @@ export function useCityGuide(): UseCityGuideReturn {
     const [isLoadingGuide, setIsLoadingGuide] = useState(false);
     const [isLoadingGrounding, setIsLoadingGrounding] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isCached, setIsCached] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-    const fetchCityGuide = useCallback(async (city: City) => {
+    const fetchCityGuide = useCallback(async (city: City, forceRefresh = false) => {
         setIsLoadingGuide(true);
         setError(null);
 
         try {
+            // Check cache first (unless forcing refresh)
+            if (!forceRefresh) {
+                const cached = getFromCache(city.id);
+                if (cached) {
+                    setCityGuide(cached.guide);
+                    setIsCached(true);
+                    setLastUpdated(new Date(cached.cachedAt));
+                    setIsLoadingGuide(false);
+                    return;
+                }
+            }
+
+            // Fetch from API
             const service = getGeminiService();
             const guide = await service.generateCityGuide(city.name, city.country);
+
+            // Save to cache
+            saveToCache(city.id, guide);
+
             setCityGuide(guide);
+            setIsCached(false);
+            setLastUpdated(new Date());
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to fetch city guide';
             setError(errorMessage);
@@ -67,6 +177,15 @@ export function useCityGuide(): UseCityGuideReturn {
         }
     }, []);
 
+    const invalidateCache = useCallback((cityId: string) => {
+        try {
+            localStorage.removeItem(getCacheKey(cityId));
+            setIsCached(false);
+        } catch (error) {
+            console.error('Error invalidating cache:', error);
+        }
+    }, []);
+
     const reset = useCallback(() => {
         setCityGuide(null);
         setGroundingInfo('');
@@ -74,6 +193,8 @@ export function useCityGuide(): UseCityGuideReturn {
         setError(null);
         setIsLoadingGuide(false);
         setIsLoadingGrounding(false);
+        setIsCached(false);
+        setLastUpdated(null);
     }, []);
 
     return {
@@ -83,8 +204,11 @@ export function useCityGuide(): UseCityGuideReturn {
         isLoadingGuide,
         isLoadingGrounding,
         error,
+        isCached,
+        lastUpdated,
         fetchCityGuide,
         fetchGroundingInfo,
+        invalidateCache,
         reset,
     };
 }

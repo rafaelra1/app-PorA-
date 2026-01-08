@@ -1,71 +1,23 @@
 import React, { useRef, useEffect } from 'react';
-
-export interface Notification {
-    id: string;
-    type: 'alert' | 'flight_change' | 'reminder';
-    title: string;
-    description: string;
-    time: string;
-    read: boolean;
-    actionUrl?: string;
-    tripId?: string;
-}
-
-// Mock notifications data
-export const MOCK_NOTIFICATIONS: Notification[] = [
-    {
-        id: '1',
-        type: 'alert',
-        title: 'Alerta de Viagem',
-        description: 'Temperatura baixa prevista em Tóquio. Leve agasalhos!',
-        time: '2 min atrás',
-        read: false,
-        tripId: 'tokyo-trip',
-    },
-    {
-        id: '2',
-        type: 'flight_change',
-        title: 'Alteração de Voo',
-        description: 'Seu voo JJ8765 teve o portão alterado para B12.',
-        time: '15 min atrás',
-        read: false,
-        tripId: 'tokyo-trip',
-    },
-    {
-        id: '3',
-        type: 'reminder',
-        title: 'Lembrete de Check-in',
-        description: 'O check-in online para seu voo abre em 24 horas.',
-        time: '1 hora atrás',
-        read: true,
-        tripId: 'tokyo-trip',
-    },
-    {
-        id: '4',
-        type: 'reminder',
-        title: 'Reserva Confirmada',
-        description: 'Sua reserva no Hotel Shinjuku foi confirmada.',
-        time: '3 horas atrás',
-        read: true,
-        tripId: 'tokyo-trip',
-    },
-    {
-        id: '5',
-        type: 'alert',
-        title: 'Documentos',
-        description: 'Verifique se seu passaporte está válido para a viagem.',
-        time: '1 dia atrás',
-        read: true,
-    },
-];
+import { useNotifications } from '../contexts/NotificationContext';
+import { getTimeAgo, getNotificationIcon, getNotificationIconColor } from '../services/notificationService';
 
 interface NotificationFeedProps {
     isOpen: boolean;
     onClose: () => void;
+    onViewAll?: () => void;
 }
 
-const NotificationFeed: React.FC<NotificationFeedProps> = ({ isOpen, onClose }) => {
+const NotificationFeed: React.FC<NotificationFeedProps> = ({ isOpen, onClose, onViewAll }) => {
     const feedRef = useRef<HTMLDivElement>(null);
+    const {
+        notifications,
+        unreadCount,
+        isLoading,
+        markAsRead,
+        markAllAsRead,
+        deleteNotification,
+    } = useNotifications();
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -93,33 +45,23 @@ const NotificationFeed: React.FC<NotificationFeedProps> = ({ isOpen, onClose }) 
 
     if (!isOpen) return null;
 
-    const getIcon = (type: Notification['type']) => {
-        switch (type) {
-            case 'alert':
-                return 'warning';
-            case 'flight_change':
-                return 'flight';
-            case 'reminder':
-                return 'schedule';
-            default:
-                return 'notifications';
+    const handleNotificationClick = async (id: string, read: boolean, actionUrl?: string) => {
+        if (!read) {
+            await markAsRead(id);
+        }
+        if (actionUrl) {
+            window.open(actionUrl, '_blank');
         }
     };
 
-    const getIconColor = (type: Notification['type']) => {
-        switch (type) {
-            case 'alert':
-                return 'text-orange-500 bg-orange-100';
-            case 'flight_change':
-                return 'text-blue-500 bg-blue-100';
-            case 'reminder':
-                return 'text-green-500 bg-green-100';
-            default:
-                return 'text-gray-500 bg-gray-100';
-        }
+    const handleDelete = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        await deleteNotification(id);
     };
 
-    const unreadCount = MOCK_NOTIFICATIONS.filter(n => !n.read).length;
+    const handleMarkAllRead = async () => {
+        await markAllAsRead();
+    };
 
     return (
         <div
@@ -133,57 +75,100 @@ const NotificationFeed: React.FC<NotificationFeedProps> = ({ isOpen, onClose }) 
                     <h3 className="font-bold text-text-main">Notificações</h3>
                     {unreadCount > 0 && (
                         <span className="bg-secondary text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                            {unreadCount} novas
+                            {unreadCount} {unreadCount === 1 ? 'nova' : 'novas'}
                         </span>
                     )}
                 </div>
-                <button
-                    onClick={onClose}
-                    className="size-7 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors"
-                >
-                    <span className="material-symbols-outlined text-text-muted text-sm">close</span>
-                </button>
+                <div className="flex items-center gap-1">
+                    {unreadCount > 0 && (
+                        <button
+                            onClick={handleMarkAllRead}
+                            className="size-7 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors"
+                            title="Marcar todas como lidas"
+                        >
+                            <span className="material-symbols-outlined text-text-muted text-sm">done_all</span>
+                        </button>
+                    )}
+                    <button
+                        onClick={onClose}
+                        className="size-7 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors"
+                    >
+                        <span className="material-symbols-outlined text-text-muted text-sm">close</span>
+                    </button>
+                </div>
             </div>
 
             {/* Notifications List */}
             <div className="max-h-[400px] overflow-y-auto">
-                {MOCK_NOTIFICATIONS.map((notification) => (
-                    <div
-                        key={notification.id}
-                        className={`px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${!notification.read ? 'bg-primary/5' : ''
-                            }`}
-                    >
-                        <div className="flex gap-3">
-                            <div
-                                className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${getIconColor(
-                                    notification.type
-                                )}`}
-                            >
-                                <span className="material-symbols-outlined text-lg">{getIcon(notification.type)}</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between gap-2">
-                                    <p className={`text-sm font-semibold text-text-main ${!notification.read ? 'font-bold' : ''}`}>
-                                        {notification.title}
-                                    </p>
-                                    {!notification.read && (
-                                        <span className="size-2 bg-secondary rounded-full shrink-0 mt-1.5"></span>
-                                    )}
+                {isLoading ? (
+                    <div className="px-4 py-8 text-center">
+                        <div className="size-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-2" />
+                        <p className="text-xs text-text-muted">Carregando...</p>
+                    </div>
+                ) : notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                        <div className="size-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <span className="material-symbols-outlined text-2xl text-text-muted">notifications_off</span>
+                        </div>
+                        <p className="text-sm font-semibold text-text-main">Nenhuma notificação</p>
+                        <p className="text-xs text-text-muted mt-1">Você está em dia!</p>
+                    </div>
+                ) : (
+                    notifications.slice(0, 10).map((notification) => (
+                        <div
+                            key={notification.id}
+                            onClick={() => handleNotificationClick(notification.id, notification.read, notification.actionUrl)}
+                            className={`px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer group ${!notification.read ? 'bg-primary/5' : ''
+                                }`}
+                        >
+                            <div className="flex gap-3">
+                                <div
+                                    className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${getNotificationIconColor(notification.type)}`}
+                                >
+                                    <span className="material-symbols-outlined text-lg">
+                                        {getNotificationIcon(notification.type)}
+                                    </span>
                                 </div>
-                                <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{notification.description}</p>
-                                <p className="text-[10px] text-text-muted mt-1 font-medium">{notification.time}</p>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <p className={`text-sm font-semibold text-text-main ${!notification.read ? 'font-bold' : ''}`}>
+                                            {notification.title}
+                                        </p>
+                                        <div className="flex items-center gap-1">
+                                            {!notification.read && (
+                                                <span className="size-2 bg-secondary rounded-full shrink-0" />
+                                            )}
+                                            <button
+                                                onClick={(e) => handleDelete(e, notification.id)}
+                                                className="size-5 rounded hover:bg-red-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                                title="Excluir"
+                                            >
+                                                <span className="material-symbols-outlined text-red-500 text-xs">close</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{notification.message}</p>
+                                    <p className="text-[10px] text-text-muted mt-1 font-medium">
+                                        {getTimeAgo(notification.createdAt)}
+                                    </p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    ))
+                )}
             </div>
 
             {/* Footer */}
-            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
-                <button className="w-full text-center text-sm font-semibold text-primary hover:text-primary-dark transition-colors">
-                    Ver todas as notificações
-                </button>
-            </div>
+            {notifications.length > 0 && (
+                <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+                    <button
+                        onClick={onViewAll}
+                        className="w-full text-center text-sm font-semibold text-primary hover:text-primary-dark transition-colors"
+                    >
+                        Ver todas as notificações
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

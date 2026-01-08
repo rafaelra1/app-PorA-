@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { City } from '../../../types';
+import { useLocalStorage } from '../../../hooks/useLocalStorage';
+import { City, CountryInfo, CostOfLiving } from '../../../types';
 import { weatherService, WeatherData } from '../../../services/weatherService';
 import { getFlagsForDestinations } from '../../../lib/countryUtils';
 import {
@@ -12,6 +13,9 @@ import {
 import { Card } from '../../ui/Base';
 import WhatToKnowModal from '../modals/WhatToKnowModal';
 import { getGeminiService } from '../../../services/geminiService';
+import CountryInfoCard from './CountryInfoCard';
+import WeatherForecastWidget from './WeatherForecastWidget';
+import LocalEventsWidget from './LocalEventsWidget';
 
 interface InfoTabProps {
     city: City;
@@ -68,13 +72,21 @@ const InfoTab: React.FC<InfoTabProps> = ({
     const editorRef = useRef<HTMLDivElement>(null);
     const [isEditing, setIsEditing] = useState(false);
 
-    // Notes state
-    const [userNotes, setUserNotes] = useState('Adicione suas notas pessoais aqui...');
+    // Notes state - persisted to localStorage per city
+    const [userNotes, setUserNotes] = useLocalStorage(
+        `city-notes-${city.id}`,
+        'Adicione suas notas pessoais aqui...'
+    );
     const [isEditingNotes, setIsEditingNotes] = useState(false);
 
     // Weather state
     const [weather, setWeather] = useState<WeatherData | null>(null);
     const [isLoadingWeather, setIsLoadingWeather] = useState(false);
+
+    // Country Info and Cost of Living state
+    const [countryInfo, setCountryInfo] = useState<CountryInfo | null>(null);
+    const [costOfLiving, setCostOfLiving] = useState<CostOfLiving | null>(null);
+    const [isLoadingCountryInfo, setIsLoadingCountryInfo] = useState(false);
 
     // Fetch Weather
     useEffect(() => {
@@ -97,6 +109,44 @@ const InfoTab: React.FC<InfoTabProps> = ({
 
         return () => { isMounted = false; };
     }, [city.name]);
+
+    // Fetch Country Info and Cost of Living
+    useEffect(() => {
+        let isMounted = true;
+
+        const fetchCountryInfo = async () => {
+            if (!city.country) return;
+
+            // Check if city already has this data
+            if (city.countryInfo) {
+                setCountryInfo(city.countryInfo);
+                setCostOfLiving(city.costOfLiving || null);
+                return;
+            }
+
+            setIsLoadingCountryInfo(true);
+            try {
+                const gemini = getGeminiService();
+                const [info, cost] = await Promise.all([
+                    gemini.generateCountryInfo(city.country),
+                    gemini.generateCostOfLiving(city.name, city.country)
+                ]);
+
+                if (isMounted) {
+                    setCountryInfo(info);
+                    setCostOfLiving(cost);
+                }
+            } catch (err) {
+                console.error("Failed to load country info", err);
+            } finally {
+                if (isMounted) setIsLoadingCountryInfo(false);
+            }
+        };
+
+        fetchCountryInfo();
+
+        return () => { isMounted = false; };
+    }, [city.id, city.country]);
 
     // Sync content
     useEffect(() => {
@@ -309,6 +359,27 @@ const InfoTab: React.FC<InfoTabProps> = ({
                             </button>
                         </div>
                     </div>
+
+                    {/* Country Info Card */}
+                    <CountryInfoCard
+                        countryInfo={countryInfo}
+                        costOfLiving={costOfLiving}
+                        countryName={city.country}
+                        isLoading={isLoadingCountryInfo}
+                    />
+
+                    {/* Extended Weather Forecast */}
+                    <WeatherForecastWidget
+                        cityName={city.name}
+                        arrivalDate={city.arrivalDate}
+                        departureDate={city.departureDate}
+                    />
+
+                    {/* Local Events Widget */}
+                    <LocalEventsWidget
+                        cityName={city.name}
+                        dates={`${new Date(city.arrivalDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })} a ${new Date(city.departureDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}`}
+                    />
 
                     {/* Accommodation Widget */}
                     <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm">

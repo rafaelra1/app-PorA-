@@ -29,6 +29,19 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const selectedTrip = trips.find(t => t.id === selectedTripId) || null;
 
+    // Load from cache on mount
+    useEffect(() => {
+        const cached = localStorage.getItem('pora_trips_cache');
+        if (cached) {
+            try {
+                const parsed = JSON.parse(cached);
+                setTripsState(parsed);
+            } catch (e) {
+                console.error("Failed to load cached trips", e);
+            }
+        }
+    }, []);
+
     // Fetch trips when user changes
     useEffect(() => {
         if (!user) {
@@ -50,7 +63,6 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
                 if (data) {
                     // Map db rows back to Trip objects
-                    // We merge top-level columns with the JSONB 'data' column
                     const loadedTrips: Trip[] = data.map(row => ({
                         id: row.id,
                         title: row.title,
@@ -62,9 +74,12 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         ...row.data // Spread the complex JSONB data
                     }));
                     setTripsState(loadedTrips);
+                    // Update cache
+                    localStorage.setItem('pora_trips_cache', JSON.stringify(loadedTrips));
                 }
             } catch (error) {
                 console.error('Error fetching trips:', error);
+                // If error (offline), we rely on the initial cache load or existing state
             } finally {
                 setIsLoading(false);
             }

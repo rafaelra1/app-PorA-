@@ -41,6 +41,7 @@ import TipsTab from '../components/trip-details/city-guide/TipsTab';
 import ImageEditorModal from '../components/trip-details/modals/ImageEditorModal';
 import AttractionDetailModal from '../components/trip-details/modals/AttractionDetailModal';
 import AddCityModal from '../components/trip-details/modals/AddCityModal';
+import EditCityModal from '../components/trip-details/modals/EditCityModal';
 import AddAttractionModal from '../components/trip-details/modals/AddAttractionModal';
 import AttractionMapModal from '../components/trip-details/modals/AttractionMapModal';
 import AddDocumentModal from '../components/trip-details/modals/AddDocumentModal';
@@ -50,6 +51,7 @@ import AddAccommodationModal from '../components/trip-details/modals/AddAccommod
 import AddTransportModal from '../components/trip-details/modals/AddTransportModal';
 import { AccommodationProvider, useAccommodation } from '../contexts/AccommodationContext';
 import { TransportProvider, useTransport } from '../contexts/TransportContext';
+import { ItineraryProvider, useItinerary } from '../contexts/ItineraryContext';
 import TransportView from '../components/trip-details/transport/TransportView';
 import Modal from '../components/trip-details/modals/Modal';
 import { Button } from '../components/ui/Base';
@@ -71,7 +73,22 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   const [itinerary, setItinerary] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [itineraryActivities, setItineraryActivities] = useLocalStorage<ItineraryActivity[]>(`porai_trip_${trip.id}_itinerary_activities`, []);
+  // Itinerary state (Context)
+  const {
+    activities: itineraryActivities,
+    fetchActivities,
+    addActivity,
+    updateActivity,
+    deleteActivity,
+    migrateFromLocalStorage: migrateActivities
+  } = useItinerary();
+
+  // Migration check for activities
+  useEffect(() => {
+    if (trip.id) {
+      migrateActivities(trip.id);
+    }
+  }, [trip.id, migrateActivities]);
 
   // Cities state
   const [cities, setCities] = useLocalStorage<City[]>(`porai_trip_${trip.id}_cities`, []);
@@ -202,6 +219,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   useEffect(() => {
     if (trip.id) {
       fetchTransportsContext(trip.id);
+      fetchActivities(trip.id);
     }
   }, [trip.id]);
 
@@ -399,6 +417,37 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
     };
     setCities(prev => [...prev, newCity]);
   };
+
+  // Edit City State and Handlers
+  const [editingCity, setEditingCity] = useState<City | null>(null);
+  const [isEditCityModalOpen, setIsEditCityModalOpen] = useState(false);
+  const [deletingCity, setDeletingCity] = useState<City | null>(null);
+
+  const handleEditCity = (city: City) => {
+    setEditingCity(city);
+    setIsEditCityModalOpen(true);
+  };
+
+  const handleUpdateCity = (updatedCity: City) => {
+    setCities(prev => prev.map(c => c.id === updatedCity.id ? updatedCity : c));
+    setEditingCity(null);
+    setIsEditCityModalOpen(false);
+  };
+
+  const handleDeleteCity = (city: City) => {
+    setDeletingCity(city);
+  };
+
+  const handleConfirmDeleteCity = () => {
+    if (deletingCity) {
+      setCities(prev => prev.filter(c => c.id !== deletingCity.id));
+      setDeletingCity(null);
+    }
+  };
+
+  const handleReorderCities = (reorderedCities: City[]) => {
+    setCities(reorderedCities);
+  };
   const handleAddDocument = (newDoc: any) => {
     const docWithId = { ...newDoc, id: Math.random().toString(36).substr(2, 9), status: 'confirmed' };
     setExtraDocuments(prev => [...prev, docWithId]);
@@ -546,8 +595,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
       day = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     }
 
-    const newActivity: ItineraryActivity = {
-      id: `act-${Date.now()}`,
+    const newActivity: Omit<ItineraryActivity, 'id'> = {
       day: day,
       date: data.date.includes('-') ? formatToDisplayDate(data.date) : data.date,
       time: data.time || '12:00',
@@ -560,7 +608,9 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
       // Store category in notes or extended metadata if needed in future
     };
 
-    setItineraryActivities(prev => [...prev, newActivity]);
+    if (trip.id) {
+      addActivity(trip.id, newActivity);
+    }
   };
 
   // Computed expense values
@@ -683,14 +733,18 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
           itinerary={itinerary}
           activities={activities}
           customActivities={itineraryActivities}
-          onUpdateCustomActivities={setItineraryActivities}
+          onUpdateCustomActivities={() => { }} // Deprecated, will be removed
+          onDeleteActivity={(id) => { if (trip.id) deleteActivity(trip.id, id); }}
+          onUpdateActivity={(act) => { if (trip.id) updateActivity(trip.id, act); }}
+          onAddActivity={(act) => { if (trip.id) addActivity(trip.id, act); }}
           isGenerating={isGenerating}
           onGenerate={handleGenerateItinerary}
+          onOpenAddActivityModal={handleOpenAddActivityModal}
           tripStartDate={trip.startDate}
           tripEndDate={trip.endDate}
           hotels={hotels}
           transports={transports}
-          cities={cities} // Passing cities to help populate day headers
+          cities={cities}
         />;
       case 'accommodation':
         let displayedHotels = accommodationFilter === 'all'
@@ -1133,7 +1187,50 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         onAdd={handleAddCity}
         tripStartDate={trip.startDate}
         tripEndDate={trip.endDate}
+        existingCities={cities}
       />
+
+      <EditCityModal
+        isOpen={isEditCityModalOpen}
+        onClose={() => {
+          setIsEditCityModalOpen(false);
+          setEditingCity(null);
+        }}
+        onUpdate={handleUpdateCity}
+        city={editingCity}
+        tripStartDate={trip.startDate}
+        tripEndDate={trip.endDate}
+        existingCities={cities}
+      />
+
+      <Modal
+        isOpen={!!deletingCity}
+        onClose={() => setDeletingCity(null)}
+        title={`Excluir ${deletingCity?.name || 'Cidade'}?`}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => setDeletingCity(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" className="bg-rose-600 hover:bg-rose-700 text-white" onClick={handleConfirmDeleteCity}>
+              Excluir
+            </Button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <p className="text-gray-600">
+            Tem certeza que deseja excluir <strong>{deletingCity?.name}</strong> do roteiro?
+          </p>
+          <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-2">
+            <span className="material-symbols-outlined text-amber-500 mt-0.5">warning</span>
+            <p className="text-sm text-amber-700">
+              Atrações, restaurantes e notas salvas para esta cidade serão perdidos.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
 
       <AddDocumentModal
         isOpen={isAddDocumentModalOpen}
@@ -1249,7 +1346,9 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
 const TripDetails: React.FC<TripDetailsProps> = (props) => (
   <AccommodationProvider>
     <TransportProvider>
-      <TripDetailsContent {...props} />
+      <ItineraryProvider>
+        <TripDetailsContent {...props} />
+      </ItineraryProvider>
     </TransportProvider>
   </AccommodationProvider>
 );
