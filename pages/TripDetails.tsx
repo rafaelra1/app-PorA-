@@ -25,7 +25,7 @@ import { getGeminiService } from '../services/geminiService';
 
 // Existing Trip Details Components
 import TripDetailsHeader from '../components/trip-details/TripDetailsHeader';
-import TripTabs from '../components/trip-details/TripTabs';
+import TripSidebar from '../components/trip-details/TripSidebar';
 import ItineraryView from '../components/trip-details/itinerary/ItineraryView';
 import CitiesView from '../components/trip-details/cities/CitiesView';
 import DocumentsView from '../components/trip-details/documents/DocumentsView';
@@ -1155,13 +1155,56 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
     }
   };
 
+  // Section titles mapping
+  const sectionTitles: Record<SubTab, string> = {
+    overview: 'Overview',
+    itinerary: 'Itinerário',
+    accommodation: 'Hospedagem',
+    transport: 'Transportes',
+    docs: 'Documentos',
+    budget: 'Despesas',
+    journal: 'Diário',
+    cities: 'Cidades',
+  };
+
+  // Trip stats for sidebar badges
+  const tripStats = {
+    cities: cities.length,
+    days: trip.startDate && trip.endDate ? calculateNights(trip.startDate, trip.endDate) + 1 : 0,
+    hotels: hotels.length,
+    transports: transports.length,
+    documents: extraDocuments.length,
+    expenses: expenses.length,
+    activities: itineraryActivities.length,
+  };
+
   return (
     <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-500">
       <TripDetailsHeader trip={trip} onBack={onBack} onEdit={onEdit} onShare={() => setIsShareModalOpen(true)} />
-      <div className="flex-1 overflow-y-auto relative h-full scroll-smooth">
-        <TripTabs activeTab={activeSubTab} onTabChange={setActiveSubTab} />
-        <div className="p-6 md:p-8 pb-32 space-y-8">
-          {renderTripDetailContent()}
+
+      {/* Main Content Area with Sidebar */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Trip Sidebar */}
+        <TripSidebar
+          activeTab={activeSubTab}
+          onTabChange={setActiveSubTab}
+          tripStats={tripStats}
+          onBack={onBack}
+        />
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto relative scroll-smooth bg-gray-50/30">
+          {/* Section Header */}
+          <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 md:px-8 py-4">
+            <h2 className="text-2xl font-bold text-gray-900">
+              {sectionTitles[activeSubTab] || 'Overview'}
+            </h2>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 md:p-8 pb-32 space-y-8">
+            {renderTripDetailContent()}
+          </div>
         </div>
       </div>
 
