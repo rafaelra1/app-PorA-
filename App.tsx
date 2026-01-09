@@ -148,7 +148,7 @@ const AppContent: React.FC = () => {
 
       {/* Main Content - Full Width */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
+        <div className="max-w-screen-2xl mx-auto px-4 md:px-8 lg:px-12 py-6">
           {renderContent()}
         </div>
       </main>

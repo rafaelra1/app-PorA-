@@ -259,7 +259,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
 
   return (
     <div className="min-h-screen bg-background-light -m-6 p-6">
-      <div className="flex flex-col gap-6 max-w-7xl mx-auto">
+      <div className="flex flex-col gap-6">
 
         {/* ========== HEADER ========== */}
         <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-2">

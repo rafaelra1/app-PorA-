@@ -23,7 +23,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ activeTab, onTabChange, o
 
     return (
         <header className="bg-white border-b border-gray-100 flex-none relative z-[100]">
-            <div className="max-w-7xl mx-auto px-4 md:px-6">
+            <div className="max-w-screen-2xl mx-auto px-4 md:px-8 lg:px-12">
                 <div className="flex items-center justify-between h-16">
                     {/* Left: Logo */}
                     <div className="flex items-center gap-2 shrink-0">
