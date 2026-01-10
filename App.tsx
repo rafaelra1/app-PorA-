@@ -20,6 +20,7 @@ const Login = lazy(() => import('./pages/Login'));
 // Lazy load heavy components
 const AddTripModal = lazy(() => import('./components/AddTripModal'));
 const Chatbot = lazy(() => import('./components/Chatbot'));
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { TripProvider, useTrips } from './contexts/TripContext';
 import { UIProvider, useUI } from './contexts/UIContext';
 import { AIProvider } from './contexts/AIContext';
@@ -51,7 +52,11 @@ const AppContent: React.FC = () => {
 
   // Show login page if not authenticated
   if (!isAuthenticated) {
-    return <Login />;
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Login />
+      </Suspense>
+    );
   }
 
   const handleAddTrip = async (newTrip: Omit<Trip, 'id'> | Trip) => {
@@ -233,27 +238,29 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <TripProvider>
-          <CalendarProvider>
-            <CurrencyProvider>
-              <ChecklistProvider>
-                <UIProvider>
-                  <AIProvider>
-                    <NotificationProvider>
-                      <ToastProvider>
-                        <AppContent />
-                      </ToastProvider>
-                    </NotificationProvider>
-                  </AIProvider>
-                </UIProvider>
-              </ChecklistProvider>
-            </CurrencyProvider>
-          </CalendarProvider>
-        </TripProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider>
+          <TripProvider>
+            <CalendarProvider>
+              <CurrencyProvider>
+                <ChecklistProvider>
+                  <UIProvider>
+                    <AIProvider>
+                      <NotificationProvider>
+                        <ToastProvider>
+                          <AppContent />
+                        </ToastProvider>
+                      </NotificationProvider>
+                    </AIProvider>
+                  </UIProvider>
+                </ChecklistProvider>
+              </CurrencyProvider>
+            </CalendarProvider>
+          </TripProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 };
 

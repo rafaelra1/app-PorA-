@@ -18,6 +18,17 @@ export const googleAuthService = {
     async init() {
         if (gapiInited && gisInited) return;
 
+        // Wait for scripts to load if not yet available
+        if (!(window as any).gapi || !(window as any).google) {
+            await new Promise((resolve) => {
+                const check = () => {
+                    if ((window as any).gapi && (window as any).google) resolve(true);
+                    else setTimeout(check, 100);
+                };
+                check();
+            });
+        }
+
         return new Promise<void>((resolve) => {
             const checkInit = () => {
                 if (gapiInited && gisInited) resolve();
