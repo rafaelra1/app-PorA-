@@ -13,7 +13,7 @@ interface GastronomyTabProps {
     isLoadingGuide: boolean;
     onEditImage: (type: 'dish', index: number, data: any) => void;
     cityName?: string;
-    onAddToItinerary?: (data: { itemName: string; itemType: 'restaurant' | 'attraction'; date: string; time: string; notes?: string }) => void;
+    onAddToItinerary?: (data: { itemName: string; itemType: 'restaurant' | 'attraction'; date: string; time: string; notes?: string; address?: string; image?: string; category?: string }) => void;
     onTabChange?: (tab: 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map') => void;
     tripStartDate?: string;
     tripEndDate?: string;
@@ -165,7 +165,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
         setSelectedRestaurant(null); // Close detail modal
     };
 
-    const handleConfirmAddToItinerary = (data: { itemName: string; itemType: 'restaurant' | 'attraction'; date: string; time: string; notes?: string }) => {
+    const handleConfirmAddToItinerary = (data: { itemName: string; itemType: 'restaurant' | 'attraction'; date: string; time: string; notes?: string; address?: string }) => {
         if (onAddToItinerary) {
             onAddToItinerary({
                 ...data,

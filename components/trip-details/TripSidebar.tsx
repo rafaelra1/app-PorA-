@@ -89,6 +89,13 @@ const TripSidebar: React.FC<TripSidebarProps> = ({
             iconColor: 'text-sky-500',
         },
         {
+            id: 'map',
+            label: 'Mapa 3D',
+            icon: 'explore',
+            gradient: 'from-emerald-500 to-teal-600',
+            iconColor: 'text-emerald-500',
+        },
+        {
             id: 'logistics',
             label: 'Logística',
             icon: 'layers',

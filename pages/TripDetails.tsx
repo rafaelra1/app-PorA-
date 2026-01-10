@@ -62,6 +62,7 @@ import AddActivityModal from '../components/trip-details/modals/AddActivityModal
 import { useChecklist } from '../contexts/ChecklistContext';
 
 import { TaskChecklist } from '../components/trip-details/city-guide/TaskChecklist';
+import TripMapExplorer from '../components/trip-details/maps/TripMapExplorer';
 
 interface TripDetailsProps {
   trip: Trip;
@@ -837,6 +838,15 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
           cities={cities}
           isLoading={isLoadingItinerary}
         />;
+      case 'map':
+        return (
+          <TripMapExplorer
+            activities={itineraryActivities}
+            hotels={hotels}
+            transports={transports}
+            cities={cities}
+          />
+        );
       case 'logistics':
         return (
           <LogisticsView
@@ -888,6 +898,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
     overview: 'Overview',
     checklist: 'Checklist',
     itinerary: 'Itinerário',
+    map: 'Mapa 3D',
     accommodation: 'Hospedagem',
     transport: 'Transportes',
     docs: 'Documentos',

@@ -8,6 +8,7 @@ import ActivityDetailsModal from '../modals/ActivityDetailsModal';
 import { JournalEntryModal } from '../modals/JournalEntryModal';
 import { formatDate, parseDisplayDate } from '../../../lib/dateUtils';
 import { generateItineraryFromDocuments, identifyItineraryGaps } from '../../../services/itineraryGenerationService';
+import { googleCalendarService } from '../../../services/googleCalendarService';
 import { useNotifications } from '../../../contexts/NotificationContext';
 import {
     DndContext,
@@ -91,7 +92,21 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     const [editingActivity, setEditingActivity] = useState<ItineraryActivity | null>(null);
     const [deletingActivityId, setDeletingActivityId] = useState<string | null>(null);
     const [isSyncingDocs, setIsSyncingDocs] = useState(false);
+    const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
     const { preferences } = useNotifications();
+
+    const handleSyncGoogleCalendar = async () => {
+        setIsSyncingCalendar(true);
+        try {
+            await googleCalendarService.syncTrip(customActivities, hotels, transports);
+            alert('Roteiro sincronizado com sucesso com o Google Agenda!');
+        } catch (error) {
+            console.error('Falha ao sincronizar agenda:', error);
+            alert('Não foi possível sincronizar com o Google Agenda. Certifique-se de autorizar o acesso.');
+        } finally {
+            setIsSyncingCalendar(false);
+        }
+    };
 
     const handleSyncDocuments = async () => {
         if (!tripStartDate || isSyncingDocs) return;
@@ -715,6 +730,17 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                     >
                         <span className="material-symbols-outlined text-base">auto_awesome</span>
                         Sincronizar Documentos
+                    </button>
+
+                    <button
+                        onClick={handleSyncGoogleCalendar}
+                        disabled={isSyncingCalendar}
+                        className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-text-main hover:bg-gray-50 text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                    >
+                        <span className={`material-symbols-outlined text-base text-blue-600 ${isSyncingCalendar ? 'animate-spin' : ''}`}>
+                            {isSyncingCalendar ? 'sync' : 'calendar_today'}
+                        </span>
+                        {isSyncingCalendar ? 'Sincronizando...' : 'Sincronizar Agenda'}
                     </button>
                 </div>
             </div>

@@ -23,6 +23,10 @@ const TYPE_CONFIG: Record<DocumentType, { icon: string; label: string; color: st
     flight: { icon: 'flight', label: 'Voo', color: 'text-blue-600', bgColor: 'bg-blue-50' },
     hotel: { icon: 'hotel', label: 'Hotel', color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
     car: { icon: 'directions_car', label: 'Carro', color: 'text-purple-600', bgColor: 'bg-purple-50' },
+    train: { icon: 'train', label: 'Trem', color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
+    bus: { icon: 'directions_bus', label: 'Ônibus', color: 'text-amber-600', bgColor: 'bg-amber-50' },
+    transfer: { icon: 'airport_shuttle', label: 'Transfer', color: 'text-slate-600', bgColor: 'bg-slate-50' },
+    ferry: { icon: 'directions_boat', label: 'Ferry', color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
     insurance: { icon: 'health_and_safety', label: 'Seguro', color: 'text-green-600', bgColor: 'bg-green-50' },
     activity: { icon: 'local_activity', label: 'Atividade', color: 'text-orange-600', bgColor: 'bg-orange-50' },
     passport: { icon: 'badge', label: 'Passaporte', color: 'text-rose-600', bgColor: 'bg-rose-50' },
@@ -252,6 +256,15 @@ const DocumentCardComponent: React.FC<DocumentCardProps> = ({
                             >
                                 <span className="material-symbols-outlined text-sm">call</span>
                             </a>
+                        )}
+                        {(document.type === 'flight' || document.type === 'hotel') && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); alert('Adicionando ao Google Wallet...'); }}
+                                className="p-1.5 rounded-lg bg-gray-900 text-white hover:bg-black transition-colors"
+                                title="Adicionar ao Google Wallet"
+                            >
+                                <span className="material-symbols-outlined text-sm">wallet</span>
+                            </button>
                         )}
 
                         {/* View Document */}

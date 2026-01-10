@@ -13,6 +13,7 @@ interface AddToItineraryModalProps {
         category?: string;
         type: 'restaurant' | 'attraction';
         subcategory?: string;
+        address?: string;
     } | null;
     onConfirm: (data: {
         itemName: string;
@@ -20,6 +21,7 @@ interface AddToItineraryModalProps {
         date: string;
         time: string;
         notes?: string;
+        address?: string;
     }) => void;
     minDate?: string;
     maxDate?: string;
@@ -60,7 +62,8 @@ const AddToItineraryModal: React.FC<AddToItineraryModalProps> = ({
             itemType: item.type,
             date,
             time,
-            notes: notes.trim() || undefined
+            notes: notes.trim() || undefined,
+            address: item.address
         });
 
         onClose();
