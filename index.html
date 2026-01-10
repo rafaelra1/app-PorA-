@@ -15,7 +15,7 @@
     <script src="https://apis.google.com/js/api.js" async defer></script>
     <script>
         // Polyfill para process.env para evitar white screen
-        window.process = { env: { API_KEY: "" } };
+        window.process = { env: { API_KEY: "", NODE_ENV: "production" } };
     </script>
     <style>
         /* Minimal inline styles - most styles now in /styles directory */
