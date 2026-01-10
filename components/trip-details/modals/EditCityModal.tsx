@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import * as React from 'react';
+const { useState, useEffect, useCallback, useMemo } = React;
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
 import { Textarea } from '../../ui/Textarea';
@@ -169,7 +170,7 @@ const EditCityModal: React.FC<EditCityModalProps> = ({
             isOpen={isOpen}
             onClose={onClose}
             title={`Editar ${city.name}`}
-            size="md"
+            size="lg"
             footer={footer}
         >
             <form id="edit-city-form" onSubmit={handleSubmit} className="space-y-6">

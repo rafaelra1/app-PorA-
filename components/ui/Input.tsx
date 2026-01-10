@@ -24,6 +24,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             fullWidth = false,
             className = '',
             disabled,
+            required,
             ...props
         },
         ref
@@ -38,11 +39,23 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 
         const iconPadding = leftIcon ? 'pl-12' : rightIcon ? 'pr-12' : '';
 
+        const inputId = props.id || `input-${Math.random().toString(36).substr(2, 9)}`;
+        const errorId = error ? `${inputId}-error` : undefined;
+
         return (
             <div className={`${widthStyles}`}>
                 {label && (
-                    <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">
+                    <label
+                        htmlFor={inputId}
+                        className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider"
+                    >
                         {label}
+                        {required && (
+                            <>
+                                <span aria-hidden="true" className="text-red-500 ml-0.5">*</span>
+                                <span className="sr-only">(obrigatório)</span>
+                            </>
+                        )}
                     </label>
                 )}
                 <div className="relative">
@@ -53,7 +66,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
                     )}
                     <input
                         ref={ref}
+                        id={inputId}
                         disabled={disabled}
+                        required={required}
+                        aria-required={required}
+                        aria-invalid={!!error}
+                        aria-describedby={errorId}
                         className={`
               ${baseStyles}
               ${error ? errorStyles : normalStyles}
@@ -70,7 +88,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
                         </div>
                     )}
                 </div>
-                {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+                {error && (
+                    <p id={errorId} role="alert" className="mt-1 text-xs text-red-600">
+                        {error}
+                    </p>
+                )}
                 {helperText && !error && (
                     <p className="mt-1 text-xs text-text-muted">{helperText}</p>
                 )}

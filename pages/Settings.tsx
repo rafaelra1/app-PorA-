@@ -1,36 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button } from '../components/ui/Base';
+import { Switch } from '../components/ui/Switch';
 import { useNotifications } from '../contexts/NotificationContext';
-
-interface ToggleSwitchProps {
-    enabled: boolean;
-    onChange: (enabled: boolean) => void;
-    label: string;
-    description?: string;
-    disabled?: boolean;
-}
-
-const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ enabled, onChange, label, description, disabled }) => {
-    return (
-        <div className="flex items-center justify-between py-3">
-            <div className="flex-1">
-                <p className="text-sm font-bold text-text-main">{label}</p>
-                {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
-            </div>
-            <button
-                onClick={() => onChange(!enabled)}
-                disabled={disabled}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-primary' : 'bg-gray-200'
-                    } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-                <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                />
-            </button>
-        </div>
-    );
-};
 
 const Settings: React.FC = () => {
     const { preferences, preferencesLoading, updatePreferences } = useNotifications();
@@ -41,7 +12,8 @@ const Settings: React.FC = () => {
         documentAlerts: true,
         journalActivity: false,
         emailNotifications: true,
-        pushNotifications: false
+        pushNotifications: false,
+        autoCreateEntities: false
     });
 
     const [display, setDisplay] = useState({
@@ -56,6 +28,11 @@ const Settings: React.FC = () => {
         shareData: true
     });
 
+    const [aiSettings, setAiSettings] = useState({
+        autoAnalyze: true,
+        threshold: 14
+    });
+
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -68,6 +45,7 @@ const Settings: React.FC = () => {
                 journalActivity: preferences.journalActivity,
                 emailNotifications: preferences.emailNotifications,
                 pushNotifications: preferences.pushNotifications,
+                autoCreateEntities: preferences.autoCreateEntities || false,
             });
         }
     }, [preferences]);
@@ -87,6 +65,7 @@ const Settings: React.FC = () => {
                 journalActivity: notifications.journalActivity,
                 emailNotifications: notifications.emailNotifications,
                 pushNotifications: notifications.pushNotifications,
+                autoCreateEntities: notifications.autoCreateEntities,
             });
             setSaveMessage({ type: 'success', text: 'Configurações salvas com sucesso!' });
 
@@ -123,11 +102,11 @@ const Settings: React.FC = () => {
                         {isSaving ? (
                             <>
                                 <span className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                Salvando...
+                                <span className="ml-2">Salvando...</span>
                             </>
                         ) : (
                             <>
-                                <span className="material-symbols-outlined text-lg">save</span>
+                                <span className="material-symbols-outlined text-lg mr-2">save</span>
                                 Salvar Alterações
                             </>
                         )}
@@ -176,36 +155,72 @@ const Settings: React.FC = () => {
                     <h4 className="text-xl font-bold text-text-main">Notificações</h4>
                 </div>
                 <div className="divide-y divide-gray-100">
-                    <ToggleSwitch
-                        enabled={notifications.tripReminders}
+                    <Switch
+                        checked={notifications.tripReminders}
                         onChange={() => handleNotificationChange('tripReminders')}
                         label="Lembretes de Viagem"
                         description="Receba notificações antes das suas viagens"
                     />
-                    <ToggleSwitch
-                        enabled={notifications.documentAlerts}
+                    <Switch
+                        checked={notifications.documentAlerts}
                         onChange={() => handleNotificationChange('documentAlerts')}
                         label="Alertas de Documentos"
                         description="Avisos sobre vencimento de documentos"
                     />
-                    <ToggleSwitch
-                        enabled={notifications.journalActivity}
+                    <Switch
+                        checked={notifications.journalActivity}
                         onChange={() => handleNotificationChange('journalActivity')}
                         label="Atividade do Diário"
                         description="Notificações de curtidas e comentários"
                     />
-                    <ToggleSwitch
-                        enabled={notifications.emailNotifications}
+                    <Switch
+                        checked={notifications.emailNotifications}
                         onChange={() => handleNotificationChange('emailNotifications')}
                         label="Notificações por Email"
                         description="Receba atualizações por email"
                     />
-                    <ToggleSwitch
-                        enabled={notifications.pushNotifications}
+                    <Switch
+                        checked={notifications.pushNotifications}
                         onChange={() => handleNotificationChange('pushNotifications')}
                         label="Notificações Push"
                         description="Notificações no navegador"
                     />
+                    <Switch
+                        checked={notifications.autoCreateEntities}
+                        onChange={() => handleNotificationChange('autoCreateEntities')}
+                        label="Sincronização Automática"
+                        description="Criar transportes e hospedagens automaticamente ao adicionar documentos"
+                    />
+                </div>
+            </Card>
+
+            {/* AI Settings */}
+            <Card className="p-6">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="size-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                        <span className="material-symbols-outlined">auto_awesome</span>
+                    </div>
+                    <h4 className="text-xl font-bold text-text-main">Inteligência Artificial</h4>
+                </div>
+                <div className="divide-y divide-gray-100">
+                    <Switch
+                        checked={aiSettings.autoAnalyze}
+                        onChange={() => setAiSettings({ ...aiSettings, autoAnalyze: !aiSettings.autoAnalyze })}
+                        label="Análise Automática de Checklist"
+                        description="Sugere tarefas automaticamente baseadas no seu destino"
+                    />
+                    <div className="py-4">
+                        <label className="text-sm font-bold text-text-main mb-2 block text-sm">Antecedência da Análise</label>
+                        <select
+                            value={aiSettings.threshold}
+                            onChange={(e) => setAiSettings({ ...aiSettings, threshold: parseInt(e.target.value) })}
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary cursor-pointer text-sm"
+                        >
+                            <option value={7}>7 dias antes da viagem</option>
+                            <option value={14}>14 dias antes da viagem</option>
+                            <option value={30}>30 dias antes da viagem</option>
+                        </select>
+                    </div>
                 </div>
             </Card>
 
@@ -301,8 +316,8 @@ const Settings: React.FC = () => {
                         <span className="material-symbols-outlined text-text-muted group-hover:translate-x-1 transition-transform">arrow_forward</span>
                     </button>
                     <div className="pt-3 border-t border-gray-100">
-                        <ToggleSwitch
-                            enabled={privacy.shareData}
+                        <Switch
+                            checked={privacy.shareData}
                             onChange={() => setPrivacy({ ...privacy, shareData: !privacy.shareData })}
                             label="Compartilhar Dados de Uso"
                             description="Ajude-nos a melhorar o PorAí"

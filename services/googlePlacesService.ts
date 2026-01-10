@@ -1,5 +1,5 @@
 
-const API_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY;
+const API_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const FALLBACK_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&q=80&w=400';
 
 export interface PlaceDetails {

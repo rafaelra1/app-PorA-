@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo } from '../types';
+import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo, DocumentAnalysisResult, FieldWithConfidence, BatchAnalysisResult, DebugInfo, TripContext, ChecklistAnalysisResult } from '../types';
 
 // =============================================================================
 // Types & Interfaces
@@ -34,22 +34,7 @@ interface ImageData {
   data: string;
 }
 
-export interface DocumentAnalysisResult {
-  type: 'flight' | 'hotel' | 'car' | 'activity' | 'insurance' | 'other';
-  name?: string;
-  date?: string;
-  endDate?: string;
-  reference?: string;
-  departureTime?: string;
-  arrivalTime?: string;
-  details?: string;
-  address?: string;
-  stars?: number;
-  rating?: number;
-  pickupLocation?: string;
-  dropoffLocation?: string;
-  model?: string;
-}
+
 
 // =============================================================================
 // Constants
@@ -212,31 +197,129 @@ Se a instrução for "surpreenda-me" ou similar, troque uma atividade turística
         Retorne APENAS um JSON array. Schema: [{name: string, description: string, category: string, location: string}].
         A descrição deve ser curta e envolvente (max 20 palavras).`,
 
-  documentAnalysis: () =>
-    `Analise esta imagem de um ou mais documentos de viagem (ex: múltiplos voos, conexões, reservas).
-        Identifique o tipo de cada item (flight, hotel, car, activity, insurance, other).
-        
-        Retorne SEMPRE um ARRAY JSON, onde cada objeto representa um item/segmento identificado:
-        [
-          {
-            "type": "flight|hotel|car|activity|insurance|other",
-            "name": "Nome da companhia, hotel ou serviço",
-            "date": "Data principal ou Check-in (Formato YYYY-MM-DD)",
-            "endDate": "Data final ou Check-out (Formato YYYY-MM-DD) (se houver)",
-            "reference": "Código de reserva/ticket",
-            "departureTime": "Horário de partida (HH:MM)",
-            "arrivalTime": "Horário de chegada (HH:MM)",
-            "details": "Descrição curta adicional (Ex: Quarto Duplo)",
-            "address": "Endereço completo do hotel (se disponível)",
-            "stars": "Classificação do hotel em estrelas (1 a 5, número inteiro, ex: 4 ou 5)",
-            "rating": "Nota de avaliação dos usuários (0 a 10 ou 0 a 5, ex: 8.5 ou 4.5)",
-            "pickupLocation": "Para VOOS: Código IATA ou Cidade de Origem (Ex: GRU, São Paulo). Para Carros: Local de retirada.",
-            "dropoffLocation": "Para VOOS: Código IATA ou Cidade de Destino (Ex: JFK, Nova York).",
-            "model": "(Apenas se carro) Modelo do veículo"
-          }
-        ]
-        
-        Se não encontrar algum dado em um item, deixe em branco. Para datas, converta para o formato YYYY-MM-DD.`,
+  classifyDocument: () => `
+  Analise esta imagem e classifique o tipo de documento.
+  Categorias possíveis:
+  - flight (Passagens aéreas, cartões de embarque, e-tickets)
+  - hotel (Reservas de hotel, confirmações de Airbnb/Booking)
+  - car (Comprovantes de aluguel de carro)
+  - train (Bilhetes de trem/metrô)
+  - bus (Passagens de ônibus)
+  - insurance (Apólices de seguro viagem)
+  - passport (Página de identificação do passaporte)
+  - visa (Vistos de viagem)
+  - activity (Ingressos, tickets de passeios)
+  - other (Outros documentos não listados)
+
+  Retorne APENAS um JSON: {"type": "categoria", "confidence": 0.0-1.0}
+  `,
+
+  documentAnalysis: (type: string) => {
+    let specificFields = "";
+    switch (type) {
+      case 'flight':
+        specificFields = `
+        - airline (Nome da companhia aérea)
+        - flightNumber (Número do voo, ex: LA3040)
+        - pnr (Código de reserva/Localizador)
+        - departureAirport (Código IATA da origem, ex: GRU)
+        - arrivalAirport (Código IATA do destino, ex: JFK)
+        - departureDate (Data de partida YYYY-MM-DD)
+        - arrivalDate (Data de chegada YYYY-MM-DD)
+        - departureTime (Horário de partida HH:MM)
+        - arrivalTime (Horário de chegada HH:MM)
+        - terminal (Terminal de embarque)
+        - gate (Portão de embarque)
+        - seat (Assento)
+        - class (Classe, ex: Econômica)
+        `;
+        break;
+      case 'hotel':
+        specificFields = `
+        - hotelName (Nome do hotel)
+        - address (Endereço completo)
+        - checkInDate (Data de entrada YYYY-MM-DD)
+        - checkInTime (Horário de check-in)
+        - checkOutDate (Data de saída YYYY-MM-DD)
+        - checkOutTime (Horário de check-out)
+        - roomType (Tipo de quarto)
+        - confirmationNumber (Número da confirmação)
+        - guestName (Nome do hóspede)
+        `;
+        break;
+      case 'car':
+        specificFields = `
+        - company (Empresa locadora)
+        - pickupLocation (Local de retirada)
+        - pickupDate (Data de retirada YYYY-MM-DD)
+        - pickupTime (Horário de retirada)
+        - dropoffLocation (Local de devolução)
+        - dropoffDate (Data de devolução YYYY-MM-DD)
+        - dropoffTime (Horário de devolução)
+        - vehicleModel (Modelo do carro)
+        - confirmationNumber (Número da reserva)
+        `;
+        break;
+      case 'insurance':
+        specificFields = `
+        - provider (Seguradora)
+        - policyNumber (Número da apólice)
+        - insuredName (Nome do segurado)
+        - coverageStart (Início da vigência YYYY-MM-DD)
+        - coverageEnd (Fim da vigência YYYY-MM-DD)
+        - emergencyPhone (Telefone de emergência)
+        `;
+        break;
+      case 'passport':
+        specificFields = `
+        - fullName (Nome completo)
+        - passportNumber (Número do passaporte)
+        - nationality (Nacionalidade)
+        - birthDate (Data de nascimento YYYY-MM-DD)
+        - expiryDate (Data de validade YYYY-MM-DD)
+        - issueDate (Data de emissão YYYY-MM-DD)
+        - issuingCountry (País emissor)
+        `;
+        break;
+      case 'visa':
+        specificFields = `
+        - country (País do visto)
+        - visaType (Tipo de visto)
+        - visaNumber (Número do visto)
+        - expiryDate (Data de validade YYYY-MM-DD)
+        - entries (Número de entradas: Single/Multiple)
+        `;
+        break;
+      default: // Generic/Other
+        specificFields = `
+        - name (Nome principal do serviço/entidade)
+        - date (Data principal YYYY-MM-DD)
+        - reference (Código de referência)
+        - details (Descrição curta)
+        `;
+    }
+
+    return `Analise esta imagem de um documento do tipo "${type}".
+      Extraia os seguintes campos específicos:
+      ${specificFields}
+
+      Retorne um JSON com a seguinte estrutura:
+      {
+        "type": "${type}",
+        "fields": {
+          "nomeDoCampo": { "value": "valor extraído", "confidence": 0.0-1.0 },
+          ...
+        },
+        "overallConfidence": 0.0-1.0
+      }
+
+      Regras:
+      1. Se um campo não for encontrado, NÃO o inclua ou retorne null no value.
+      2. Para datas, use SEMPRE o formato YYYY-MM-DD.
+      3. Confidence deve refletir sua certeza sobre a leitura (1.0 = certeza absoluta, 0.5 = incerto).
+      4. Se houver múltiplos itens (ex: 2 voos), analise o PRIMEIRO ou PRINCIPAL.
+    `;
+  },
 
   hotelMetadata: (hotelName: string, city: string = '') =>
     `Busque informações sobre o hotel "${hotelName}" ${city ? `em ${city}` : ''}.
@@ -597,6 +680,45 @@ IMPORTANTE:
 - Retorne APENAS o JSON, sem markdown`;
   },
 
+  analyzeChecklist: (context: TripContext) => {
+    return `Você é um assistente de viagem experiente. Analise o contexto desta viagem e gere sugestões inteligentes de tarefas e insights.
+
+CONTEXTO DA VIAGEM:
+Destino: ${context.destination}
+Datas: ${context.startDate} a ${context.endDate}
+Viajantes: ${JSON.stringify(context.travelers)}
+Interesses: ${context.interests?.join(', ') || 'Geral'}
+
+Gere um JSON com sugestões personalizadas e insights úteis.
+Estrutura esperada:
+{
+  "insights": [
+    {
+      "id": "insight-X",
+      "type": "weather|event|logistics|local_tip",
+      "title": "Título curto",
+      "description": "Descrição útil (max 2 frases)",
+      "confidence": "high|medium|low"
+    }
+  ],
+  "suggestedTasks": [
+    {
+      "id": "task-X",
+      "title": "Título da tarefa",
+      "category": "preparation|packing|documents|health",
+      "reason": "Por que isso é necessário para esta viagem específica",
+      "isUrgent": boolean
+    }
+  ]
+}
+
+REGRAS:
+1. Seja específico para o destino e época do ano (ex: monções, feriados locais).
+2. Considere o perfil dos viajantes (ex: crianças, idosos).
+3. Evite tarefas óbvias e genéricas demais (ex: "Fazer mala") se não houver um motivo específico.
+4. Retorne APENAS o JSON.`;
+  },
+
   alertDetails: (title: string, message: string, cities: string) => {
     return `Você é um consultor de viagens sênior especializado em atender turistas brasileiros.
 Seu objetivo é fornecer uma explicação DETALHADA, ATUALIZADA e PRÁTICA sobre um alerta de viagem específico.
@@ -701,6 +823,25 @@ Retorne APENAS um JSON:
     "type": "festival" | "music" | "art" | "holiday" | "other"
   }
 ]`,
+  fillItineraryGaps: (destination: string, date: string, existingActivities: any[]) => `
+  Você é um assistente de viagens. Sugira 3 atividades para preencher as lacunas no roteiro de viagem em ${destination} para o dia ${date}.
+  
+  ATIVIDADES JÁ PLANEJADAS:
+  ${JSON.stringify(existingActivities)}
+  
+  Sugira atividades que complementem as já planejadas, considerando horários livres.
+  
+  Retorne APENAS um JSON array de objetos:
+  [
+    {
+      "time": "HH:MM",
+      "title": "Título da atividade",
+      "description": "Descrição curta",
+      "type": "culture|food|nature|shopping|nightlife|sightseeing",
+      "location": "Localização aproximada"
+    }
+  ]
+  `,
 };
 
 // =============================================================================
@@ -938,37 +1079,399 @@ export class GeminiService {
   }
 
   /**
-   * Generate an AI image (uses placeholder service)
+   * Generate an AI image using Gemini Imagen 3
    */
   async generateImage(
     prompt: string,
-    _options: ImageGenerationOptions = {}
+    options: ImageGenerationOptions = {}
   ): Promise<string | null> {
     console.log(`Generating image for prompt: ${prompt}`);
 
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      // Try Gemini Imagen 3 first
+      const imagenUrl = await this.generateWithImagenAPI(prompt, options);
+      if (imagenUrl) {
+        console.log('Image generated successfully with Gemini Imagen');
+        return imagenUrl;
+      }
+    } catch (error) {
+      console.warn('Gemini Imagen failed, falling back to Unsplash:', error);
+    }
 
+    // Fallback to Unsplash
+    return this.generateFallbackImage(prompt);
+  }
+
+  /**
+   * Generate image using Gemini Imagen 3 API
+   */
+  private async generateWithImagenAPI(
+    prompt: string,
+    options: ImageGenerationOptions = {}
+  ): Promise<string | null> {
+    try {
+      // Build enhanced prompt for better quality
+      const enhancedPrompt = this.buildEnhancedImagePrompt(prompt, options);
+
+      // Gemini Imagen 3 endpoint
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict`;
+
+      const requestBody = {
+        instances: [
+          {
+            prompt: enhancedPrompt
+          }
+        ],
+        parameters: {
+          sampleCount: 1,
+          aspectRatio: options.aspectRatio || '16:9',
+          negativePrompt: 'blurry, low quality, distorted, ugly, watermark, text',
+          safetySetting: 'block_some',
+          personGeneration: 'allow_adult'
+        }
+      };
+
+      const response = await fetch(`${endpoint}?key=${this.apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Imagen API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Extract base64 image from response
+      if (data.predictions && data.predictions[0]?.bytesBase64Encoded) {
+        const base64Image = data.predictions[0].bytesBase64Encoded;
+        return `data:image/png;base64,${base64Image}`;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error generating image with Imagen API:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Build enhanced prompt for better image generation
+   */
+  private buildEnhancedImagePrompt(prompt: string, options: ImageGenerationOptions): string {
+    let enhancedPrompt = prompt;
+
+    // Extract city name if present
+    if (prompt.startsWith('City of')) {
+      const cityName = prompt.replace('City of ', '').split(',')[0];
+      enhancedPrompt = `Professional travel photography of ${cityName}, iconic landmarks, vibrant atmosphere, golden hour lighting, ultra-detailed, high-resolution, professional composition`;
+    } else {
+      // General enhancement
+      enhancedPrompt = `${prompt}, professional photography, high quality, detailed, vibrant colors, beautiful composition`;
+    }
+
+    // Add size-specific quality hints
+    if (options.imageSize === '4K') {
+      enhancedPrompt += ', ultra high resolution, 4K quality, extremely detailed';
+    } else if (options.imageSize === '2K') {
+      enhancedPrompt += ', high resolution, 2K quality, sharp details';
+    }
+
+    return enhancedPrompt;
+  }
+
+  /**
+   * Fallback image generation with multi-tier strategy
+   * Tries: Unsplash → Pexels → Local Placeholder
+   */
+  private async generateFallbackImage(prompt: string): Promise<string> {
     // Extract city name from prompt "City of {name}, {country}" or use raw prompt
     let query = prompt;
     if (prompt.startsWith('City of')) {
       query = prompt.replace('City of ', '').split(',')[0];
     }
 
-    // Return a high-quality placeholder image
-    const keywords = encodeURIComponent(`${query},landmark,city,travel`);
-    return `https://source.unsplash.com/800x600/?${keywords}&sig=${generateRandomSig()}`;
+    const keywords = `${query},landmark,city,travel`;
+
+    try {
+      // Try Unsplash first
+      const unsplashUrl = `https://source.unsplash.com/800x600/?${encodeURIComponent(keywords)}&sig=${generateRandomSig()}`;
+
+      // Verify if Unsplash is accessible
+      const unsplashCheck = await fetch(unsplashUrl, { method: 'HEAD' });
+      if (unsplashCheck.ok) {
+        console.log('Using Unsplash fallback');
+        return unsplashUrl;
+      }
+    } catch (error) {
+      console.warn('Unsplash fallback failed:', error);
+    }
+
+    try {
+      // Try Pexels as second fallback
+      const pexelsUrl = await this.getPexelsImage(keywords);
+      if (pexelsUrl) {
+        console.log('Using Pexels fallback');
+        return pexelsUrl;
+      }
+    } catch (error) {
+      console.warn('Pexels fallback failed:', error);
+    }
+
+    // Final fallback: colored placeholder with icon
+    console.log('Using local placeholder fallback');
+    return this.generateLocalPlaceholder(query);
   }
 
   /**
-   * Edit an existing image using AI (Not implemented)
+   * Get image from Pexels API (free alternative)
+   */
+  private async getPexelsImage(keywords: string): Promise<string | null> {
+    try {
+      // Pexels requires API key, but has a public endpoint for basic searches
+      // Note: For production, add VITE_PEXELS_API_KEY to environment
+      const pexelsApiKey = import.meta.env.VITE_PEXELS_API_KEY;
+
+      if (!pexelsApiKey) {
+        // Use direct image URL pattern (limited functionality)
+        return `https://images.pexels.com/photos/0/pexels-photo.jpeg?auto=compress&cs=tinysrgb&w=800&h=600`;
+      }
+
+      const response = await fetch(
+        `https://api.pexels.com/v1/search?query=${encodeURIComponent(keywords)}&per_page=1&orientation=landscape`,
+        {
+          headers: {
+            'Authorization': pexelsApiKey
+          }
+        }
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.photos && data.photos.length > 0) {
+        return data.photos[0].src.large;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Pexels API error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate local placeholder with color and icon
+   */
+  private generateLocalPlaceholder(query: string): string {
+    // Generate a deterministic color based on query
+    const colors = [
+      '#3B82F6', // blue
+      '#8B5CF6', // purple
+      '#EC4899', // pink
+      '#F59E0B', // amber
+      '#10B981', // green
+      '#EF4444', // red
+      '#06B6D4', // cyan
+    ];
+
+    const hash = query.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const color = colors[hash % colors.length];
+
+    // Create SVG placeholder
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+        <rect width="800" height="600" fill="${color}"/>
+        <text x="400" y="280" font-family="Arial, sans-serif" font-size="48" fill="white" text-anchor="middle" opacity="0.9">
+          📍
+        </text>
+        <text x="400" y="340" font-family="Arial, sans-serif" font-size="24" fill="white" text-anchor="middle" opacity="0.8">
+          ${query}
+        </text>
+      </svg>
+    `.trim();
+
+    // Convert to base64 data URL
+    const base64 = btoa(svg);
+    return `data:image/svg+xml;base64,${base64}`;
+  }
+
+  /**
+   * Edit an existing image using AI
+   *
+   * Supported operations:
+   * - Remove background
+   * - Adjust colors/lighting
+   * - Add/remove elements
+   * - Style transfer
+   * - Upscaling
+   *
+   * @param currentImageBase64 - Base64 encoded image (with or without data URI prefix)
+   * @param editPrompt - Description of desired changes (e.g., "remove background", "make it brighter")
+   * @returns Base64 encoded edited image or null on failure
    */
   async editImageWithAI(
-    _currentImageBase64: string,
-    _editPrompt: string
+    currentImageBase64: string,
+    editPrompt: string
   ): Promise<string | null> {
-    // TODO: Implement image editing with Gemini
-    return null;
+    try {
+      console.log(`Editing image with prompt: ${editPrompt}`);
+
+      // Extract base64 content and mime type
+      const { base64Content, mimeType } = this.extractImageData(currentImageBase64);
+
+      // Use Gemini's vision model for image editing via description
+      // Note: Gemini doesn't have direct image editing, so we:
+      // 1. Analyze the image with vision
+      // 2. Generate a new image based on analysis + edit prompt
+      const editedImage = await this.editImageWithGemini(base64Content, mimeType, editPrompt);
+
+      if (editedImage) {
+        console.log('Image edited successfully with Gemini');
+        return editedImage;
+      }
+
+      console.warn('Gemini image editing failed');
+      return null;
+    } catch (error) {
+      console.error('Error editing image with AI:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Edit image using Gemini's vision + generation capabilities
+   */
+  private async editImageWithGemini(
+    base64Content: string,
+    mimeType: string,
+    editPrompt: string
+  ): Promise<string | null> {
+    try {
+      // Step 1: Analyze current image with Gemini Vision
+      const analysisPrompt = `Analyze this image in detail. Describe:
+1. Main subject and composition
+2. Colors and lighting
+3. Style and mood
+4. Background and context
+
+Be specific and detailed for accurate recreation.`;
+
+      const visionEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent`;
+
+      const analysisRequest = {
+        contents: [{
+          parts: [
+            { text: analysisPrompt },
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: base64Content
+              }
+            }
+          ]
+        }]
+      };
+
+      const analysisResponse = await fetch(`${visionEndpoint}?key=${this.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysisRequest)
+      });
+
+      if (!analysisResponse.ok) {
+        throw new Error(`Vision API error: ${analysisResponse.status}`);
+      }
+
+      const analysisData = await analysisResponse.json();
+      const imageDescription = analysisData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      if (!imageDescription) {
+        console.error('Failed to analyze image');
+        return null;
+      }
+
+      // Step 2: Generate new image based on analysis + edit instructions
+      const generationPrompt = `${imageDescription}
+
+EDIT INSTRUCTIONS: ${editPrompt}
+
+Create a new image that maintains the essence of the original but applies the requested edits.`;
+
+      const newImage = await this.generateWithImagenAPI(generationPrompt, {
+        aspectRatio: '16:9',
+        imageSize: '2K'
+      });
+
+      return newImage;
+    } catch (error) {
+      console.error('Error in editImageWithGemini:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract base64 content and mime type from image data
+   */
+  private extractImageData(imageData: string): { base64Content: string; mimeType: string } {
+    if (imageData.startsWith('data:')) {
+      const matches = imageData.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        return {
+          mimeType: matches[1],
+          base64Content: matches[2]
+        };
+      }
+    }
+
+    // Default to JPEG if no mime type detected
+    return {
+      mimeType: 'image/jpeg',
+      base64Content: imageData
+    };
+  }
+
+  /**
+   * Generate variations of an image
+   *
+   * @param prompt - Image generation prompt
+   * @param count - Number of variations to generate (1-4)
+   * @param options - Generation options
+   * @returns Array of generated image URLs
+   */
+  async generateImageVariations(
+    prompt: string,
+    count: number = 4,
+    options: ImageGenerationOptions = {}
+  ): Promise<string[]> {
+    const variations: string[] = [];
+    const maxCount = Math.min(count, 4);
+
+    console.log(`Generating ${maxCount} image variations for: ${prompt}`);
+
+    // Generate variations in parallel
+    const promises = Array.from({ length: maxCount }, async (_, index) => {
+      // Add variation seed to prompt for diversity
+      const variantPrompt = `${prompt}, variation ${index + 1}, unique perspective`;
+      return await this.generateImage(variantPrompt, options);
+    });
+
+    const results = await Promise.allSettled(promises);
+
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        variations.push(result.value);
+      }
+    }
+
+    console.log(`Generated ${variations.length}/${maxCount} variations successfully`);
+
+    return variations;
   }
 
   /**
@@ -1087,6 +1590,20 @@ export class GeminiService {
   }
 
   /**
+   * Suggest activities to fill gaps in an itinerary
+   */
+  async fillItineraryGaps(destination: string, date: string, existingActivities: any[]): Promise<any[]> {
+    try {
+      const prompt = PROMPTS.fillItineraryGaps(destination, date, existingActivities);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely<any[]>(text, []);
+    } catch (error) {
+      console.error('Error filling itinerary gaps:', error);
+      return [];
+    }
+  }
+
+  /**
    * Suggest attractions based on category
    */
   async suggestAttractions(
@@ -1126,32 +1643,217 @@ export class GeminiService {
       const mimeType = detectMimeType(base64Image);
       console.log(`Analyzing document with MIME type: ${mimeType}, data length: ${base64Data.length}`);
 
-      const prompt = PROMPTS.documentAnalysis();
-      const text = await this.callGeminiAPI(
-        prompt,
-        { mimeType, data: base64Data },
-        undefined,
-        'application/json'
-      );
+      // Step 1: Classify Document
+      const classification = await this.classifyDocumentType(base64Data);
+      console.log('Document Classified as:', classification);
 
-      console.log('Raw AI response for document analysis:', text);
+      // Step 2: Extract Data using specialized prompt
+      // If confidence is too low, treat as generic 'other' or the guessed type but with caution
+      const effectiveType = classification.confidence > 0.4 ? classification.type : 'other';
 
-      const parsed = parseJsonSafely<DocumentAnalysisResult[] | DocumentAnalysisResult | null>(text, null);
+      const extractionResult = await this.extractDocumentData(base64Data, effectiveType);
 
-      // Handle case where AI returns single object instead of array
-      if (parsed && !Array.isArray(parsed)) {
-        console.log('AI returned single object, wrapping in array');
-        return [parsed];
-      }
+      if (!extractionResult) return null;
 
-      console.log('Parsed results count:', Array.isArray(parsed) ? parsed.length : 0);
-      return parsed as DocumentAnalysisResult[] | null;
+      // Add classification metadata
+      extractionResult.typeConfidence = classification.confidence;
+
+      // Wrap in array for backward compatibility
+      return [extractionResult];
     } catch (error) {
       console.error('Error analyzing document:', error);
-      if (error instanceof Error) {
-        console.error('Error message:', error.message);
-      }
       return null;
+    }
+  }
+
+  /**
+   * Analyze multiple documents in batch with concurrency limit and duplicate detection
+   */
+  async analyzeDocumentBatch(files: File[]): Promise<BatchAnalysisResult> {
+    const BATCH_LIMIT = 3;
+    const results: BatchAnalysisResult = {
+      successful: [],
+      failed: [],
+      duplicates: []
+    };
+
+    // Helper to read file as base64
+    const readFile = (file: File): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    };
+
+    // Helper to process a single file
+    const processFile = async (file: File) => {
+      try {
+        const base64 = await readFile(file);
+        const analysis = await this.analyzeDocumentImage(base64);
+
+        if (analysis && analysis.length > 0) {
+          return { file, result: analysis[0], fileName: file.name };
+        } else {
+          results.failed.push({ file, error: 'Could not analyze document', fileName: file.name });
+          return null;
+        }
+      } catch (error) {
+        console.error(`Error processing file ${file.name}:`, error);
+        results.failed.push({ file, error: error instanceof Error ? error.message : 'Unknown error', fileName: file.name });
+        return null;
+      }
+    };
+
+    // Process in chunks
+    for (let i = 0; i < files.length; i += BATCH_LIMIT) {
+      const chunk = files.slice(i, i + BATCH_LIMIT);
+      const chunkPromises = chunk.map(processFile);
+      const chunkResults = await Promise.all(chunkPromises);
+
+      // Collect successful results
+      chunkResults.forEach(item => {
+        if (item) {
+          // Check for duplicates
+          const isDuplicate = results.successful.some(existing =>
+            existing.type === item.result.type &&
+            existing.date === item.result.date &&
+            (existing.reference === item.result.reference || existing.name === item.result.name)
+          );
+
+          if (isDuplicate) {
+            results.duplicates.push({
+              file: item.file,
+              duplicateOf: item.result.reference || item.result.name || 'Unknown',
+              fileName: item.fileName
+            });
+          } else {
+            // Attach original file metadata
+            item.result.originalFile = item.file;
+            item.result.fileName = item.fileName;
+            results.successful.push(item.result);
+          }
+        }
+      });
+    }
+
+    // Sort successful results by date
+    results.successful.sort((a, b) => {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
+
+    return results;
+  }
+
+
+  /**
+   * Step 1: Classify the document type
+   */
+  async classifyDocumentType(base64Image: string): Promise<{ type: string; confidence: number }> {
+    try {
+      const mimeType = detectMimeType(base64Image);
+      const base64Data = extractBase64Data(base64Image);
+
+      const prompt = PROMPTS.classifyDocument();
+      const text = await this.callGeminiAPI(prompt, { mimeType, data: base64Data }, undefined, 'application/json');
+
+      const result = parseJsonSafely<{ type: string; confidence: number }>(text, { type: 'other', confidence: 0 });
+      return result;
+    } catch (error) {
+      console.error('Error classifying document:', error);
+      return { type: 'other', confidence: 0 };
+    }
+  }
+
+  /**
+   * Step 2: Extract data using specialized prompt
+   */
+  async extractDocumentData(base64Image: string, type: string): Promise<DocumentAnalysisResult | null> {
+    try {
+      const mimeType = detectMimeType(base64Image);
+      const base64Data = extractBase64Data(base64Image);
+
+      const prompt = PROMPTS.documentAnalysis(type);
+      const text = await this.callGeminiAPI(prompt, { mimeType, data: base64Data }, undefined, 'application/json');
+
+      const rawData = parseJsonSafely<any>(text, null);
+      if (!rawData) return null;
+
+      // Map raw fields to DocumentAnalysisResult structure
+      const f = rawData.fields || {};
+      const result: DocumentAnalysisResult = {
+        type: this.mapTypeToEnum(rawData.type || type),
+        fields: f,
+        overallConfidence: rawData.overallConfidence,
+        debugInfo: {
+          prompt: prompt,
+          rawResponse: text,
+          model: 'gemini-2.5-flash'
+        }
+      };
+
+      // Populate legacy flat fields for compatibility
+      this.populateLegacyFields(result, f, type);
+
+      return result;
+    } catch (error) {
+      console.error('Error extracting document data:', error);
+      return null;
+    }
+  }
+
+  private mapTypeToEnum(type: string): DocumentAnalysisResult['type'] {
+    const validTypes = ['flight', 'hotel', 'car', 'activity', 'insurance', 'passport', 'visa', 'other'];
+    // Map some synonyms if necessary
+    if (type === 'train' || type === 'bus') return 'other'; // Map transport to other/generic if not explicitly supported in Enum yet
+    if (validTypes.includes(type)) return type as DocumentAnalysisResult['type'];
+    return 'other';
+  }
+
+  private populateLegacyFields(result: DocumentAnalysisResult, fields: Record<string, any>, type: string) {
+    const getValue = (key: string) => fields[key]?.value;
+
+    // Common fields
+    result.name = getValue('name') || getValue('airline') || getValue('hotelName') || getValue('company') || getValue('provider') || getValue('fullName');
+
+    // Dates are trickier, depends on type
+    if (type === 'flight') {
+      result.date = getValue('departureDate');
+      result.endDate = getValue('arrivalDate'); // Not standard but useful
+      result.departureTime = getValue('departureTime');
+      result.arrivalTime = getValue('arrivalTime');
+      result.reference = getValue('pnr') || getValue('flightNumber');
+      result.pickupLocation = getValue('departureAirport');
+      result.dropoffLocation = getValue('arrivalAirport');
+      result.details = `${getValue('class') || ''} ${getValue('seat') ? 'Seat: ' + getValue('seat') : ''}`.trim();
+    } else if (type === 'hotel') {
+      result.date = getValue('checkInDate');
+      result.endDate = getValue('checkOutDate');
+      result.reference = getValue('confirmationNumber');
+      result.address = getValue('address');
+      result.details = getValue('roomType');
+    } else if (type === 'car') {
+      result.date = getValue('pickupDate');
+      result.endDate = getValue('dropoffDate');
+      result.pickupLocation = getValue('pickupLocation');
+      result.dropoffLocation = getValue('dropoffLocation');
+      result.reference = getValue('confirmationNumber');
+      result.model = getValue('vehicleModel');
+    } else if (type === 'insurance') {
+      result.date = getValue('coverageStart');
+      result.endDate = getValue('coverageEnd');
+      result.reference = getValue('policyNumber');
+    } else if (type === 'passport' || type === 'visa') {
+      result.date = getValue('issueDate');
+      result.endDate = getValue('expiryDate');
+      result.reference = getValue('passportNumber') || getValue('visaNumber');
+    } else {
+      result.date = getValue('date');
+      result.reference = getValue('reference');
+      result.details = getValue('details');
     }
   }
 
@@ -1361,6 +2063,28 @@ export class GeminiService {
       return parseJsonSafely(text, null);
     } catch (error) {
       console.error('Error finding local events:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Analyze trip context and generate intelligent checklist suggestions
+   */
+  async analyzeChecklist(context: TripContext): Promise<ChecklistAnalysisResult | null> {
+    try {
+      const prompt = PROMPTS.analyzeChecklist(context);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+
+      const result = parseJsonSafely<ChecklistAnalysisResult>(text, null);
+
+      if (!result) {
+        console.error('Failed to parse checklist analysis result');
+        return null;
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error analyzing checklist:', error);
       return null;
     }
   }

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { Notification, UserPreferences } from '../types';
 import {
@@ -177,7 +177,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // ==========================================================================
     // Context Value
     // ==========================================================================
-    const value: NotificationContextType = {
+    const value: NotificationContextType = useMemo(() => ({
         notifications,
         unreadCount,
         isLoading,
@@ -191,7 +191,21 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         preferencesLoading,
         updatePreferences,
         refreshPreferences,
-    };
+    }), [
+        notifications,
+        unreadCount,
+        isLoading,
+        error,
+        markAsRead,
+        markAllAsRead,
+        deleteNotification,
+        clearAll,
+        refreshNotifications,
+        preferences,
+        preferencesLoading,
+        updatePreferences,
+        refreshPreferences,
+    ]);
 
     return (
         <NotificationContext.Provider value={value}>

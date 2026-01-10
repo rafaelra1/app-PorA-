@@ -7,6 +7,7 @@ interface JournalTimelineProps {
     onLike?: (id: string) => void;
     onComment?: (id: string) => void;
     onShare?: (id: string) => void;
+    onDelete?: (id: string) => void;
 }
 
 interface DayGroup {
@@ -36,6 +37,7 @@ const JournalTimeline: React.FC<JournalTimelineProps> = ({
     onLike,
     onComment,
     onShare,
+    onDelete,
 }) => {
     // Group entries by date
     const groupedByDay = entries.reduce((acc: DayGroup[], entry: JournalEntry) => {
@@ -144,6 +146,7 @@ const JournalTimeline: React.FC<JournalTimelineProps> = ({
                                         onLike={onLike}
                                         onComment={onComment}
                                         onShare={onShare}
+                                        onDelete={onDelete}
                                     />
                                 </div>
                             ))}

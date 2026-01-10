@@ -1,23 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { Trip, Transport, TransportType } from '../../../types';
 import { useTransport } from '../../../contexts/TransportContext'; // To be connected
 import TransportCard from './TransportCard';
 import { useLocalStorage } from '../../../hooks/useLocalStorage'; // Start with local storage for migration check
+import { Skeleton } from '../../ui/Base';
 
 interface TransportViewProps {
     trip: Trip;
-    onAddClick: () => void;
-    onEditClick: (transport: Transport) => void;
-    // We pass these handlers, but inside we will likely use Context
+    onAddClick?: () => void;
+    onEditClick?: (transport: Transport) => void;
+    onDeleteClick?: (id: string) => void;
+    isLoading?: boolean;
 }
 
-const TransportView: React.FC<TransportViewProps> = ({ trip, onAddClick, onEditClick }) => {
+const TransportView: React.FC<TransportViewProps> = ({
+    trip,
+    onAddClick,
+    onEditClick,
+    onDeleteClick,
+    isLoading
+}) => {
     const {
         transports,
         fetchTransports,
         deleteTransport,
-        migrateFromLocalStorage
+        migrateFromLocalStorage,
+        isLoading: contextLoading
     } = useTransport();
+
+    const isActualLoading = isLoading !== undefined ? isLoading : contextLoading;
 
     // Filters & Sorting
     const [transportFilter, setTransportFilter] = useState<TransportType | 'all'>('all');
@@ -41,9 +53,11 @@ const TransportView: React.FC<TransportViewProps> = ({ trip, onAddClick, onEditC
         }
     }, [trip.id]);
 
-    const handleDelete = async (id: string) => {
-        if (window.confirm('Tem certeza que deseja remover este transporte?')) {
-            await deleteTransport(trip.id, id);
+    const handleDelete = (id: string) => {
+        if (onDeleteClick) {
+            onDeleteClick(id);
+        } else if (window.confirm('Tem certeza que deseja excluir este transporte?')) {
+            deleteTransport(trip.id, id);
         }
     };
 
@@ -64,12 +78,12 @@ const TransportView: React.FC<TransportViewProps> = ({ trip, onAddClick, onEditC
                 const [d, m, y] = dateStr.split('/');
                 date = `${y}-${m}-${d}`;
             }
-            const time = timeStr || '00:00';
+            const time = timeStr?.slice(0, 5) || '00:00';
             return new Date(`${date}T${time}`).getTime();
         };
 
         const diff = getDate(a.departureDate, a.departureTime) - getDate(b.departureDate, b.departureTime);
-        console.log(diff);
+
         return sortOrder === 'date_asc' ? diff : -diff;
     });
 
@@ -155,7 +169,17 @@ const TransportView: React.FC<TransportViewProps> = ({ trip, onAddClick, onEditC
 
             {/* Transport Cards */}
             <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-4" : "space-y-4"}>
-                {displayedTransports.length > 0 ? displayedTransports.map((transport) => (
+                {isActualLoading ? (
+                    [1, 2, 3].map(i => (
+                        <div key={i} className="bg-white rounded-2xl shadow-soft border border-gray-100/50 p-5 flex items-center gap-4">
+                            <Skeleton variant="rectangular" width={64} height={64} className="rounded-xl" />
+                            <div className="flex-1 space-y-2">
+                                <Skeleton width="60%" height={18} />
+                                <Skeleton width="40%" height={14} />
+                            </div>
+                        </div>
+                    ))
+                ) : displayedTransports.length > 0 ? displayedTransports.map((transport) => (
                     <TransportCard
                         key={transport.id}
                         transport={transport}
@@ -163,10 +187,28 @@ const TransportView: React.FC<TransportViewProps> = ({ trip, onAddClick, onEditC
                         onDelete={handleDelete}
                     />
                 )) : (
-                    <div className="bg-white rounded-2xl p-12 shadow-soft border border-gray-100/50 text-center">
-                        <span className="material-symbols-outlined text-6xl text-gray-300 mb-4">flight</span>
-                        <p className="text-text-muted font-bold">Nenhum transporte adicionado ainda</p>
-                        <p className="text-sm text-text-muted mt-1">Adicione seus voos, trens e deslocamentos</p>
+                    <div className="relative bg-gradient-to-br from-blue-50 via-cyan-50 to-teal-50 rounded-3xl p-16 border border-blue-100/50 text-center overflow-hidden">
+                        {/* Decorative Background Elements */}
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-200/20 to-cyan-200/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+                        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-teal-200/20 to-cyan-200/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+
+                        {/* Content */}
+                        <div className="relative z-10">
+                            <div className="size-24 mx-auto mb-6 bg-white rounded-3xl shadow-lg flex items-center justify-center ring-4 ring-blue-100/50">
+                                <span className="material-symbols-outlined text-5xl text-blue-500">flight</span>
+                            </div>
+                            <h3 className="text-2xl font-bold text-text-main mb-3">Nenhum transporte cadastrado</h3>
+                            <p className="text-base text-text-muted mb-8 max-w-lg mx-auto leading-relaxed">
+                                Adicione voos, trens, transfers e outros meios de transporte. Mantenha todos os seus deslocamentos organizados em um só lugar.
+                            </p>
+                            <button
+                                onClick={onAddClick}
+                                className="group inline-flex items-center gap-2.5 px-8 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-2xl font-bold text-base hover:from-blue-600 hover:to-cyan-600 transition-all shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+                            >
+                                <span className="material-symbols-outlined text-xl group-hover:rotate-90 transition-transform duration-300">add</span>
+                                Adicionar Primeiro Transporte
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

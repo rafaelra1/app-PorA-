@@ -3,6 +3,7 @@ import { JournalEntry } from '../../../types';
 
 interface JournalGalleryProps {
     entries: JournalEntry[];
+    onDelete?: (id: string) => void;
 }
 
 interface PhotoItem {
@@ -13,7 +14,7 @@ interface PhotoItem {
     timestamp: string;
 }
 
-const JournalGallery: React.FC<JournalGalleryProps> = ({ entries }) => {
+const JournalGallery: React.FC<JournalGalleryProps> = ({ entries, onDelete }) => {
     const [selectedPhoto, setSelectedPhoto] = useState<PhotoItem | null>(null);
 
     // Flatten all photos from all entries
@@ -118,6 +119,20 @@ const JournalGallery: React.FC<JournalGalleryProps> = ({ entries }) => {
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
+                                    {onDelete && (
+                                        <button
+                                            onClick={() => {
+                                                if (window.confirm('Tem certeza que deseja excluir esta memória?')) {
+                                                    onDelete(selectedPhoto.entryId);
+                                                    setSelectedPhoto(null);
+                                                }
+                                            }}
+                                            className="size-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-500 hover:bg-red-500 hover:text-white transition-colors border border-red-500/30"
+                                            title="Excluir Memória"
+                                        >
+                                            <span className="material-symbols-outlined">delete</span>
+                                        </button>
+                                    )}
                                     <button className="size-10 rounded-xl bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors">
                                         <span className="material-symbols-outlined">download</span>
                                     </button>

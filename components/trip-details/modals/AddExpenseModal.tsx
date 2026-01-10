@@ -1,10 +1,16 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
-import { Select, SelectOption } from '../../ui/Select';
+import { Select } from '../../ui/Select';
 import { Textarea } from '../../ui/Textarea';
 import { Button } from '../../ui/Base';
 import { ExpenseCategory } from '../../../types';
+import { expenseSchema } from '../../../lib/validations/schemas';
+import { useToast } from '../../../contexts/ToastContext';
+import { useAutosaveDraft } from '../../../hooks/useAutosaveDraft';
+import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '../../../config/constants';
 
 // =============================================================================
 // Types & Interfaces
@@ -13,59 +19,8 @@ import { ExpenseCategory } from '../../../types';
 interface AddExpenseModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAdd: (expense: ExpenseFormData) => void;
+    onAdd: (expense: any) => void;
 }
-
-interface ExpenseFormData {
-    title: string;
-    description: string;
-    category: ExpenseCategory;
-    amount: number;
-    type: 'entrada' | 'saida';
-    date: string;
-    paymentMethod: string;
-}
-
-interface CategoryConfig {
-    value: ExpenseCategory;
-    label: string;
-    icon: string;
-    color: string;
-    bgColor: string;
-    borderColor: string;
-}
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-const EXPENSE_CATEGORIES: CategoryConfig[] = [
-    { value: 'alimentacao', label: 'Alimentação', icon: 'restaurant', color: 'text-amber-500', bgColor: 'bg-amber-50', borderColor: 'border-amber-500' },
-    { value: 'transporte', label: 'Transporte', icon: 'directions_car', color: 'text-blue-500', bgColor: 'bg-blue-50', borderColor: 'border-blue-500' },
-    { value: 'hospedagem', label: 'Hospedagem', icon: 'hotel', color: 'text-indigo-500', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-500' },
-    { value: 'lazer', label: 'Lazer', icon: 'confirmation_number', color: 'text-green-500', bgColor: 'bg-green-50', borderColor: 'border-green-500' },
-    { value: 'compras', label: 'Compras', icon: 'shopping_bag', color: 'text-pink-500', bgColor: 'bg-pink-50', borderColor: 'border-pink-500' },
-    { value: 'outros', label: 'Outros', icon: 'more_horiz', color: 'text-gray-500', bgColor: 'bg-gray-50', borderColor: 'border-gray-500' },
-];
-
-const PAYMENT_METHODS: SelectOption[] = [
-    { value: 'Cartão de Crédito', label: 'Cartão de Crédito' },
-    { value: 'Cartão de Débito', label: 'Cartão de Débito' },
-    { value: 'Dinheiro', label: 'Dinheiro' },
-    { value: 'PIX', label: 'PIX' },
-    { value: 'Apple Pay', label: 'Apple Pay' },
-    { value: 'Google Pay', label: 'Google Pay' },
-];
-
-const INITIAL_FORM_STATE: Omit<ExpenseFormData, 'amount'> & { amount: string } = {
-    title: '',
-    description: '',
-    category: 'outros',
-    amount: '',
-    type: 'saida',
-    date: new Date().toISOString().split('T')[0],
-    paymentMethod: 'Cartão de Crédito',
-};
 
 // =============================================================================
 // Helper Components
@@ -114,8 +69,8 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({ selected, onChange 
                     type="button"
                     onClick={() => onChange(cat.value)}
                     className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${selected === cat.value
-                            ? `${cat.borderColor} ${cat.bgColor}`
-                            : 'border-gray-200 hover:border-gray-300'
+                        ? `${cat.borderColor} ${cat.bgColor}`
+                        : 'border-gray-200 hover:border-gray-300'
                         }`}
                 >
                     <span className={`material-symbols-outlined ${cat.color}`}>{cat.icon}</span>
@@ -131,47 +86,92 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({ selected, onChange 
 // =============================================================================
 
 const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onAdd }) => {
-    const [formData, setFormData] = useState(INITIAL_FORM_STATE);
+    const { showToast } = useToast();
+    const {
+        control,
+        handleSubmit,
+        reset,
+        watch,
+        formState: { errors, isSubmitting }
+    } = useForm({
+        resolver: zodResolver(expenseSchema),
+        defaultValues: {
+            title: '',
+            description: '',
+            category: 'outros',
+            amount: 0,
+            type: 'saida' as 'entrada' | 'saida',
+            date: new Date().toISOString().split('T')[0],
+            paymentMethod: 'Cartão de Crédito',
+        }
+    });
 
-    const updateField = useCallback(<K extends keyof typeof formData>(
-        field: K,
-        value: typeof formData[K]
-    ) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
-    }, []);
+    const formData = watch();
 
-    const resetForm = useCallback(() => {
-        setFormData(INITIAL_FORM_STATE);
-    }, []);
+    // Autosave Integration
+    const { saveDraft, clearDraft, loadDraft, hasDraft, lastSaved } = useAutosaveDraft({
+        key: 'new_expense',
+        onRestore: (data: any) => {
+            reset(data);
+            showToast("Rascunho de despesa restaurado!", "info");
+        }
+    });
 
-    const handleSubmit = useCallback((e: React.FormEvent) => {
-        e.preventDefault();
+    // Debounced Save
+    useEffect(() => {
+        if (!isOpen) return;
+        const timer = setTimeout(() => {
+            if (formData.title || (formData.amount as number) > 0) {
+                saveDraft(formData);
+            }
+        }, 2000);
+        return () => clearTimeout(timer);
+    }, [formData, isOpen, saveDraft]);
 
-        if (!formData.title || !formData.amount) return;
-
-        onAdd({
-            ...formData,
-            amount: parseFloat(formData.amount),
-        });
-
-        resetForm();
-        onClose();
-    }, [formData, onAdd, onClose, resetForm]);
+    // Restore Prompt
+    const [showRestorePrompt, setShowRestorePrompt] = useState(false);
+    useEffect(() => {
+        if (isOpen && hasDraft && !formData.title) {
+            setShowRestorePrompt(true);
+        }
+    }, [isOpen, hasDraft, formData.title]);
 
     const handleClose = useCallback(() => {
-        resetForm();
+        reset();
         onClose();
-    }, [onClose, resetForm]);
+        setShowRestorePrompt(false);
+    }, [onClose, reset]);
+
+    const onSubmit = (data: any) => {
+        try {
+            onAdd(data);
+            showToast("Despesa adicionada!", "success");
+            clearDraft();
+            handleClose();
+        } catch (err) {
+            showToast("Erro ao adicionar despesa.", "error");
+        }
+    };
 
     const footer = (
-        <>
-            <Button variant="outline" onClick={handleClose}>
-                Cancelar
-            </Button>
-            <Button type="submit" form="expense-form">
-                Adicionar
-            </Button>
-        </>
+        <div className="flex items-center w-full">
+            <div className="flex-1 flex items-center gap-2">
+                {lastSaved && (
+                    <div className="flex items-center gap-1 text-green-600 animate-in fade-in duration-500">
+                        <span className="material-symbols-outlined text-xs">cloud_done</span>
+                        <span className="text-[8px] font-bold uppercase">Salvo</span>
+                    </div>
+                )}
+            </div>
+            <div className="flex gap-2">
+                <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
+                    Cancelar
+                </Button>
+                <Button type="submit" form="expense-form" disabled={isSubmitting}>
+                    {isSubmitting ? 'Adicionando...' : 'Adicionar'}
+                </Button>
+            </div>
+        </div>
     );
 
     return (
@@ -182,68 +182,139 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onAd
             size="sm"
             footer={footer}
         >
-            <form id="expense-form" onSubmit={handleSubmit} className="space-y-5">
+            {showRestorePrompt && (
+                <div className="bg-indigo-50 px-4 py-2 mb-4 rounded-xl flex items-center justify-between animate-in slide-in-from-top duration-300">
+                    <span className="text-[10px] font-bold text-indigo-900">Restaurar rascunho anterior?</span>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => { loadDraft(); setShowRestorePrompt(false); }}
+                            className="text-[10px] font-extrabold uppercase bg-white px-2 py-1 rounded-lg text-indigo-600 shadow-sm"
+                        >
+                            Sim
+                        </button>
+                        <button
+                            onClick={() => { clearDraft(); setShowRestorePrompt(false); }}
+                            className="text-[10px] font-extrabold uppercase text-indigo-400"
+                        >
+                            Não
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <div aria-live="polite" aria-atomic="true" className="sr-only">
+                {isSubmitting && "Adicionando despesa..."}
+            </div>
+
+            <form
+                id="expense-form"
+                onSubmit={handleSubmit(onSubmit)}
+                className="space-y-5"
+                aria-busy={isSubmitting}
+            >
                 {/* Type Toggle */}
-                <TypeToggle
-                    type={formData.type}
-                    onChange={(type) => updateField('type', type)}
+                <Controller
+                    name="type"
+                    control={control}
+                    render={({ field }) => (
+                        <TypeToggle
+                            type={field.value}
+                            onChange={field.onChange}
+                        />
+                    )}
                 />
 
                 {/* Title */}
-                <Input
-                    label="Título"
-                    value={formData.title}
-                    onChange={(e) => updateField('title', e.target.value)}
-                    placeholder="Ex: Jantar no restaurante"
-                    required
-                    fullWidth
+                <Controller
+                    name="title"
+                    control={control}
+                    render={({ field }) => (
+                        <Input
+                            {...field}
+                            label="Título"
+                            error={errors.title?.message as string}
+                            placeholder="Ex: Jantar no restaurante"
+                            required
+                            fullWidth
+                        />
+                    )}
                 />
 
                 {/* Amount */}
-                <Input
-                    label="Valor"
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) => updateField('amount', e.target.value)}
-                    placeholder="0,00"
-                    required
-                    fullWidth
-                    leftIcon={<span className="font-bold text-text-muted">R$</span>}
+                <Controller
+                    name="amount"
+                    control={control}
+                    render={({ field }) => (
+                        <Input
+                            {...field}
+                            value={field.value as any}
+                            label="Valor"
+                            type="number"
+                            step="0.01"
+                            error={errors.amount?.message as string}
+                            placeholder="0,00"
+                            required
+                            fullWidth
+                            leftIcon={<span className="font-bold text-text-muted">R$</span>}
+                        />
+                    )}
                 />
 
                 {/* Category */}
-                <CategorySelector
-                    selected={formData.category}
-                    onChange={(category) => updateField('category', category)}
+                <Controller
+                    name="category"
+                    control={control}
+                    render={({ field }) => (
+                        <CategorySelector
+                            selected={field.value as any}
+                            onChange={field.onChange}
+                        />
+                    )}
                 />
 
                 {/* Date */}
-                <Input
-                    label="Data"
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => updateField('date', e.target.value)}
-                    fullWidth
+                <Controller
+                    name="date"
+                    control={control}
+                    render={({ field }) => (
+                        <Input
+                            {...field}
+                            label="Data"
+                            type="date"
+                            error={errors.date?.message as string}
+                            fullWidth
+                            required
+                        />
+                    )}
                 />
 
                 {/* Payment Method */}
-                <Select
-                    label="Método de Pagamento"
-                    value={formData.paymentMethod}
-                    onChange={(e) => updateField('paymentMethod', e.target.value)}
-                    options={PAYMENT_METHODS}
-                    fullWidth
+                <Controller
+                    name="paymentMethod"
+                    control={control}
+                    render={({ field }) => (
+                        <Select
+                            {...field}
+                            label="Método de Pagamento"
+                            options={PAYMENT_METHODS}
+                            fullWidth
+                        />
+                    )}
                 />
 
                 {/* Description */}
-                <Textarea
-                    label="Descrição (opcional)"
-                    value={formData.description}
-                    onChange={(e) => updateField('description', e.target.value)}
-                    placeholder="Adicione detalhes sobre esta despesa..."
-                    rows={2}
-                    fullWidth
+                <Controller
+                    name="description"
+                    control={control}
+                    render={({ field }) => (
+                        <Textarea
+                            {...field}
+                            label="Descrição (opcional)"
+                            placeholder="Adicione detalhes sobre esta despesa..."
+                            rows={2}
+                            fullWidth
+                        />
+                    )}
                 />
             </form>
         </Modal>

@@ -7,6 +7,7 @@ interface JournalEntryCardProps {
     onLike?: (id: string) => void;
     onComment?: (id: string) => void;
     onShare?: (id: string) => void;
+    onDelete?: (id: string) => void;
 }
 
 const MOOD_ICONS: Record<JournalMood, { emoji: string; label: string }> = {
@@ -23,6 +24,7 @@ const JournalEntryCard: React.FC<JournalEntryCardProps> = ({
     onLike,
     onComment,
     onShare,
+    onDelete,
 }) => {
     return (
         <Card className="overflow-hidden border-none shadow-soft hover:shadow-2xl transition-all duration-500 rounded-2xl bg-white group">
@@ -65,9 +67,22 @@ const JournalEntryCard: React.FC<JournalEntryCardProps> = ({
                             </div>
                         </div>
                     </div>
-                    <button className="size-8 rounded-xl hover:bg-gray-100 flex items-center justify-center text-text-muted transition-colors">
-                        <span className="material-symbols-outlined text-lg">more_horiz</span>
-                    </button>
+                    <div className="relative group/menu">
+                        <button className="size-8 rounded-xl hover:bg-gray-100 flex items-center justify-center text-text-muted transition-colors">
+                            <span className="material-symbols-outlined text-lg">more_horiz</span>
+                        </button>
+                        {onDelete && (
+                            <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-1 w-32 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-10">
+                                <button
+                                    onClick={() => onDelete(entry.id)}
+                                    className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2"
+                                >
+                                    <span className="material-symbols-outlined text-base">delete</span>
+                                    Excluir
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Title */}

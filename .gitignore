@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Agent and temporary files
+.agent/
+.system_generated/
+*.txt
+clear-storage.js

@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useCallback } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
 import { Textarea } from '../../ui/Textarea';
@@ -7,6 +8,7 @@ import { PlaceSearchInput, PlaceSearchResult } from '../../ui/PlaceSearchInput';
 import { ItineraryActivity, ItineraryActivityType } from '../../../types';
 import { getGeminiService } from '../../../services/geminiService';
 import { useLoadScript } from '@react-google-maps/api';
+import { ACTIVITY_TYPES } from '../../../config/constants';
 
 // =============================================================================
 // Types & Interfaces
@@ -33,32 +35,11 @@ interface ActivityFormData {
     image: string;
 }
 
-interface ActivityTypeConfig {
-    value: ItineraryActivityType;
-    label: string;
-    icon: string;
-    color: string;
-    bgColor: string;
-    borderColor: string;
-}
-
 const GOOGLE_MAPS_LIBRARIES: ("places")[] = ["places"];
 
 // =============================================================================
 // Constants
 // =============================================================================
-
-const ACTIVITY_TYPES: ActivityTypeConfig[] = [
-    { value: 'culture', label: 'Cultura', icon: 'museum', color: 'text-purple-600', bgColor: 'bg-purple-50', borderColor: 'border-purple-200' },
-    { value: 'nature', label: 'Natureza', icon: 'park', color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200' },
-    { value: 'food', label: 'Gastronomia', icon: 'restaurant', color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
-    { value: 'shopping', label: 'Compras', icon: 'shopping_bag', color: 'text-pink-600', bgColor: 'bg-pink-50', borderColor: 'border-pink-200' },
-    { value: 'nightlife', label: 'Vida Noturna', icon: 'local_bar', color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
-    { value: 'sightseeing', label: 'Passeio', icon: 'photo_camera', color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
-    { value: 'transport', label: 'Transporte', icon: 'flight', color: 'text-sky-600', bgColor: 'bg-sky-50', borderColor: 'border-sky-200' },
-    { value: 'accommodation', label: 'Acomodação', icon: 'hotel', color: 'text-violet-600', bgColor: 'bg-violet-50', borderColor: 'border-violet-200' },
-    { value: 'other', label: 'Outro', icon: 'star', color: 'text-gray-600', bgColor: 'bg-gray-50', borderColor: 'border-gray-200' },
-];
 
 const INITIAL_FORM_STATE: ActivityFormData = {
     time: '09:00',
@@ -85,7 +66,7 @@ const ActivityTypeSelector: React.FC<ActivityTypeSelectorProps> = ({ selected, o
         <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">
             Tipo de Atividade
         </label>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 md:grid-cols-9 gap-2">
             {ACTIVITY_TYPES.map((actType) => (
                 <button
                     key={actType.value}
@@ -349,7 +330,7 @@ const AddActivityModal: React.FC<AddActivityModalProps> = ({
             isOpen={isOpen}
             onClose={handleClose}
             title={isEditMode ? 'Editar Atividade' : 'Nova Atividade'}
-            size="sm"
+            size="lg"
             footer={footer}
         >
             {/* Subtitle with day info */}
@@ -402,15 +383,31 @@ const AddActivityModal: React.FC<AddActivityModalProps> = ({
                     )}
                 </div>
 
-                {/* Time */}
-                <Input
-                    label="Horário"
-                    type="time"
-                    value={formData.time}
-                    onChange={(e) => updateField('time', e.target.value)}
-                    required
-                    fullWidth
-                />
+                {/* Time, Price & Details Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Input
+                        label="Horário"
+                        type="time"
+                        value={formData.time}
+                        onChange={(e) => updateField('time', e.target.value)}
+                        required
+                        fullWidth
+                    />
+                    <Input
+                        label="Preço (opcional)"
+                        value={formData.price}
+                        onChange={(e) => updateField('price', e.target.value)}
+                        placeholder="Ex: ¥2,500"
+                        fullWidth
+                    />
+                    <Input
+                        label="Detalhes (opcional)"
+                        value={formData.locationDetail}
+                        onChange={(e) => updateField('locationDetail', e.target.value)}
+                        placeholder="Ex: 10 min a pé"
+                        fullWidth
+                    />
+                </div>
 
                 {/* Activity Type */}
                 <div className="border-t border-gray-100 pt-4">
@@ -419,24 +416,6 @@ const AddActivityModal: React.FC<AddActivityModalProps> = ({
                         onChange={(type) => updateField('type', type)}
                     />
                 </div>
-
-                {/* Location Detail */}
-                <Input
-                    label="Detalhes do Local (opcional)"
-                    value={formData.locationDetail}
-                    onChange={(e) => updateField('locationDetail', e.target.value)}
-                    placeholder="Ex: 10 minutos do hotel a pé"
-                    fullWidth
-                />
-
-                {/* Price */}
-                <Input
-                    label="Preço (opcional)"
-                    value={formData.price}
-                    onChange={(e) => updateField('price', e.target.value)}
-                    placeholder="Ex: ¥2,500"
-                    fullWidth
-                />
 
                 {/* Notes */}
                 <Textarea

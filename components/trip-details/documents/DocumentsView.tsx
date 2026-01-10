@@ -17,6 +17,7 @@ interface DocumentsViewProps {
     onFilterChange: (filter: DocsFilter) => void;
     onAddDocument?: () => void;
     onDocumentClick?: (doc: TripDocument) => void;
+    onDeleteDocument?: (id: string) => void;
 }
 
 // =============================================================================
@@ -29,7 +30,8 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({
     docsFilter,
     onFilterChange,
     onAddDocument,
-    onDocumentClick
+    onDocumentClick,
+    onDeleteDocument
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'name' | 'type'>('date');
@@ -242,6 +244,7 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({
                                 viewMode="grid"
                                 onClick={() => onDocumentClick?.(doc)}
                                 onCopyReference={handleCopyReference}
+                                onDelete={() => onDeleteDocument?.(doc.id)}
                             />
                         ))}
 
@@ -272,6 +275,7 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({
                                 viewMode="list"
                                 onClick={() => onDocumentClick?.(doc)}
                                 onCopyReference={handleCopyReference}
+                                onDelete={() => onDeleteDocument?.(doc.id)}
                             />
                         ))}
                     </div>

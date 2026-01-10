@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 
@@ -77,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => subscription.unsubscribe();
     }, []);
 
-    const login = async (email: string, password: string, rememberMe = false) => {
+    const login = useCallback(async (email: string, password: string, rememberMe = false) => {
         setIsLoading(true);
         try {
             const { error } = await supabase.auth.signInWithPassword({
@@ -91,9 +91,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const signUp = async (email: string, password: string, name: string) => {
+    const signUp = useCallback(async (email: string, password: string, name: string) => {
         setIsLoading(true);
         try {
             const { error } = await supabase.auth.signUp({
@@ -114,9 +114,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const loginWithGoogle = async () => {
+    const loginWithGoogle = useCallback(async () => {
         setIsLoading(true);
         try {
             const { error } = await supabase.auth.signInWithOAuth({
@@ -130,22 +130,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error('Google login error:', error);
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const loginWithApple = async () => {
+    const loginWithApple = useCallback(async () => {
         // Not fully configured yet - requires Apple Developer Account
         console.warn('Apple login requires further configuration in Supabase');
         alert('Login com Apple requer configuração adicional no painel do Supabase.');
         setIsLoading(false);
-    };
+    }, []);
 
-    const loginWithBiometric = async () => {
+    const loginWithBiometric = useCallback(async () => {
         console.warn('Biometric login is not yet implemented with Supabase');
         alert('Login biométrico será implementado em breve.');
         setIsLoading(false);
-    };
+    }, []);
 
-    const logout = async () => {
+    const logout = useCallback(async () => {
         setIsLoading(true);
         await supabase.auth.signOut();
         setUser(null);
@@ -153,22 +153,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('user'); // Clean up old local storage if any
         localStorage.removeItem('authToken');
         setIsLoading(false);
-    };
+    }, []);
+
+    const value = useMemo(() => ({
+        isAuthenticated,
+        user,
+        isLoading,
+        login,
+        signUp,
+        loginWithGoogle,
+        loginWithApple,
+        loginWithBiometric,
+        logout
+    }), [
+        isAuthenticated,
+        user,
+        isLoading,
+        login,
+        signUp,
+        loginWithGoogle,
+        loginWithApple,
+        loginWithBiometric,
+        logout
+    ]);
 
     return (
-        <AuthContext.Provider
-            value={{
-                isAuthenticated,
-                user,
-                isLoading,
-                login,
-                signUp,
-                loginWithGoogle,
-                loginWithApple,
-                loginWithBiometric,
-                logout
-            }}
-        >
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );

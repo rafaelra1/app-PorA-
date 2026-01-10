@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Trip, CalendarEvent } from '../types';
-import { Card } from '../components/ui/Base';
+import { Card, PageContainer, PageHeader, FilterBar, FilterButton, Button } from '../components/ui/Base';
 import { BRAZILIAN_HOLIDAYS } from '../constants';
 import { useCalendar } from '../contexts/CalendarContext';
 import { useCalendarNotifications, useNotificationPermission } from '../hooks/useCalendarNotifications';
@@ -24,6 +25,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
     setFilters,
     getEventsForDate,
     syncFromTrips,
+    syncFromActivities,
+    syncFromTransports,
     events
   } = useCalendar();
 
@@ -48,7 +51,40 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
 
   // Sync trips to calendar events on mount and when trips change
   useEffect(() => {
+    // First sync basic trip events (start/end)
     syncFromTrips(trips);
+
+    // Then load details (activities/transports) from local storage for each trip
+    // This ensures the calendar view has the latest itinerary data even if accessed directly
+    const loadItineraryData = () => {
+      trips.forEach(trip => {
+        if (typeof window !== 'undefined') {
+          try {
+            // Load itinerary activities
+            const storedActivities = window.localStorage.getItem(`porai_trip_${trip.id}_itinerary_activities`);
+            if (storedActivities) {
+              const parsed = JSON.parse(storedActivities);
+              if (Array.isArray(parsed)) {
+                syncFromActivities(parsed, trip.id);
+              }
+            }
+
+            // Load transports
+            const storedTransports = window.localStorage.getItem(`porai_trip_${trip.id}_transports`);
+            if (storedTransports) {
+              const parsed = JSON.parse(storedTransports);
+              if (Array.isArray(parsed)) {
+                syncFromTransports(parsed, trip.id);
+              }
+            }
+          } catch (e) {
+            console.error(`Error syncing data for trip ${trip.id} to calendar`, e);
+          }
+        }
+      });
+    };
+
+    loadItineraryData();
   }, [trips]);
 
   const getDaysInMonth = (year: number, month: number) => {
@@ -149,69 +185,83 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
   );
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      {/* Header with Controls */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 px-2">
-        <div>
-          <h2 className="text-2xl font-extrabold text-text-main">Agenda PorAí</h2>
-          <p className="text-text-muted text-sm">Organize suas jornadas no tempo de Brasília.</p>
-        </div>
+    <PageContainer>
+      {/* Header with Actions */}
+      <PageHeader
+        title="Agenda PorAí"
+        description="Organize suas jornadas no tempo de Brasília."
+        actions={
+          <Button
+            variant="primary"
+            onClick={() => {
+              setSelectedDateForEvent('');
+              setSelectedTimeForEvent('');
+              setIsAddEventModalOpen(true);
+            }}
+            className="h-10 px-5 text-xs font-bold"
+          >
+            <span className="material-symbols-outlined text-sm mr-1">add</span>
+            Novo Evento
+          </Button>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* View Mode Selector */}
-          <div className="flex items-center gap-1 bg-white p-1 rounded-xl shadow-soft border border-gray-100">
+      {/* Controls Bar */}
+      <FilterBar
+        rightContent={
+          <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl">
             <button
               onClick={() => setViewMode('month')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-text-main text-white' : 'text-text-muted hover:bg-gray-50'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'month' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'}`}
             >
               Mês
             </button>
             <button
               onClick={() => setViewMode('week')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-text-main text-white' : 'text-text-muted hover:bg-gray-50'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'week' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'}`}
             >
               Semana
             </button>
             <button
               onClick={() => setViewMode('year')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'year' ? 'bg-text-main text-white' : 'text-text-muted hover:bg-gray-50'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'year' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'}`}
             >
               Ano
             </button>
           </div>
-
-          {/* Filter Button */}
-          <button
-            onClick={() => setIsFilterPanelOpen(true)}
-            className="px-4 py-2 rounded-xl bg-white border border-gray-100 text-xs font-bold text-text-main shadow-soft hover:bg-gray-50 transition-colors flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-sm">filter_list</span>
-            Filtros
-            {((filters.type && filters.type !== 'all') ||
-              (filters.status && filters.status !== 'all') ||
-              (filters.tripId && filters.tripId !== 'all') ||
-              filters.searchQuery) && (
-              <span className="size-2 rounded-full bg-primary animate-pulse" />
+        }
+      >
+        <Button
+          variant="outline"
+          onClick={() => setIsFilterPanelOpen(true)}
+          className="h-9 px-3 text-xs border-gray-200"
+        >
+          <span className="material-symbols-outlined text-sm mr-1">filter_list</span>
+          Filtros
+          {((filters.type && filters.type !== 'all') ||
+            (filters.status && filters.status !== 'all') ||
+            (filters.tripId && filters.tripId !== 'all') ||
+            filters.searchQuery) && (
+              <span className="size-2 rounded-full bg-primary animate-pulse ml-2" />
             )}
-          </button>
+        </Button>
 
-          {/* Export Button */}
-          <button
-            onClick={() => setIsExportModalOpen(true)}
-            className="px-4 py-2 rounded-xl bg-white border border-gray-100 text-xs font-bold text-text-main shadow-soft hover:bg-gray-50 transition-colors flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-sm">file_download</span>
-            Exportar
-          </button>
-        </div>
-      </div>
+        <Button
+          variant="outline"
+          onClick={() => setIsExportModalOpen(true)}
+          className="h-9 px-3 text-xs border-gray-200"
+        >
+          <span className="material-symbols-outlined text-sm mr-1">file_download</span>
+          Exportar
+        </Button>
+      </FilterBar>
 
       {/* Navigation */}
       <div className="flex items-center justify-between px-2">
         <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-soft border border-gray-100">
           <button
             onClick={viewMode === 'week' ? prevWeek : prevMonth}
-            className="size-10 flex items-center justify-center rounded-xl hover:bg-background-light text-text-muted transition-colors"
+            className="size-10 flex items-center justify-center rounded-xl hover:bg-gray-50 text-text-muted transition-colors"
           >
             <span className="material-symbols-outlined">chevron_left</span>
           </button>
@@ -223,19 +273,20 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
           </span>
           <button
             onClick={viewMode === 'week' ? nextWeek : nextMonth}
-            className="size-10 flex items-center justify-center rounded-xl hover:bg-background-light text-text-muted transition-colors"
+            className="size-10 flex items-center justify-center rounded-xl hover:bg-gray-50 text-text-muted transition-colors"
           >
             <span className="material-symbols-outlined">chevron_right</span>
           </button>
         </div>
 
-        <button
+        <Button
+          variant="outline"
           onClick={goToToday}
-          className="px-4 py-2 rounded-xl bg-white border border-gray-100 text-xs font-bold text-text-main shadow-soft hover:bg-gray-50 transition-colors flex items-center gap-2"
+          className="h-10 px-4 text-xs font-bold"
         >
-          <span className="material-symbols-outlined text-sm">today</span>
+          <span className="material-symbols-outlined text-sm mr-1">today</span>
           Hoje
-        </button>
+        </Button>
       </div>
 
       {/* Calendar Content */}
@@ -418,18 +469,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
         </Card>
       </div>
 
-      {/* Floating Action Button */}
-      <button
-        onClick={() => {
-          setSelectedDateForEvent('');
-          setSelectedTimeForEvent('');
-          setIsAddEventModalOpen(true);
-        }}
-        className="fixed bottom-8 right-8 size-14 rounded-full bg-primary text-white shadow-lg hover:bg-primary-dark hover:shadow-xl transition-all flex items-center justify-center group z-40"
-        title="Adicionar evento"
-      >
-        <span className="material-symbols-outlined text-3xl group-hover:rotate-90 transition-transform">add</span>
-      </button>
+
 
       {/* Add Event Modal */}
       <AddEventModal
@@ -469,7 +509,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
           // TODO: Open edit modal with selected event
         }}
       />
-    </div>
+    </PageContainer>
   );
 };
 

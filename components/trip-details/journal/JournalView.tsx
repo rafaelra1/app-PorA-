@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { JournalEntry, JournalMood, Participant } from '../../../types';
-import { DEMO_JOURNAL, DEMO_USER } from '../../../constants';
+import { useAuth } from '../../../contexts/AuthContext';
 import JournalInput from './JournalInput';
 import JournalTimeline from './JournalTimeline';
 import JournalGallery from './JournalGallery';
@@ -12,6 +12,7 @@ type ViewMode = 'timeline' | 'gallery' | 'map';
 interface JournalViewProps {
     tripTitle?: string;
     tripStartDate?: string;
+    onDeleteEntry?: (id: string) => void;
 }
 
 const VIEW_TABS: { id: ViewMode; label: string; icon: string }[] = [
@@ -20,10 +21,18 @@ const VIEW_TABS: { id: ViewMode; label: string; icon: string }[] = [
     { id: 'map', label: 'Mapa', icon: 'map' },
 ];
 
-const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate }) => {
+const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onDeleteEntry }) => {
+    const { user } = useAuth();
     const [entries, setEntries] = useState<JournalEntry[]>([]);
     const [viewMode, setViewMode] = useState<ViewMode>('timeline');
     const [showStats, setShowStats] = useState(true);
+
+    const currentUser: Participant = {
+        id: user?.id || 'u-temp',
+        name: user?.name || 'Usuário',
+        avatar: user?.avatar || 'https://ui-avatars.com/api/?name=User&background=667eea&color=fff',
+        role: 'Viajante'
+    };
 
     // Calculate day number based on trip start date
     const calculateDayNumber = (date: string): number => {
@@ -45,7 +54,7 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate }) =
         const today = new Date();
         const newEntry: JournalEntry = {
             id: `j-${Date.now()}`,
-            author: DEMO_USER,
+            author: currentUser,
             timestamp: today.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
             date: today.toISOString().split('T')[0],
             dayNumber: calculateDayNumber(today.toISOString().split('T')[0]),
@@ -127,7 +136,7 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate }) =
 
                     {/* Input Area - Always visible at top */}
                     <div className="mb-8">
-                        <JournalInput user={DEMO_USER} onSubmit={handleCreateEntry} />
+                        <JournalInput user={currentUser} onSubmit={handleCreateEntry} />
                     </div>
 
                     {/* View Content */}
@@ -135,11 +144,12 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate }) =
                         <JournalTimeline
                             entries={entries}
                             onLike={handleLike}
+                            onDelete={onDeleteEntry}
                         />
                     )}
 
                     {viewMode === 'gallery' && (
-                        <JournalGallery entries={entries} />
+                        <JournalGallery entries={entries} onDelete={onDeleteEntry} />
                     )}
 
                     {viewMode === 'map' && (

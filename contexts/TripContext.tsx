@@ -1,8 +1,46 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { Trip } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { toISODate, fromISODate } from '../lib/dateUtils';
+
+// Helper to safely set item in localStorage
+const safeLocalStorageSetItem = (key: string, value: string) => {
+    try {
+        localStorage.setItem(key, value);
+    } catch (e) {
+        if (e instanceof DOMException && (
+            e.name === 'QuotaExceededError' ||
+            e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+            console.warn('LocalStorage quota exceeded. Clearing cache...', e);
+            localStorage.removeItem(key);
+        } else {
+            console.error('Failed to set item in localStorage', e);
+        }
+    }
+};
+
+// Helper to compress trip data for caching (removes heavy fields)
+const compressTripForCache = (trip: Trip): Trip => {
+    return {
+        id: trip.id,
+        title: trip.title,
+        destination: trip.destination,
+        startDate: trip.startDate,
+        endDate: trip.endDate,
+        status: trip.status,
+        // Only keep cover image if it's a URL (short) or small base64. 
+        // If it's a massive base64, we drop it for cache to save space.
+        coverImage: (trip.coverImage && trip.coverImage.length < 50000) ? trip.coverImage : '',
+        participants: trip.participants || [],
+        isFlexibleDates: trip.isFlexibleDates,
+        // Exclude heavier fields that are fetched on detail view
+        videos: [],
+        tasks: [],
+        luggage: [],
+        detailedDestinations: []
+    } as Trip;
+};
 
 interface TripContextType {
     trips: Trip[];
@@ -74,8 +112,9 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         ...row.data // Spread the complex JSONB data
                     }));
                     setTripsState(loadedTrips);
-                    // Update cache
-                    localStorage.setItem('pora_trips_cache', JSON.stringify(loadedTrips));
+                    // Update cache with robust error handling and compression
+                    const compressedTrips = loadedTrips.map(compressTripForCache);
+                    safeLocalStorageSetItem('pora_trips_cache', JSON.stringify(compressedTrips));
                 }
             } catch (error) {
                 console.error('Error fetching trips:', error);
@@ -88,18 +127,28 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         fetchTrips();
     }, [user]);
 
-    const setTrips = (newTrips: Trip[]) => {
+    const setTrips = useCallback((newTrips: Trip[]) => {
         setTripsState(newTrips);
-    };
+    }, []);
 
-    const addTrip = async (newTripData: Omit<Trip, 'id'>) => {
-        if (!user) return null;
+    // Helper to update cache
+    const updateCache = useCallback((currentTrips: Trip[]) => {
+        const compressedTrips = currentTrips.map(compressTripForCache);
+        safeLocalStorageSetItem('pora_trips_cache', JSON.stringify(compressedTrips));
+    }, []);
+
+    const addTrip = useCallback(async (newTripData: Omit<Trip, 'id'>): Promise<string | null> => {
+        if (!user) throw new Error('Usuário não autenticado');
 
         // 1. Optimistic Update with Temp ID
         const tempId = `temp-${Date.now()}`;
         const optimisticTrip: Trip = { ...newTripData, id: tempId };
 
-        setTripsState(prev => [optimisticTrip, ...prev]);
+        setTripsState(prev => {
+            const newState = [optimisticTrip, ...prev];
+            updateCache(newState);
+            return newState;
+        });
 
         try {
             // 2. Prepare Data for Supabase
@@ -121,7 +170,11 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
             // 4. Update State with Real ID
             if (data) {
-                setTripsState(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
+                setTripsState(prev => {
+                    const newState = prev.map(t => t.id === tempId ? { ...t, id: data.id } : t);
+                    updateCache(newState);
+                    return newState;
+                });
                 return data.id;
             }
             return null;
@@ -129,17 +182,26 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } catch (error) {
             console.error('Error adding trip:', error);
             // 5. Rollback on Error
-            setTripsState(prev => prev.filter(t => t.id !== tempId));
+            setTripsState(prev => {
+                const newState = prev.filter(t => t.id !== tempId);
+                updateCache(newState);
+                return newState;
+            });
             throw error; // Re-throw to let component know
         }
-    };
+    }, [user, updateCache]);
 
-    const updateTrip = async (updatedTrip: Trip): Promise<void> => {
+    const updateTrip = useCallback(async (updatedTrip: Trip): Promise<void> => {
         if (!user) throw new Error('Usuário não autenticado');
 
         // Save previous state for rollback
         const previousTrips = trips;
-        setTripsState(prev => prev.map(t => t.id === updatedTrip.id ? updatedTrip : t));
+
+        setTripsState(prev => {
+            const newState = prev.map(t => t.id === updatedTrip.id ? updatedTrip : t);
+            updateCache(newState);
+            return newState;
+        });
 
         try {
             const { id, title, destination, startDate, endDate, status, coverImage, ...rest } = updatedTrip;
@@ -163,18 +225,24 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.error('Error updating trip:', error);
             // Rollback on error
             setTripsState(previousTrips);
+            updateCache(previousTrips);
             throw error;
         }
-    };
+    }, [user, trips, updateCache]);
 
-    const deleteTrip = async (id: string): Promise<void> => {
+    const deleteTrip = useCallback(async (id: string): Promise<void> => {
         if (!user) throw new Error('Usuário não autenticado');
 
         // Save previous state for rollback
         const previousTrips = trips;
         const previousSelectedId = selectedTripId;
 
-        setTripsState(prev => prev.filter(t => t.id !== id));
+        setTripsState(prev => {
+            const newState = prev.filter(t => t.id !== id);
+            updateCache(newState);
+            return newState;
+        });
+
         if (selectedTripId === id) {
             setSelectedTripId(null);
         }
@@ -186,14 +254,15 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.error('Error deleting trip:', error);
             // Rollback on error
             setTripsState(previousTrips);
+            updateCache(previousTrips);
             setSelectedTripId(previousSelectedId);
             throw error;
         }
-    };
+    }, [user, trips, selectedTripId, updateCache]);
 
-    const selectTrip = (id: string | null) => {
+    const selectTrip = useCallback((id: string | null) => {
         setSelectedTripId(id);
-    };
+    }, []);
 
     // Helper to reload if needed (not exported but used internally)
     const fetchTrips = async () => {
@@ -214,22 +283,32 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     };
 
+    const value = useMemo(() => ({
+        trips,
+        selectedTripId,
+        selectedTrip,
+        editingTrip,
+        isLoading,
+        setTrips,
+        addTrip,
+        updateTrip,
+        deleteTrip,
+        selectTrip,
+        setEditingTrip
+    }), [
+        trips,
+        selectedTripId,
+        selectedTrip,
+        editingTrip,
+        isLoading,
+        addTrip,
+        updateTrip,
+        deleteTrip,
+        selectTrip
+    ]);
+
     return (
-        <TripContext.Provider
-            value={{
-                trips,
-                selectedTripId,
-                selectedTrip,
-                editingTrip,
-                isLoading,
-                setTrips,
-                addTrip,
-                updateTrip,
-                deleteTrip,
-                selectTrip,
-                setEditingTrip,
-            }}
-        >
+        <TripContext.Provider value={value}>
             {children}
         </TripContext.Provider>
     );

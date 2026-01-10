@@ -1,14 +1,19 @@
-import React from 'react';
+import * as React from 'react';
 
-interface AgendaEvent {
+// ========== TYPES ==========
+export interface AgendaEvent {
     id: string;
     title: string;
     subtitle?: string;
     startTime: string; // HH:mm
     endTime: string; // HH:mm
-    color: string; // Tailwind bg color class
-    avatar?: string;
+    type: 'flight' | 'train' | 'bus' | 'car' | 'ferry' | 'transfer' | 'meal' | 'sightseeing' | 'accommodation' | 'activity';
+    color?: string; // Optional legacy field
     icon?: string; // Material symbol icon name
+    location?: string;
+    status?: 'on_time' | 'delayed' | 'cancelled';
+    image?: string; // Legacy field (not used in compact design)
+    route?: { from: string; to: string }; // For transport
 }
 
 interface DayAgendaProps {
@@ -17,54 +22,102 @@ interface DayAgendaProps {
     events?: AgendaEvent[];
 }
 
+// ========== COLOR MAPPING ==========
+const getCardColors = (type: AgendaEvent['type']) => {
+    const colorMap: Record<string, { bg: string; iconBg: string; iconText: string }> = {
+        // Transports (Violet)
+        flight: { bg: 'bg-violet-50', iconBg: 'bg-violet-100', iconText: 'text-violet-600' },
+        train: { bg: 'bg-violet-50', iconBg: 'bg-violet-100', iconText: 'text-violet-600' },
+        bus: { bg: 'bg-violet-50', iconBg: 'bg-violet-100', iconText: 'text-violet-600' },
+        car: { bg: 'bg-violet-50', iconBg: 'bg-violet-100', iconText: 'text-violet-600' },
+        ferry: { bg: 'bg-violet-50', iconBg: 'bg-violet-100', iconText: 'text-violet-600' },
+        transfer: { bg: 'bg-violet-50', iconBg: 'bg-violet-100', iconText: 'text-violet-600' },
+        // Meals (Orange)
+        meal: { bg: 'bg-orange-50', iconBg: 'bg-orange-100', iconText: 'text-orange-600' },
+        // Accommodation (Emerald)
+        accommodation: { bg: 'bg-emerald-50', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600' },
+        // Attractions/Sightseeing (Amber)
+        sightseeing: { bg: 'bg-amber-50', iconBg: 'bg-amber-100', iconText: 'text-amber-600' },
+        activity: { bg: 'bg-amber-50', iconBg: 'bg-amber-100', iconText: 'text-amber-600' },
+    };
+    return colorMap[type] || { bg: 'bg-gray-50', iconBg: 'bg-gray-100', iconText: 'text-gray-600' };
+};
+
+// ========== ICON MAPPING ==========
+const getIcon = (type: AgendaEvent['type'], customIcon?: string) => {
+    if (customIcon) return customIcon;
+    const iconMap: Record<string, string> = {
+        flight: 'flight',
+        train: 'train',
+        bus: 'directions_bus',
+        car: 'directions_car',
+        ferry: 'directions_boat',
+        transfer: 'airport_shuttle',
+        meal: 'restaurant',
+        sightseeing: 'photo_camera',
+        accommodation: 'hotel',
+        activity: 'calendar_today',
+    };
+    return iconMap[type] || 'calendar_today';
+};
+
+// ========== COMPACT AGENDA CARD ==========
+const CompactAgendaCard: React.FC<{ event: AgendaEvent }> = ({ event }) => {
+    const colors = getCardColors(event.type);
+    const icon = getIcon(event.type, event.icon);
+
+    const statusColors: Record<string, string> = {
+        on_time: 'bg-green-100 text-green-700',
+        delayed: 'bg-amber-100 text-amber-700',
+        cancelled: 'bg-red-100 text-red-700',
+    };
+
+    const statusLabels: Record<string, string> = {
+        on_time: 'No Horário',
+        delayed: 'Atrasado',
+        cancelled: 'Cancelado',
+    };
+
+    // Build subtitle from location or route
+    const subtitle = event.route
+        ? `${event.route.from} → ${event.route.to}`
+        : event.location || event.subtitle || '';
+
+    return (
+        <div className={`flex items-center gap-3 p-2.5 rounded-xl border ${colors.bg} hover:shadow-sm transition-shadow cursor-pointer`}>
+            {/* Icon (32x32) */}
+            <div className={`size-8 rounded-lg ${colors.iconBg} flex items-center justify-center shrink-0`}>
+                <span className={`material-symbols-outlined text-lg ${colors.iconText}`}>
+                    {icon}
+                </span>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-gray-500">
+                        {event.startTime} - {event.endTime}
+                    </span>
+                    {/* Status badge */}
+                    {event.status && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${statusColors[event.status]}`}>
+                            {statusLabels[event.status]}
+                        </span>
+                    )}
+                </div>
+                <h4 className="text-xs font-bold text-gray-900 truncate">{event.title}</h4>
+                {subtitle && (
+                    <p className="text-[10px] text-gray-500 truncate">{subtitle}</p>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ========== MAIN COMPONENT ==========
 const DayAgenda: React.FC<DayAgendaProps> = ({ date, onClose, events = [] }) => {
-    // Helper to convert time string (HH:mm) to minutes from start of day (e.g., 00:00)
-    const timeToMinutes = (time: string) => {
-        const [hours, minutes] = time.split(':').map(Number);
-        return hours * 60 + minutes;
-    };
-
-    // Dynamic hour range based on events
-    const calculateHourRange = () => {
-        if (events.length === 0) {
-            return { start: 8, end: 20 }; // Default range
-        }
-
-        const eventTimes = events
-            .filter(e => e.startTime && e.endTime)
-            .flatMap(e => [timeToMinutes(e.startTime), timeToMinutes(e.endTime)]);
-
-        if (eventTimes.length === 0) {
-            return { start: 8, end: 20 }; // Default if no timed events
-        }
-
-        const minMinutes = Math.min(...eventTimes);
-        const maxMinutes = Math.max(...eventTimes);
-
-        // Add 1 hour buffer before first event and after last event
-        let startHour = Math.max(0, Math.floor(minMinutes / 60) - 1);
-        let endHour = Math.min(23, Math.ceil(maxMinutes / 60) + 1);
-
-        // Ensure minimum range of 8 hours
-        if (endHour - startHour < 8) {
-            const midpoint = Math.floor((startHour + endHour) / 2);
-            startHour = Math.max(0, midpoint - 4);
-            endHour = Math.min(23, midpoint + 4);
-        }
-
-        return { start: startHour, end: endHour };
-    };
-
-    const { start: startHour, end: endHour } = calculateHourRange();
-    const hourHeight = 80; // Height in pixels for one hour
-    const startMinutes = startHour * 60;
-
-    // Generate hours for the timeline
-    const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
-
-    // Helper to format date
-    const formatDate = (date: Date) => {
-        return date.toLocaleDateString('pt-BR', {
+    const formatDate = (d: Date) => {
+        return d.toLocaleDateString('pt-BR', {
             weekday: 'long',
             day: 'numeric',
             month: 'long'
@@ -72,16 +125,16 @@ const DayAgenda: React.FC<DayAgendaProps> = ({ date, onClose, events = [] }) => 
     };
 
     return (
-        <div className="bg-white rounded-2xl p-6 shadow-soft animate-in fade-in slide-in-from-top-4 duration-500 relative overflow-hidden">
+        <div className="bg-white rounded-2xl p-5 shadow-soft animate-in fade-in slide-in-from-top-4 duration-500 relative overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6 relative z-10">
+            <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-3">
                     <div className="size-10 rounded-full bg-primary-light flex items-center justify-center text-primary-dark">
                         <span className="material-symbols-outlined">calendar_today</span>
                     </div>
                     <div>
                         <h3 className="font-bold text-text-main text-lg capitalize">{formatDate(date)}</h3>
-                        <p className="text-text-muted text-sm items-center flex gap-1">
+                        <p className="text-text-muted text-sm">
                             {events.length} {events.length === 1 ? 'evento agendado' : 'eventos agendados'}
                         </p>
                     </div>
@@ -94,79 +147,18 @@ const DayAgenda: React.FC<DayAgendaProps> = ({ date, onClose, events = [] }) => 
                 </button>
             </div>
 
-            {/* Timeline Container */}
-            <div
-                className="relative border-l border-dashed border-gray-200 ml-12"
-                style={{ height: `${(endHour - startHour) * hourHeight}px` }}
-            >
-                {/* Hour markers */}
-                {hours.map((hour) => (
-                    <div
-                        key={hour}
-                        className="absolute w-full flex items-center"
-                        style={{ top: `${(hour - startHour) * hourHeight}px` }}
-                    >
-                        <span className="absolute -left-12 text-xs font-semibold text-text-muted w-8 text-right">
-                            {hour}:00
-                        </span>
-                        <div className="w-2 h-2 rounded-full bg-gray-200 -ml-[5px] ring-4 ring-white"></div>
-                        <div className="w-full border-t border-dashed border-gray-100 ml-2"></div>
+            {/* Event List */}
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 hide-scrollbar">
+                {events.length === 0 ? (
+                    <div className="text-center py-8 text-text-muted">
+                        <span className="material-symbols-outlined text-4xl mb-2 block opacity-50">event_busy</span>
+                        <p className="text-sm">Nenhum evento para este dia.</p>
                     </div>
-                ))}
-
-                {/* Events */}
-                {events.map((event) => {
-                    const startTimeMinutes = timeToMinutes(event.startTime);
-                    const endTimeMinutes = timeToMinutes(event.endTime);
-
-                    // Calculate position and height
-                    const top = ((startTimeMinutes - startMinutes) / 60) * hourHeight;
-                    const height = ((endTimeMinutes - startTimeMinutes) / 60) * hourHeight;
-
-                    // Minimal height visual fix - increased to fit 3 lines (Time, Title, Subtitle)
-                    const displayHeight = Math.max(height, 85);
-
-                    return (
-                        <div
-                            key={event.id}
-                            className={`absolute left-4 right-0 rounded-3xl p-3.5 border shadow-sm hover:shadow-md transition-all cursor-pointer group flex items-start justify-between ${event.color}`}
-                            style={{
-                                top: `${top}px`,
-                                height: `${displayHeight}px`,
-                                // Make a bit narrower to not touch the right edge
-                                width: 'calc(100% - 1.5rem)',
-                                zIndex: 10 // Ensure it sits above grid lines
-                            }}
-                        >
-                            <div className="flex-1 min-w-0 flex flex-col justify-center h-full">
-                                <div className="flex items-center gap-1.5 mb-1 text-gray-600">
-                                    {/* Icon based on color/context */}
-                                    <span className="material-symbols-outlined text-sm">
-                                        {event.title.toLowerCase().includes('voo') || event.title.toLowerCase().includes('embarque') ? 'flight' :
-                                            event.title.toLowerCase().includes('restaurante') || event.subtitle?.toLowerCase().includes('restaurante') ? 'restaurant' :
-                                                event.title.toLowerCase().includes('hotel') || event.title.toLowerCase().includes('check-in') ? 'hotel' :
-                                                    'calendar_today'}
-                                    </span>
-                                    <span className="text-xs font-semibold">
-                                        {event.startTime} - {event.endTime}
-                                    </span>
-                                </div>
-                                <h4 className="font-bold text-sm text-gray-900 leading-tight mb-0.5 truncate pr-2">{event.title}</h4>
-                                {event.subtitle && (
-                                    <p className="text-xs text-gray-500 leading-tight line-clamp-1">{event.subtitle}</p>
-                                )}
-                            </div>
-
-                            {event.avatar && (
-                                <img
-                                    src={event.avatar}
-                                    alt="Avatar"
-                                    className="w-10 h-10 rounded-full border-2 border-white shadow-sm object-cover ml-2"
-                                />
-                            )}
-                        </div>
-                    );
-                })}
+                ) : (
+                    events.map((event) => (
+                        <CompactAgendaCard key={event.id} event={event} />
+                    ))
+                )}
             </div>
         </div>
     );

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLocalStorage } from '../../../hooks/useLocalStorage';
 import { Attraction, CityGuide } from '../../../types';
 import { Card, Badge } from '../../ui/Base';
@@ -227,7 +228,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
         if (onAddToItinerary && selectedAttraction) {
             onAddToItinerary({
                 ...data,
-                address: selectedAttraction.location || selectedAttraction.address || '',
+                address: selectedAttraction.address || '',
                 image: selectedAttraction.image,
                 category: selectedAttraction.category
             });
@@ -250,7 +251,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
         let filtered = baseAttractions.map(attr => ({
             ...attr,
             // Only add mock data if missing
-            rating: attr.rating || (4.5 + Math.random() * 0.5).toFixed(1),
+            rating: attr.rating || parseFloat((4.5 + Math.random() * 0.5).toFixed(1)),
             time: attr.time || (Math.random() > 0.5 ? '09:00 - 17:00' : '24 Horas'),
             price: attr.price || (Math.random() > 0.7 ? '€ 15' : 'Grátis'),
             type: attr.type || (Math.random() > 0.5 ? 'Patrimônio' : 'Passeio')

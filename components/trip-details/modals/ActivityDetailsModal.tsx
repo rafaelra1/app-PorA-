@@ -29,7 +29,7 @@ const ActivityDetailsModal: React.FC<ActivityDetailsModalProps> = ({ isOpen, onC
     }, [isOpen, title, location]);
 
     const footer = (
-        <Button onClick={onClose} fullWidth>
+        <Button onClick={onClose} className="w-full">
             Fechar
         </Button>
     );

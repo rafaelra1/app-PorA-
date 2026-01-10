@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Base';
+import { EmptyState } from '../../ui/EmptyState';
 import { Trip } from '../../../types';
 
 // =============================================================================
@@ -33,11 +34,6 @@ interface TripHighlight {
 // =============================================================================
 // Constants
 // =============================================================================
-
-const INITIAL_INVITED_PEOPLE: InvitedPerson[] = [
-    { id: '1', name: 'Jane Doe', email: 'jane@exemplo.com', role: 'Visualizador', status: 'Enviado', initials: 'JD' },
-    { id: '2', name: 'Mark Smith', email: 'mark@exemplo.com', role: 'Editor', status: 'Pendente', initials: 'MS' },
-];
 
 const MOCK_TRIP_STATS = {
     days: 12,
@@ -230,7 +226,7 @@ const SocialShareButtons: React.FC<SocialShareButtonsProps> = ({ shareLink }) =>
 const ShareTripModal: React.FC<ShareTripModalProps> = ({ isOpen, onClose, trip }) => {
     const [isPublic, setIsPublic] = useState(true);
     const [inviteEmail, setInviteEmail] = useState('');
-    const [invitedPeople, setInvitedPeople] = useState<InvitedPerson[]>(INITIAL_INVITED_PEOPLE);
+    const [invitedPeople, setInvitedPeople] = useState<InvitedPerson[]>([]);
     const [copiedLink, setCopiedLink] = useState(false);
 
     const shareLink = `https://tripmanager.app/s/${trip.id?.slice(0, 8) || 'euro-23'}`;
@@ -346,8 +342,8 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({ isOpen, onClose, trip }
                             <button
                                 onClick={handleCopyLink}
                                 className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${copiedLink
-                                        ? 'bg-green-500 text-white'
-                                        : 'bg-primary text-text-main hover:bg-primary-dark'
+                                    ? 'bg-green-500 text-white'
+                                    : 'bg-primary text-text-main hover:bg-primary-dark'
                                     }`}
                             >
                                 <span className="material-symbols-outlined text-base">
@@ -380,13 +376,22 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({ isOpen, onClose, trip }
                             </button>
                         </div>
                         <div className="space-y-2 max-h-32 overflow-y-auto">
-                            {invitedPeople.map((person) => (
-                                <InvitedPersonItem
-                                    key={person.id}
-                                    person={person}
-                                    onRemove={handleRemoveInvite}
+                            {invitedPeople.length > 0 ? (
+                                invitedPeople.map((person) => (
+                                    <InvitedPersonItem
+                                        key={person.id}
+                                        person={person}
+                                        onRemove={handleRemoveInvite}
+                                    />
+                                ))
+                            ) : (
+                                <EmptyState
+                                    variant="minimal"
+                                    title="Nenhum convidado ainda"
+                                    description="Convide amigos para visualizar ou editar esta viagem"
+                                    icon="group_add"
                                 />
-                            ))}
+                            )}
                         </div>
                     </div>
 

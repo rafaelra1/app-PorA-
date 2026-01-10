@@ -1,0 +1,62 @@
+[
+    {
+        "code": "AA",
+        "name": "American Airlines",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/American_Airlines_logo.svg/300px-American_Airlines_logo.svg.png",
+        "alliance": "Oneworld"
+    },
+    {
+        "code": "DL",
+        "name": "Delta Air Lines",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/Delta_logo.svg/300px-Delta_logo.svg.png",
+        "alliance": "SkyTeam"
+    },
+    {
+        "code": "UA",
+        "name": "United Airlines",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/United_Airlines_Logo.svg/300px-United_Airlines_Logo.svg.png",
+        "alliance": "Star Alliance"
+    },
+    {
+        "code": "EK",
+        "name": "Emirates",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Emirates_logo.svg/300px-Emirates_logo.svg.png",
+        "alliance": null
+    },
+    {
+        "code": "LA",
+        "name": "LATAM Airlines",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Latam-logo_-_v_pantone.jpg/300px-Latam-logo_-_v_pantone.jpg",
+        "alliance": null
+    },
+    {
+        "code": "AD",
+        "name": "Azul Brazilian Airlines",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Azul_Linhas_Aereas_Brasileiras_logo.svg/300px-Azul_Linhas_Aereas_Brasileiras_logo.svg.png",
+        "alliance": null
+    },
+    {
+        "code": "TP",
+        "name": "TAP Air Portugal",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/TAP_Air_Portugal_Logo.svg/300px-TAP_Air_Portugal_Logo.svg.png",
+        "alliance": "Star Alliance"
+    },
+    {
+        "code": "AF",
+        "name": "Air France",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Air_France_Logo.svg/300px-Air_France_Logo.svg.png",
+        "alliance": "SkyTeam"
+    },
+    {
+        "code": "LH",
+        "name": "Lufthansa",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Lufthansa_Logo_2018.svg/300px-Lufthansa_Logo_2018.svg.png",
+        "alliance": "Star Alliance"
+    },
+    {
+        "code": "G3",
+        "name": "Gol Linhas Aéreas",
+        "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Gol_Transportes_A%C3%A9reos_logo_2015.svg/300px-Gol_Transportes_A%C3%A9reos_logo_2015.svg.png",
+        "alliance": null
+    }
+]

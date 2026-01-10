@@ -26,7 +26,7 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
   return (
     <button
-      className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none ${variants[variant]} ${className}`}
+      className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none ${variants[variant]} ${className}`}
       {...props}
     >
       {children}
@@ -34,11 +34,28 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   );
 };
 
-export const Badge: React.FC<{ children: React.ReactNode; color?: string }> = ({ children, color = "bg-primary" }) => (
-  <span className={`px-2 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-wider ${color}`}>
-    {children}
-  </span>
-);
+export const Badge: React.FC<{
+  children: React.ReactNode;
+  variant?: 'primary' | 'secondary' | 'outline' | 'neutral' | 'success' | 'warning' | 'danger';
+  className?: string;
+  color?: string;
+}> = ({ children, variant = 'primary', className = "", color }) => {
+  const variants = {
+    primary: 'bg-primary text-text-main',
+    secondary: 'bg-secondary text-text-main',
+    outline: 'border border-gray-200 text-text-muted',
+    neutral: 'bg-gray-100 text-text-muted',
+    success: 'bg-green-100 text-green-700',
+    warning: 'bg-yellow-100 text-yellow-700',
+    danger: 'bg-red-100 text-red-700'
+  };
+
+  return (
+    <span className={`px-2 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-wider ${variants[variant]} ${color || ''} ${className}`}>
+      {children}
+    </span>
+  );
+};
 
 // Export new UI components
 export { Input } from './Input';
@@ -48,6 +65,10 @@ export { Icon } from './Icon';
 export { LoadingSpinner } from './LoadingSpinner';
 export { Skeleton, SkeletonText } from './Skeleton';
 export { EmptyState } from './EmptyState';
+export { PageContainer } from './PageContainer';
+export { PageHeader } from './PageHeader';
+export { FilterButton } from './FilterButton';
+export { FilterBar } from './FilterBar';
 
 // Export form components
 export {

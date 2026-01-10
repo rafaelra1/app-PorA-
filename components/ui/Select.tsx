@@ -30,6 +30,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             fullWidth = false,
             className = '',
             disabled,
+            required,
             ...props
         },
         ref
@@ -47,16 +48,33 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         const bgPosition = 'right 0.5rem center';
         const bgSize = '1.5em 1.5em';
 
+        const selectId = props.id || `select-${Math.random().toString(36).substr(2, 9)}`;
+        const errorId = error ? `${selectId}-error` : undefined;
+
         return (
             <div className={`${widthStyles}`}>
                 {label && (
-                    <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">
+                    <label
+                        htmlFor={selectId}
+                        className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider"
+                    >
                         {label}
+                        {required && (
+                            <>
+                                <span aria-hidden="true" className="text-red-500 ml-0.5">*</span>
+                                <span className="sr-only">(obrigatório)</span>
+                            </>
+                        )}
                     </label>
                 )}
                 <select
                     ref={ref}
+                    id={selectId}
                     disabled={disabled}
+                    required={required}
+                    aria-required={required}
+                    aria-invalid={!!error}
+                    aria-describedby={errorId}
                     style={{
                         backgroundImage: bgImage,
                         backgroundPosition: bgPosition,
@@ -87,7 +105,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
                         </option>
                     ))}
                 </select>
-                {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+                {error && (
+                    <p id={errorId} role="alert" className="mt-1 text-xs text-red-600">
+                        {error}
+                    </p>
+                )}
                 {helperText && !error && (
                     <p className="mt-1 text-xs text-text-muted">{helperText}</p>
                 )}

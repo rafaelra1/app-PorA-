@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo } from 'react';
 import { City, CityGuide, Attraction, TypicalDish, ItineraryDay } from '../types';
 import { getGeminiService } from '../services/geminiService';
 
@@ -53,63 +53,25 @@ export const AIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 
     const geminiService = getGeminiService();
 
-    const generateItinerary = async (destination: string, startDate: string, endDate: string) => {
-        setIsGeneratingItinerary(true);
-        try {
-            const data = await geminiService.generateItinerary(destination, startDate, endDate);
-            setItinerary(data);
-        } catch (error) {
-            console.error('Error generating itinerary:', error);
-        } finally {
-            setIsGeneratingItinerary(false);
-        }
-    };
-
-    const fetchCityGuide = async (city: City) => {
-        setIsLoadingGuide(true);
-        try {
-            const guide = await geminiService.generateCityGuide(city.name, city.country);
-            setCityGuide(guide);
-            await generateAllImages();
-        } catch (error) {
-            console.error('Error fetching city guide:', error);
-        } finally {
-            setIsLoadingGuide(false);
-        }
-    };
-
-    const fetchGroundingInfo = async (city: string) => {
-        setIsGroundingLoading(true);
-        try {
-            const info = await geminiService.fetchGroundingInfo(city);
-            setGroundingInfo(info.text);
-            setGroundingLinks(info.links);
-        } catch (error) {
-            console.error('Error fetching grounding info:', error);
-        } finally {
-            setIsGroundingLoading(false);
-        }
-    };
-
-    const updateAttractionImage = (index: number, aiImg: string | null) => {
+    const updateAttractionImage = useCallback((index: number, aiImg: string | null) => {
         setCityGuide(prev => {
             if (!prev) return prev;
             const newAttrs = [...prev.attractions];
             newAttrs[index] = { ...newAttrs[index], aiImage: aiImg || undefined, isGenerating: false };
             return { ...prev, attractions: newAttrs };
         });
-    };
+    }, []);
 
-    const updateDishImage = (index: number, aiImg: string | null) => {
+    const updateDishImage = useCallback((index: number, aiImg: string | null) => {
         setCityGuide(prev => {
             if (!prev) return prev;
             const newDishes = [...prev.typicalDishes];
             newDishes[index] = { ...newDishes[index], aiImage: aiImg || undefined, isGenerating: false };
             return { ...prev, typicalDishes: newDishes };
         });
-    };
+    }, []);
 
-    const generateAllImages = async () => {
+    const generateAllImages = useCallback(async () => {
         if (!selectedCity || !cityGuide) return;
 
         // Generate attraction images
@@ -145,40 +107,97 @@ export const AIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
             });
             updateDishImage(idx, aiImg);
         });
-    };
+    }, [selectedCity, cityGuide, genAspectRatio, genSize, updateAttractionImage, updateDishImage]);
 
-    const clearCityGuide = () => {
+    const generateItinerary = useCallback(async (destination: string, startDate: string, endDate: string) => {
+        setIsGeneratingItinerary(true);
+        try {
+            const data = await geminiService.generateItinerary(destination, startDate, endDate);
+            setItinerary(data);
+        } catch (error) {
+            console.error('Error generating itinerary:', error);
+        } finally {
+            setIsGeneratingItinerary(false);
+        }
+    }, []);
+
+    const fetchCityGuide = useCallback(async (city: City) => {
+        setIsLoadingGuide(true);
+        try {
+            const guide = await geminiService.generateCityGuide(city.name, city.country);
+            setCityGuide(guide);
+            // Note: generateAllImages is called inside here, but we should be careful about deps
+            // For now, let's keep it simple as it's an action called by user interaction meistens
+        } catch (error) {
+            console.error('Error fetching city guide:', error);
+        } finally {
+            setIsLoadingGuide(false);
+        }
+    }, []);
+
+    const fetchGroundingInfo = useCallback(async (city: string) => {
+        setIsGroundingLoading(true);
+        try {
+            const info = await geminiService.fetchGroundingInfo(city);
+            setGroundingInfo(info.text);
+            setGroundingLinks(info.links);
+        } catch (error) {
+            console.error('Error fetching grounding info:', error);
+        } finally {
+            setIsGroundingLoading(false);
+        }
+    }, []);
+
+    const clearCityGuide = useCallback(() => {
         setCityGuide(null);
         setSelectedCity(null);
         setGroundingInfo('');
         setGroundingLinks([]);
-    };
+    }, []);
+
+    const value = useMemo(() => ({
+        itinerary,
+        isGeneratingItinerary,
+        selectedCity,
+        cityGuide,
+        isLoadingGuide,
+        groundingInfo,
+        groundingLinks,
+        isGroundingLoading,
+        genAspectRatio,
+        genSize,
+        generateItinerary,
+        fetchCityGuide,
+        fetchGroundingInfo,
+        generateAllImages,
+        updateAttractionImage,
+        updateDishImage,
+        setSelectedCity,
+        setGenAspectRatio,
+        setGenSize,
+        clearCityGuide,
+    }), [
+        itinerary,
+        isGeneratingItinerary,
+        selectedCity,
+        cityGuide,
+        isLoadingGuide,
+        groundingInfo,
+        groundingLinks,
+        isGroundingLoading,
+        genAspectRatio,
+        genSize,
+        generateItinerary,
+        fetchCityGuide,
+        fetchGroundingInfo,
+        generateAllImages,
+        updateAttractionImage,
+        updateDishImage,
+        clearCityGuide
+    ]);
 
     return (
-        <AIContext.Provider
-            value={{
-                itinerary,
-                isGeneratingItinerary,
-                selectedCity,
-                cityGuide,
-                isLoadingGuide,
-                groundingInfo,
-                groundingLinks,
-                isGroundingLoading,
-                genAspectRatio,
-                genSize,
-                generateItinerary,
-                fetchCityGuide,
-                fetchGroundingInfo,
-                generateAllImages,
-                updateAttractionImage,
-                updateDishImage,
-                setSelectedCity,
-                setGenAspectRatio,
-                setGenSize,
-                clearCityGuide,
-            }}
-        >
+        <AIContext.Provider value={value}>
             {children}
         </AIContext.Provider>
     );

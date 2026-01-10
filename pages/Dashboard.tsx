@@ -1,8 +1,14 @@
-import React, { useRef, useState, useEffect } from 'react';
+import * as React from 'react';
+import { PageContainer, PageHeader, Card } from '../components/ui/Base';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import DayAgenda from '../components/dashboard/DayAgenda';
-import { Trip, ItineraryActivity, Transport } from '../types';
+import NextTransportWidget from '../components/dashboard/NextTransportWidget';
+import CheckInWidget from '../components/dashboard/CheckInWidget';
+import DocumentsWidget from '../components/dashboard/DocumentsWidget';
+import { Trip, ItineraryActivity, Transport, HotelReservation, TripDocument } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useCalendar } from '../contexts/CalendarContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { BRAZILIAN_HOLIDAYS } from '../constants';
 
 interface DashboardProps {
@@ -17,6 +23,7 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEditTrip, onDeleteTrip, trips, onNavigate }) => {
   const { user } = useAuth();
   const { syncFromTrips, syncFromActivities, syncFromTransports, getEventsForDate } = useCalendar();
+  const { unreadCount } = useNotifications();
   const nextTrip = trips.find(t => t.status === 'confirmed') || trips[0];
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'planning' | 'completed'>('all');
@@ -24,12 +31,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [allActivities, setAllActivities] = useState<ItineraryActivity[]>([]);
   const [allTransports, setAllTransports] = useState<Transport[]>([]);
+  const [allHotels, setAllHotels] = useState<HotelReservation[]>([]);
+  const [allDocuments, setAllDocuments] = useState<TripDocument[]>([]);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
 
-  // Load activities and transports from localStorage and sync with CalendarContext
+  // Load activities, transports, hotels, and documents from localStorage and sync with CalendarContext
   useEffect(() => {
     const loadData = () => {
       const collectedActivities: ItineraryActivity[] = [];
       const collectedTransports: Transport[] = [];
+      const collectedHotels: HotelReservation[] = [];
+      const collectedDocuments: TripDocument[] = [];
 
       trips.forEach(trip => {
         if (typeof window !== 'undefined') {
@@ -55,6 +67,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
                 syncFromTransports(parsed, trip.id);
               }
             }
+
+            // Load hotels
+            const storedHotels = window.localStorage.getItem(`porai_trip_${trip.id}_hotels`);
+            if (storedHotels) {
+              const parsed = JSON.parse(storedHotels);
+              if (Array.isArray(parsed)) {
+                collectedHotels.push(...parsed);
+              }
+            }
+
+            // Load documents
+            const storedDocuments = window.localStorage.getItem(`porai_trip_${trip.id}_documents`);
+            if (storedDocuments) {
+              const parsed = JSON.parse(storedDocuments);
+              if (Array.isArray(parsed)) {
+                collectedDocuments.push(...parsed);
+              }
+            }
           } catch (e) {
             console.error(`Error loading data for trip ${trip.id}`, e);
           }
@@ -63,6 +93,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
 
       setAllActivities(collectedActivities);
       setAllTransports(collectedTransports);
+      setAllHotels(collectedHotels);
+      setAllDocuments(collectedDocuments);
     };
 
     // Sync trips with calendar
@@ -75,17 +107,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
     return () => window.removeEventListener('storage', loadData);
   }, [trips, syncFromTrips, syncFromActivities, syncFromTransports]);
 
-  // Stats calculations
+  // Stats calculations - memoized for performance
   const totalTrips = trips.length;
-  const countriesVisited = new Set(trips.map(t => t.destination?.split(',')[1]?.trim() || t.destination)).size;
-  const citiesVisited = new Set(trips.map(t => t.destination?.split(',')[0]?.trim())).size;
-  const totalDays = trips.reduce((acc, t) => {
-    if (!t.startDate || !t.endDate) return acc;
-    const start = new Date(t.startDate.split('/').reverse().join('-'));
-    const end = new Date(t.endDate.split('/').reverse().join('-'));
-    const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-    return acc + (isNaN(days) ? 0 : days);
-  }, 0);
+
+  const countriesVisited = useMemo(() =>
+    new Set(trips.map(t => t.destination?.split(',')[1]?.trim() || t.destination)).size,
+    [trips]
+  );
+
+  const citiesVisited = useMemo(() =>
+    new Set(trips.map(t => t.destination?.split(',')[0]?.trim())).size,
+    [trips]
+  );
+
+  const totalDays = useMemo(() =>
+    trips.reduce((acc, t) => {
+      if (!t.startDate || !t.endDate) return acc;
+      const start = new Date(t.startDate.split('/').reverse().join('-'));
+      const end = new Date(t.endDate.split('/').reverse().join('-'));
+      const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+      return acc + (isNaN(days) ? 0 : days);
+    }, 0),
+    [trips]
+  );
 
   const scrollCarousel = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -122,70 +166,49 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
     };
   };
 
-  const countdown = getCountdown();
+  const countdown = useMemo(() => getCountdown(), [nextTrip]);
 
-  // Generate events for DayAgenda based on selected date
-  const generateEventsForDate = (date: Date) => {
-    const events: { id: string; title: string; subtitle?: string; startTime: string; endTime: string; color: string }[] = [];
-
-    const parseDate = (d: string) => {
-      if (d.includes('/')) {
-        const [day, month, year] = d.split('/').map(Number);
-        return new Date(year, month - 1, day);
-      }
-      return new Date(d);
-    };
+  // Generate events for DayAgenda based on selected date - memoized
+  const generateEventsForDate = useMemo(() => (date: Date) => {
+    const events: {
+      id: string;
+      title: string;
+      subtitle?: string;
+      startTime: string;
+      endTime: string;
+      color: string;
+      type: 'flight' | 'train' | 'bus' | 'car' | 'ferry' | 'transfer' | 'meal' | 'sightseeing' | 'accommodation' | 'activity';
+      location?: string;
+      status?: 'on_time' | 'delayed' | 'cancelled';
+      route?: { from: string; to: string };
+      image?: string;
+    }[] = [];
 
     const isSameDay = (d1: Date, d2: Date) =>
       d1.getFullYear() === d2.getFullYear() &&
       d1.getMonth() === d2.getMonth() &&
       d1.getDate() === d2.getDate();
 
-    trips.forEach(trip => {
-      if (!trip.startDate || !trip.endDate) return;
-
-      const startDate = parseDate(trip.startDate);
-      const endDate = parseDate(trip.endDate);
-
-      // Departure - Soft Blue
-      if (isSameDay(startDate, date)) {
-        events.push({
-          id: `dep-${trip.id}`,
-          title: `Embarque: ${trip.title || trip.destination}`,
-          subtitle: trip.destination,
-          startTime: '08:00',
-          endTime: '10:00',
-          color: 'bg-blue-50 text-blue-700 border-blue-100'
-        });
-      }
-
-      // Return - Soft Green
-      if (isSameDay(endDate, date)) {
-        events.push({
-          id: `ret-${trip.id}`,
-          title: `Retorno: ${trip.title || trip.destination}`,
-          subtitle: trip.destination,
-          startTime: '18:00',
-          endTime: '20:00',
-          color: 'bg-green-50 text-green-700 border-green-100'
-        });
-      }
-    });
-
-    // Add Transports (flights, trains, etc.)
+    // Format date for comparison
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
     const formattedDate = `${day}/${month}/${year}`;
 
-    // Filter transports for this date
+    // Add Transports (flights, trains, etc.)
     allTransports.forEach(transport => {
       if (!transport.departureDate) return;
 
-      // Compare dates - handle both DD/MM/YYYY and other formats
-      const transportDate = transport.departureDate;
-      if (transportDate === formattedDate) {
-        // Get transport type icon label
+      if (transport.departureDate === formattedDate) {
+        const typeMap: Record<string, 'flight' | 'train' | 'bus' | 'car' | 'ferry' | 'transfer'> = {
+          flight: 'flight',
+          train: 'train',
+          bus: 'bus',
+          car: 'car',
+          transfer: 'transfer',
+          ferry: 'ferry'
+        };
+
         const typeLabels: Record<string, string> = {
           flight: 'Voo',
           train: 'Trem',
@@ -197,45 +220,67 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
 
         const typeLabel = typeLabels[transport.type] || 'Transporte';
 
-        // Calculate end time based on arrival if available
+        // Calculate end time
         let endTime = transport.arrivalTime || transport.departureTime;
         if (!endTime) {
-          // Default 2h duration if no arrival time
           const [h, m] = (transport.departureTime || '08:00').split(':').map(Number);
           const endH = (h + 2) % 24;
           endTime = `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
         }
 
+        // Build route info
+        const fromLocation = transport.departureCity || transport.departureLocation || '';
+        const toLocation = transport.arrivalCity || transport.arrivalLocation || '';
+
         events.push({
           id: `transport-${transport.id}`,
           title: `${typeLabel}: ${transport.operator} ${transport.reference || ''}`.trim(),
-          subtitle: transport.route || `${transport.departureCity || transport.departureLocation} → ${transport.arrivalCity || transport.arrivalLocation}`,
-          startTime: transport.departureTime || '08:00',
+          subtitle: transport.route || `${fromLocation} → ${toLocation}`,
+          startTime: transport.departureTime?.slice(0, 5) || '08:00',
           endTime: endTime,
-          color: 'bg-violet-50 text-violet-700 border-violet-100'
+          color: 'bg-violet-50 text-violet-700 border-violet-100',
+          type: typeMap[transport.type] || 'transfer',
+          location: toLocation,
+          status: 'on_time', // Default to on_time, could be dynamic
+          route: fromLocation && toLocation ? { from: fromLocation, to: toLocation } : undefined,
+          image: transport.type === 'flight' ? 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=600&q=80' : undefined
         });
       }
     });
 
     // Add Itinerary Activities
-    const daysActivities = allActivities.filter(a => a.date === formattedDate);
+    const daysActivities = allActivities.filter(a => {
+      if (!a.date) return false;
+
+      let activityDate: Date;
+      if (a.date.includes('/')) {
+        const [d, m, y] = a.date.split('/').map(Number);
+        activityDate = new Date(y, m - 1, d);
+      } else {
+        const [y, m, d] = a.date.split('-').map(Number);
+        activityDate = new Date(y, m - 1, d);
+      }
+
+      return isSameDay(activityDate, date);
+    });
 
     daysActivities.forEach(act => {
-      // Calculate end time (approve 1.5h duration if not specified)
       const [h, m] = act.time.split(':').map(Number);
       const endH = (h + 1) % 24;
       const endTime = `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
-      // Determine color based on type - Soft Pastel Palette similar to City Guide
-      let color = 'bg-gray-50 text-gray-700 border-gray-100'; // Default
+      // Map activity type
+      let eventType: 'meal' | 'sightseeing' | 'accommodation' | 'activity' = 'activity';
+      let color = 'bg-gray-50 text-gray-700 border-gray-100';
 
       if (act.type === 'food' || act.type === 'meal') {
+        eventType = 'meal';
         color = 'bg-orange-50 text-orange-700 border-orange-100';
-      } else if (act.type === 'sightseeing' || act.type === 'culture' || act.type === 'attraction') {
-        color = 'bg-amber-50 text-amber-700 border-amber-100'; // Match Gastronomy Guide yellow/amber aesthetic
-      } else if (act.type === 'transport') {
-        color = 'bg-blue-50 text-blue-700 border-blue-100';
+      } else if (act.type === 'sightseeing' || act.type === 'culture') {
+        eventType = 'sightseeing';
+        color = 'bg-amber-50 text-amber-700 border-amber-100';
       } else if (act.type === 'accommodation') {
+        eventType = 'accommodation';
         color = 'bg-emerald-50 text-emerald-700 border-emerald-100';
       }
 
@@ -245,7 +290,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
         subtitle: act.location || (act.type === 'food' ? 'Restaurante' : 'Atividade'),
         startTime: act.time,
         endTime: endTime,
-        color: color
+        color: color,
+        type: eventType,
+        location: act.location
       });
     });
 
@@ -253,41 +300,72 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
     events.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     return events;
-  };
+  }, [allTransports, allActivities, allHotels]);
 
   const selectedDateEvents = selectedDate ? generateEventsForDate(selectedDate) : [];
 
   return (
-    <div className="min-h-screen bg-background-light -m-6 p-6">
-      <div className="flex flex-col gap-6 max-w-7xl mx-auto">
-
-        {/* ========== HEADER ========== */}
-        <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-2">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-text-main tracking-tight">
-              Bem-vindo(a) de volta, {user?.name?.split(' ')[0] || 'Viajante'}! 👋
-            </h1>
-            <p className="text-text-muted text-sm mt-0.5">Planeje sua próxima aventura.</p>
-          </div>
+    <PageContainer>
+      {/* ========== HEADER ========== */}
+      <PageHeader
+        title={`Bem-vindo(a) de volta, ${user?.name?.split(' ')[0] || 'Viajante'}! 👋`}
+        description="Planeje sua próxima aventura."
+        actions={
           <div className="flex items-center gap-6 md:gap-8">
-            <div className="text-center">
+            <div className="hidden md:block text-center">
               <span className="block text-2xl md:text-3xl font-bold text-text-main">{totalTrips}</span>
               <span className="text-xs text-text-muted">Viagens</span>
             </div>
-            <div className="text-center">
+            <div className="hidden md:block text-center">
               <span className="block text-2xl md:text-3xl font-bold text-text-main">{countriesVisited}</span>
               <span className="text-xs text-text-muted">Países</span>
             </div>
-            <div className="text-center">
+            <div className="hidden md:block text-center">
               <span className="block text-2xl md:text-3xl font-bold text-text-main">{citiesVisited}</span>
               <span className="text-xs text-text-muted">Cidades</span>
             </div>
-            <div className="text-center">
+            <div className="hidden md:block text-center">
               <span className="block text-2xl md:text-3xl font-bold text-success">{totalDays}</span>
               <span className="text-xs text-text-muted">Dias viajando</span>
             </div>
+            {/* Notification Bell */}
+            <button
+              onClick={() => onNavigate?.('notifications')}
+              className="relative p-2 rounded-full hover:bg-gray-100 transition-colors"
+              title="Notificações"
+            >
+              <span className="material-symbols-outlined text-2xl text-text-muted">notifications</span>
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 size-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
           </div>
-        </header>
+        }
+      />
+
+      {/* Mobile Stats (visible only on mobile) */}
+      <div className="grid grid-cols-4 gap-2 md:hidden">
+        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
+          <span className="block text-xl font-bold text-text-main">{totalTrips}</span>
+          <span className="text-[10px] text-text-muted">Viagens</span>
+        </div>
+        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
+          <span className="block text-xl font-bold text-text-main">{countriesVisited}</span>
+          <span className="text-[10px] text-text-muted">Países</span>
+        </div>
+        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
+          <span className="block text-xl font-bold text-text-main">{citiesVisited}</span>
+          <span className="text-[10px] text-text-muted">Cidades</span>
+        </div>
+        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
+          <span className="block text-xl font-bold text-success">{totalDays}</span>
+          <span className="text-[10px] text-text-muted">Dias</span>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-6">
 
         {/* ========== ROW 1: HERO (Full Width) ========== */}
         <section>
@@ -295,12 +373,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
           <div className="bg-white rounded-2xl overflow-hidden shadow-soft group">
             {nextTrip ? (
               <div className="relative h-[320px]">
-                <img
-                  src={nextTrip.coverImage}
-                  alt={nextTrip.destination}
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
+                {nextTrip.coverImage && !imageErrors.has(nextTrip.id) ? (
+                  <>
+                    <img
+                      src={nextTrip.coverImage}
+                      alt={nextTrip.destination}
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      onError={() => setImageErrors(prev => new Set(prev).add(nextTrip.id))}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary-dark to-secondary"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-9xl text-white/20">photo_camera</span>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
+                  </>
+                )}
                 <div className="absolute inset-0 p-6 flex flex-col justify-between text-white">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500 text-xs font-bold uppercase tracking-wide w-fit">
                     <span className="size-2 rounded-full bg-white animate-pulse"></span>
@@ -348,6 +439,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column: Widgets */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Check-in Reminders (only shows if any pending) */}
+            <CheckInWidget transports={allTransports} hotels={allHotels} />
+
+            {/* Next Transports */}
+            <NextTransportWidget transports={allTransports} />
+
+            {/* Documents Summary */}
+            <DocumentsWidget documents={allDocuments} />
             {/* Próximos Feriados */}
             <div className="bg-white rounded-2xl p-5 shadow-soft">
               <div className="flex items-center gap-2 mb-4">
@@ -399,7 +498,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
                   className="flex flex-col items-center gap-2 p-4 rounded-xl bg-background-light hover:bg-green-50 hover:shadow-md transition-all group"
                 >
                   <span className="material-symbols-outlined text-2xl text-text-muted group-hover:text-green-500 group-hover:scale-110 transition-all">folder_open</span>
-                  <span className="text-xs font-bold text-text-main">Documentos</span>
+                  <span className="text-xs font-bold text-text-main">Biblioteca</span>
                 </button>
                 <button
                   onClick={() => onNavigate?.('ai')}
@@ -449,8 +548,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
                       onClick={() => onViewTrip(trip.id)}
                       className="min-w-[160px] rounded-xl overflow-hidden bg-background-light hover:shadow-lg transition-all cursor-pointer group shrink-0"
                     >
-                      <div className="h-20 bg-cover bg-center relative" style={{ backgroundImage: `url(${trip.coverImage})` }}>
+                      <div className="h-20 bg-cover bg-center relative bg-gradient-to-br from-primary-light to-secondary-light" style={{ backgroundImage: trip.coverImage && !imageErrors.has(trip.id) ? `url(${trip.coverImage})` : 'none' }}>
+                        {trip.coverImage && !imageErrors.has(trip.id) && (
+                          <img
+                            src={trip.coverImage}
+                            alt={trip.destination}
+                            className="hidden"
+                            onError={() => setImageErrors(prev => new Set(prev).add(trip.id))}
+                          />
+                        )}
                         <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
+                        {(!trip.coverImage || imageErrors.has(trip.id)) && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="material-symbols-outlined text-3xl text-white/50">photo_camera</span>
+                          </div>
+                        )}
                       </div>
                       <div className="p-2.5">
                         <h4 className="font-bold text-text-main text-xs truncate">{trip.title || trip.destination}</h4>
@@ -558,7 +670,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
 
 
       </div>
-    </div>
+    </PageContainer>
   );
 };
 

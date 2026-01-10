@@ -1,19 +1,25 @@
-import React from 'react';
+import * as React from 'react';
+import { lazy, Suspense } from 'react';
 import TopNavigation from './components/TopNavigation';
-import Dashboard from './pages/Dashboard';
-import AIAssistant from './pages/AIAssistant';
-import Travels from './pages/Travels';
-import Journal from './pages/Journal';
-import TripDetails from './pages/TripDetails';
-import CalendarView from './pages/CalendarView';
-import Documents from './pages/Documents';
-import Profile from './pages/Profile';
-import Settings from './pages/Settings';
-import Notifications from './pages/Notifications';
-import Login from './pages/Login';
-import AddTripModal from './components/AddTripModal';
-import Chatbot from './components/Chatbot';
 import OfflineIndicator from './components/ui/OfflineIndicator';
+import { PageLoader } from './components/ui/PageLoader';
+
+// Lazy load pages for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const AIAssistant = lazy(() => import('./pages/AIAssistant'));
+const Travels = lazy(() => import('./pages/Travels'));
+const Memories = lazy(() => import('./pages/Memories'));
+const TripDetails = lazy(() => import('./pages/TripDetails'));
+const CalendarView = lazy(() => import('./pages/CalendarView'));
+const Library = lazy(() => import('./pages/Library'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Notifications = lazy(() => import('./pages/Notifications'));
+const Login = lazy(() => import('./pages/Login'));
+
+// Lazy load heavy components
+const AddTripModal = lazy(() => import('./components/AddTripModal'));
+const Chatbot = lazy(() => import('./components/Chatbot'));
 import { TripProvider, useTrips } from './contexts/TripContext';
 import { UIProvider, useUI } from './contexts/UIContext';
 import { AIProvider } from './contexts/AIContext';
@@ -21,6 +27,9 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { CalendarProvider } from './contexts/CalendarContext';
+import { ToastProvider } from './contexts/ToastContext';
+import { CurrencyProvider } from './contexts/CurrencyContext';
+import { ChecklistProvider } from './contexts/ChecklistContext';
 import { Trip } from './types';
 
 const AppContent: React.FC = () => {
@@ -96,28 +105,68 @@ const AppContent: React.FC = () => {
 
   const renderContent = () => {
     if (activeTab === 'trip-details' && selectedTrip) {
-      return <TripDetails trip={selectedTrip} onBack={() => setActiveTab('travels')} onEdit={() => openAddModalWithTrip(selectedTrip)} />;
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <TripDetails trip={selectedTrip} onBack={() => setActiveTab('travels')} onEdit={() => openAddModalWithTrip(selectedTrip)} />
+        </Suspense>
+      );
     }
 
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard onOpenAddModal={() => openAddModalWithTrip()} trips={trips} onViewTrip={handleViewTrip} onEditTrip={(id) => { const trip = trips.find(t => t.id === id); if (trip) openAddModalWithTrip(trip); }} onDeleteTrip={handleDeleteTrip} onNavigate={setActiveTab} />;
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Dashboard onOpenAddModal={() => openAddModalWithTrip()} trips={trips} onViewTrip={handleViewTrip} onEditTrip={(id) => { const trip = trips.find(t => t.id === id); if (trip) openAddModalWithTrip(trip); }} onDeleteTrip={handleDeleteTrip} onNavigate={setActiveTab} />
+          </Suspense>
+        );
       case 'calendar':
-        return <CalendarView trips={trips} onViewTrip={handleViewTrip} />;
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <CalendarView trips={trips} onViewTrip={handleViewTrip} />
+          </Suspense>
+        );
       case 'ai':
-        return <AIAssistant />;
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <AIAssistant />
+          </Suspense>
+        );
       case 'travels':
-        return <Travels trips={trips} onOpenAddModal={() => openAddModalWithTrip()} onEditTrip={(trip) => openAddModalWithTrip(trip)} onViewTrip={handleViewTrip} onDeleteTrip={handleDeleteTrip} />;
-      case 'journal':
-        return <Journal />;
-      case 'documents':
-        return <Documents />;
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Travels trips={trips} onOpenAddModal={() => openAddModalWithTrip()} onEditTrip={(trip) => openAddModalWithTrip(trip)} onViewTrip={handleViewTrip} onDeleteTrip={handleDeleteTrip} />
+          </Suspense>
+        );
+      case 'memories':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Memories />
+          </Suspense>
+        );
+      case 'library':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Library />
+          </Suspense>
+        );
       case 'profile':
-        return <Profile />;
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Profile />
+          </Suspense>
+        );
       case 'settings':
-        return <Settings />;
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Settings />
+          </Suspense>
+        );
       case 'notifications':
-        return <Notifications />;
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Notifications />
+          </Suspense>
+        );
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full py-20 text-center">
@@ -138,7 +187,14 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="bg-sl-bg dark:bg-background-dark text-text-main dark:text-white h-screen overflow-hidden flex flex-col transition-colors duration-300">
+    <div className="bg-white dark:bg-background-dark text-text-main dark:text-white h-screen overflow-hidden flex flex-col transition-colors duration-300">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[1000] focus:bg-white focus:text-primary focus:p-4 focus:rounded-lg focus:shadow-lg focus:ring-2 focus:ring-primary focus:font-bold"
+      >
+        Ir para conteúdo principal
+      </a>
+
       {/* Top Navigation */}
       <TopNavigation
         activeTab={activeTab}
@@ -147,22 +203,28 @@ const AppContent: React.FC = () => {
       />
 
       {/* Main Content - Full Width */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
+      <main id="main-content" className="flex-1 overflow-y-auto" tabIndex={-1}>
+        <div className="max-w-screen-2xl mx-auto px-4 md:px-6 py-6">
           {renderContent()}
         </div>
       </main>
 
-      <AddTripModal
-        isOpen={isAddModalOpen}
-        onClose={closeAddModal}
-        onAdd={handleAddTrip}
-        onUpdate={handleUpdateTrip}
-        initialTrip={editingTrip}
-      />
+      {isAddModalOpen && (
+        <Suspense fallback={null}>
+          <AddTripModal
+            isOpen={isAddModalOpen}
+            onClose={closeAddModal}
+            onAdd={handleAddTrip}
+            onUpdate={handleUpdateTrip}
+            initialTrip={editingTrip}
+          />
+        </Suspense>
+      )}
 
       {/* Global Chatbot */}
-      <Chatbot />
+      <Suspense fallback={null}>
+        <Chatbot />
+      </Suspense>
 
       <OfflineIndicator />
     </div>
@@ -175,13 +237,19 @@ const App: React.FC = () => {
       <AuthProvider>
         <TripProvider>
           <CalendarProvider>
-            <UIProvider>
-              <AIProvider>
-                <NotificationProvider>
-                  <AppContent />
-                </NotificationProvider>
-              </AIProvider>
-            </UIProvider>
+            <CurrencyProvider>
+              <ChecklistProvider>
+                <UIProvider>
+                  <AIProvider>
+                    <NotificationProvider>
+                      <ToastProvider>
+                        <AppContent />
+                      </ToastProvider>
+                    </NotificationProvider>
+                  </AIProvider>
+                </UIProvider>
+              </ChecklistProvider>
+            </CurrencyProvider>
           </CalendarProvider>
         </TripProvider>
       </AuthProvider>

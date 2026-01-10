@@ -1,0 +1,348 @@
+import { supabase } from '../lib/supabase';
+import { Task, PendingAction, TaskCategory, TaskPriorityLevel } from '../types/checklist';
+import * as checklistCache from '../lib/checklistCache';
+import { Trip } from '../types';
+
+// =============================================================================
+// Smart Checklist Rules
+// =============================================================================
+
+interface RuleContext {
+    trip: Trip;
+    destinations: any[];
+    userNationality: string;
+    departureDate: Date;
+    returnDate: Date;
+}
+
+interface GeneratedTask {
+    ruleId: string;
+    title: string;
+    category: TaskCategory;
+    priority: TaskPriorityLevel;
+    dueDate?: Date;
+}
+
+interface ChecklistRule {
+    id: string;
+    applies(context: RuleContext): boolean;
+    generate(context: RuleContext): GeneratedTask[];
+}
+
+// Rule: Travel Insurance
+class TravelInsuranceRule implements ChecklistRule {
+    id = 'travel-insurance';
+    applies(ctx: RuleContext): boolean {
+        return ctx.destinations.some(d => d.country && d.country.toLowerCase() !== 'brazil' && d.country.toLowerCase() !== 'brasil');
+    }
+    generate(ctx: RuleContext): GeneratedTask[] {
+        const dueDate = new Date(ctx.departureDate);
+        dueDate.setDate(dueDate.getDate() - 30);
+        return [{
+            ruleId: this.id,
+            title: 'Contratar seguro viagem internacional',
+            category: 'health',
+            priority: 'important',
+            dueDate
+        }];
+    }
+}
+
+// Rule: Passport Validity
+class PassportValidityRule implements ChecklistRule {
+    id = 'passport-validity';
+    applies(ctx: RuleContext): boolean {
+        return ctx.destinations.some(d => d.country && d.country.toLowerCase() !== 'brazil' && d.country.toLowerCase() !== 'brasil');
+    }
+    generate(ctx: RuleContext): GeneratedTask[] {
+        const sixMonthsAfter = new Date(ctx.returnDate);
+        sixMonthsAfter.setMonth(sixMonthsAfter.getMonth() + 6);
+        const dueDate = new Date(ctx.departureDate);
+        dueDate.setDate(dueDate.getDate() - 60);
+        return [{
+            ruleId: this.id,
+            title: `Verificar validade do passaporte (deve ser válido até ${sixMonthsAfter.toLocaleDateString('pt-BR')})`,
+            category: 'documentation',
+            priority: 'blocking',
+            dueDate
+        }];
+    }
+}
+
+// Rule: ESTA/Visa for USA
+class ESTARule implements ChecklistRule {
+    id = 'esta-visa-usa';
+    applies(ctx: RuleContext): boolean {
+        const hasUSA = ctx.destinations.some(d =>
+            d.country?.toLowerCase().includes('united states') ||
+            d.country?.toLowerCase().includes('usa') ||
+            d.country?.toLowerCase().includes('estados unidos')
+        );
+        return hasUSA && ctx.userNationality === 'BR';
+    }
+    generate(ctx: RuleContext): GeneratedTask[] {
+        const dueDate = new Date(ctx.departureDate);
+        dueDate.setDate(dueDate.getDate() - 45);
+        return [{
+            ruleId: this.id,
+            title: 'Solicitar visto americano ou verificar elegibilidade para ESTA',
+            category: 'documentation',
+            priority: 'blocking',
+            dueDate
+        }];
+    }
+}
+
+// Rule: Schengen Insurance
+class SchengenInsuranceRule implements ChecklistRule {
+    id = 'schengen-insurance';
+    private schengenCountries = [
+        'austria', 'belgium', 'czech republic', 'denmark', 'estonia', 'finland',
+        'france', 'germany', 'greece', 'hungary', 'iceland', 'italy', 'latvia',
+        'liechtenstein', 'lithuania', 'luxembourg', 'malta', 'netherlands',
+        'norway', 'poland', 'portugal', 'slovakia', 'slovenia', 'spain',
+        'sweden', 'switzerland',
+        'áustria', 'bélgica', 'república tcheca', 'dinamarca', 'estônia', 'finlândia',
+        'frança', 'alemanha', 'grécia', 'hungria', 'islândia', 'itália', 'letônia',
+        'lituânia', 'luxemburgo', 'holanda', 'países baixos',
+        'noruega', 'polônia', 'eslováquia', 'eslovênia', 'espanha',
+        'suécia', 'suíça'
+    ];
+    applies(ctx: RuleContext): boolean {
+        return ctx.destinations.some(d => {
+            const country = d.country?.toLowerCase() || '';
+            return this.schengenCountries.some(sc => country.includes(sc));
+        });
+    }
+    generate(ctx: RuleContext): GeneratedTask[] {
+        const dueDate = new Date(ctx.departureDate);
+        dueDate.setDate(dueDate.getDate() - 30);
+        return [{
+            ruleId: this.id,
+            title: 'Contratar seguro viagem com cobertura mínima de €30.000 (exigência Schengen)',
+            category: 'health',
+            priority: 'blocking',
+            dueDate
+        }];
+    }
+}
+
+const ACTIVE_RULES: ChecklistRule[] = [
+    new TravelInsuranceRule(),
+    new PassportValidityRule(),
+    new ESTARule(),
+    new SchengenInsuranceRule()
+];
+
+/**
+ * Generate smart tasks based on trip data
+ */
+export const generateSmartTasks = async (trip: Trip, userNationality: string = 'BR'): Promise<Task[]> => {
+    const destinations = trip.detailedDestinations || [];
+    const departureDate = new Date(trip.startDate);
+    const returnDate = new Date(trip.endDate);
+
+    const context: RuleContext = {
+        trip,
+        destinations,
+        userNationality,
+        departureDate,
+        returnDate
+    };
+
+    const generatedTasks: Task[] = [];
+
+    for (const rule of ACTIVE_RULES) {
+        if (rule.applies(context)) {
+            const tasks = rule.generate(context);
+            for (const task of tasks) {
+                generatedTasks.push({
+                    id: crypto.randomUUID(),
+                    trip_id: trip.id,
+                    title: task.title,
+                    category: task.category,
+                    priority: task.priority,
+                    rule_id: task.ruleId,
+                    is_completed: false,
+                    is_urgent: task.priority === 'blocking',
+                    due_date: task.dueDate?.toISOString().split('T')[0],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
+            }
+        }
+    }
+
+    return generatedTasks;
+};
+
+/**
+ * Sync smart tasks with database
+ * - Inserts new rule-based tasks that don't exist yet
+ * - Preserves manual tasks and completion status
+ */
+export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> => {
+    // Generate tasks based on rules
+    const generatedTasks = await generateSmartTasks(trip);
+    const generatedRuleIds = new Set(generatedTasks.map(t => t.rule_id).filter(Boolean) as string[]);
+
+    // Fetch existing tasks
+    const existingTasks = await fetchRemoteTasks(tripId);
+    const existingRuleIds = new Set(existingTasks.filter(t => t.rule_id).map(t => t.rule_id));
+
+    // 1. Insert new rule-based tasks
+    const tasksToInsert = generatedTasks.filter(task => task.rule_id && !existingRuleIds.has(task.rule_id));
+
+    if (tasksToInsert.length > 0) {
+        const { error: insertError } = await supabase
+            .from('trip_checklist_items')
+            .insert(tasksToInsert.map(task => ({
+                id: task.id,
+                trip_id: task.trip_id,
+                text: task.title, // Mapping title to text column
+                category: task.category,
+                priority: task.priority,
+                rule_id: task.rule_id,
+                is_completed: task.is_completed,
+                due_date: task.due_date,
+                created_at: task.created_at,
+                updated_at: task.updated_at
+            })));
+
+        if (insertError) {
+            console.error('Error syncing smart tasks (insert):', insertError);
+            throw insertError;
+        }
+    }
+
+    // 2. Remove obsolete rule-based tasks (Rule exists in DB but not in generated list)
+    // We only remove tasks that have a rule_id (auto-generated) AND that are not completed (optional safety)
+    // But logically, if the rule doesn't apply (e.g. no longer going to USA), we should probably remove it even if pending.
+    // Use existingTasks to filter.
+    const tasksToRemove = existingTasks.filter(t => t.rule_id && !generatedRuleIds.has(t.rule_id));
+
+    if (tasksToRemove.length > 0) {
+        const idsToRemove = tasksToRemove.map(t => t.id);
+        const { error: deleteError } = await supabase
+            .from('checklist_tasks')
+            .delete()
+            .in('id', idsToRemove);
+
+        if (deleteError) {
+            console.error('Error syncing smart tasks (cleanup):', deleteError);
+            throw deleteError;
+        }
+    }
+};
+
+// Fetch tasks from Supabase and update local cache
+export const fetchRemoteTasks = async (tripId: string): Promise<Task[]> => {
+    const { data, error } = await supabase
+        .from('trip_checklist_items')
+        .select('*')
+        .eq('trip_id', tripId);
+
+    if (error) {
+        console.error('Error fetching remote tasks:', error);
+        throw error;
+    }
+
+    if (data) {
+        // Map DB record (text) to Task object (title)
+        const mappedTasks: Task[] = (data as any[]).map(row => ({
+            id: row.id,
+            trip_id: row.trip_id,
+            title: row.text, // Database text -> Interface title
+            category: row.category,
+            priority: row.priority,
+            rule_id: row.rule_id,
+            is_completed: row.is_completed,
+            is_urgent: row.priority === 'blocking', // Derive is_urgent from priority
+            due_date: row.due_date,
+            created_at: row.created_at,
+            updated_at: row.updated_at
+        }));
+
+        // Update cache with fresh data
+        await checklistCache.saveTasks(mappedTasks);
+        return mappedTasks;
+    }
+    return [];
+};
+
+// Push a single action to Supabase
+const processAction = async (action: PendingAction): Promise<void> => {
+    const { type, payload } = action;
+
+    switch (type) {
+        case 'ADD': {
+            const { title, is_urgent, ...rest } = payload as any;
+            const { error: addError } = await supabase
+                .from('trip_checklist_items')
+                .insert({
+                    ...rest,
+                    text: title || rest.text // Map title to text column
+                });
+            if (addError) throw addError;
+            break;
+        }
+
+        case 'UPDATE': {
+            const { id, title, is_urgent, ...updates } = payload as any;
+            const dbUpdates: any = { ...updates };
+            if (title) dbUpdates.text = title; // Map title to text column
+
+            const { error: updateError } = await supabase
+                .from('trip_checklist_items')
+                .update(dbUpdates)
+                .eq('id', id);
+            if (updateError) throw updateError;
+            break;
+        }
+
+        case 'DELETE':
+            const { error: deleteError } = await supabase
+                .from('trip_checklist_items')
+                .delete()
+                .eq('id', payload.id);
+            if (deleteError) throw deleteError;
+            break;
+    }
+};
+
+// Sync Pending Actions: Push local changes to server
+export const syncPendingActions = async (): Promise<void> => {
+    const actions = await checklistCache.getPendingActions();
+    if (actions.length === 0) return;
+
+    console.log(`Syncing ${actions.length} pending checklist actions...`);
+
+    for (const action of actions) {
+        try {
+            await processAction(action);
+            // If successful, remove from queue
+            await checklistCache.removePendingAction(action.id);
+        } catch (error) {
+            console.error(`Failed to process action ${action.id}:`, error);
+            // Decide strategy: keep in queue for retry, or move to a 'failed' queue?
+            // For now, we leave it. If it's a permanent error (e.g. schema mismatch), this could block the queue.
+            // Ideally we check error code. For now, stop processing to preserve order.
+            break;
+        }
+    }
+};
+
+// Full Sync Routine (Enhanced with Smart Tasks)
+export const syncChecklist = async (tripId: string, trip?: Trip): Promise<Task[]> => {
+    // 1. Push local changes first
+    await syncPendingActions();
+
+    // 2. Sync smart tasks if trip data is provided
+    if (trip) {
+        await syncSmartTasks(tripId, trip);
+    }
+
+    // 3. Pull latest data
+    return await fetchRemoteTasks(tripId);
+};
+

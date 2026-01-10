@@ -1,5 +1,7 @@
-import React from 'react';
+import * as React from 'react';
+import { memo } from 'react';
 import { Transport } from '../../../types';
+import FlightCard from './FlightCard';
 
 interface TransportCardProps {
     transport: Transport;
@@ -24,7 +26,12 @@ const transportStatusConfig: Record<string, { label: string; color: string }> = 
     cancelled: { label: 'Cancelado', color: 'bg-rose-100 text-rose-700' },
 };
 
-const TransportCard: React.FC<TransportCardProps> = ({ transport, onEdit, onDelete }) => {
+const TransportCardComponent: React.FC<TransportCardProps> = ({ transport, onEdit, onDelete }) => {
+    // If it's a flight, use the specialized FlightCard
+    if (transport.type === 'flight') {
+        return <FlightCard transport={transport} onEdit={onEdit} onDelete={onDelete} />;
+    }
+
     const typeConfig = transportTypeConfig[transport.type] || { icon: 'help', label: 'Outro', color: 'bg-gray-500' };
     const statusConfig = transportStatusConfig[transport.status] || { label: 'Desconhecido', color: 'bg-gray-100 text-gray-500' };
 
@@ -41,14 +48,20 @@ const TransportCard: React.FC<TransportCardProps> = ({ transport, onEdit, onDele
                 </div>
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={() => onEdit(transport)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(transport);
+                        }}
                         className="size-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-text-muted transition-colors"
                         title="Editar transporte"
                     >
                         <span className="material-symbols-outlined text-lg">edit</span>
                     </button>
                     <button
-                        onClick={() => onDelete(transport.id)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(transport.id);
+                        }}
                         className="size-8 rounded-lg hover:bg-rose-50 flex items-center justify-center text-text-muted hover:text-rose-500 transition-colors"
                         title="Remover transporte"
                     >
@@ -77,7 +90,7 @@ const TransportCard: React.FC<TransportCardProps> = ({ transport, onEdit, onDele
                         <p className="text-xs text-text-muted uppercase tracking-wider mb-1">
                             {transport.type === 'car' ? 'Retirada' : 'Partida'}
                         </p>
-                        <p className="text-2xl font-black text-text-main">{transport.departureTime}</p>
+                        <p className="text-2xl font-black text-text-main">{transport.departureTime?.slice(0, 5)}</p>
                         <p className="text-sm text-text-muted">{transport.departureDate}</p>
                         <p className="text-xs text-text-main font-bold mt-1">{transport.departureLocation}</p>
                     </div>
@@ -92,40 +105,42 @@ const TransportCard: React.FC<TransportCardProps> = ({ transport, onEdit, onDele
                         <p className="text-xs text-text-muted uppercase tracking-wider mb-1">
                             {transport.type === 'car' ? 'Devolução' : 'Chegada'}
                         </p>
-                        <p className="text-2xl font-black text-text-main">{transport.arrivalTime}</p>
+                        <p className="text-2xl font-black text-text-main">{transport.arrivalTime?.slice(0, 5)}</p>
                         <p className="text-sm text-text-muted">{transport.arrivalDate}</p>
                         <p className="text-xs text-text-main font-bold mt-1">{transport.arrivalLocation}</p>
                     </div>
                 </div>
 
                 {/* Right: Details */}
-                <div className="shrink-0 w-40 text-right space-y-2 border-l border-gray-100 pl-6">
+                <div className="shrink-0 w-full md:w-48 text-left md:text-right space-y-2 border-t md:border-t-0 md:border-l border-gray-100 md:pl-6 pt-4 md:pt-0">
                     {transport.class && (
                         <div>
                             <p className="text-xs text-text-muted">Classe</p>
-                            <p className="text-sm font-bold text-text-main">{transport.class}</p>
+                            <p className="text-sm font-bold text-text-main truncate" title={transport.class}>{transport.class}</p>
                         </div>
                     )}
                     {transport.seat && (
                         <div>
                             <p className="text-xs text-text-muted">Assento</p>
-                            <p className="text-sm font-bold text-text-main">{transport.seat}</p>
+                            <p className="text-sm font-bold text-text-main truncate">{transport.seat}</p>
                         </div>
                     )}
                     {transport.vehicle && (
                         <div>
                             <p className="text-xs text-text-muted">Veículo</p>
-                            <p className="text-sm font-bold text-text-main">{transport.vehicle}</p>
+                            <p className="text-sm font-bold text-text-main truncate" title={transport.vehicle}>{transport.vehicle}</p>
                         </div>
                     )}
                     <div>
                         <p className="text-xs text-text-muted">Código</p>
-                        <p className="text-sm font-bold text-text-main">{transport.confirmation || transport.reference}</p>
+                        <p className="text-sm font-bold text-text-main break-all">{transport.confirmation || transport.reference}</p>
                     </div>
                 </div>
             </div>
         </div>
     );
 };
+
+const TransportCard = memo(TransportCardComponent);
 
 export default TransportCard;

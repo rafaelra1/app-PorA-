@@ -15,6 +15,7 @@ import AIRefinementChat from '../components/ai-assistant/AIRefinementChat';
 import AIActivityCard from '../components/ai-assistant/AIActivityCard';
 import AIEmptyState from '../components/ai-assistant/AIEmptyState';
 import AIAssistantV2 from './AIAssistantV2';
+import { PageContainer, PageHeader, Button, Card } from '../components/ui/Base';
 
 type ViewMode = 'input' | 'result';
 
@@ -152,25 +153,58 @@ const AIAssistant: React.FC = () => {
 
   const selectedDayData = generatedPlan?.days.find((d) => d.day === selectedDay);
 
+
+
   return (
-    <div className="h-full flex flex-col gap-6 pb-10">
-      {/* V2 Beta Toggle Banner */}
-      <div className="bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3 text-white">
-          <span className="material-symbols-outlined text-2xl">auto_awesome</span>
-          <div>
-            <p className="font-bold">Novo Assistente V2 Disponível!</p>
-            <p className="text-sm text-white/80">Experimente o novo wizard com mais opções de personalização.</p>
+    <PageContainer>
+      {viewMode === 'input' && (
+        <PageHeader
+          title="Planejador Inteligente"
+          description="Crie roteiros personalizados em segundos com o poder da Inteligência Artificial."
+          actions={
+            <Button
+              variant="secondary"
+              onClick={() => setUseV2(true)}
+              className="h-10 px-4 text-xs font-bold"
+            >
+              <span className="material-symbols-outlined text-sm mr-2">science</span>
+              Testar V2 Beta
+            </Button>
+          }
+        />
+      )}
+
+      {viewMode === 'result' && (
+        /* Custom Header for Result Mode to keep Back button context */
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleBackToInput}
+              className="size-10 rounded-xl bg-white border border-gray-200 hover:border-primary hover:text-primary transition-colors flex items-center justify-center shadow-sm"
+            >
+              <span className="material-symbols-outlined">arrow_back</span>
+            </button>
+            <div>
+              <h1 className="text-2xl font-black text-text-main">{generatedPlan?.destination}</h1>
+              <p className="text-sm text-text-muted font-medium">
+                {generatedPlan?.days.length} dias • {generatedPlan?.totalEstimatedCost}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            {generatedPlan?.weatherSummary && (
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold">
+                <span className="material-symbols-outlined text-sm">partly_cloudy_day</span>
+                {generatedPlan.weatherSummary}
+              </div>
+            )}
+            <Button variant="primary" onClick={handleSaveToTrips} className="h-10 px-5 text-xs font-bold">
+              <span className="material-symbols-outlined text-sm mr-1">bookmark</span>
+              Salvar
+            </Button>
           </div>
         </div>
-        <button
-          onClick={() => setUseV2(true)}
-          className="flex items-center gap-2 px-6 py-2 bg-white text-indigo-600 rounded-xl font-bold hover:bg-indigo-50 transition-colors"
-        >
-          <span className="material-symbols-outlined">science</span>
-          Testar V2 Beta
-        </button>
-      </div>
+      )}
 
       {viewMode === 'input' ? (
         <>
@@ -221,73 +255,31 @@ const AIAssistant: React.FC = () => {
         </>
       ) : (
         <>
-          {/* Result Header */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft border border-gray-100 dark:border-gray-700">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={handleBackToInput}
-                  className="size-10 rounded-xl bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center transition-colors"
-                >
-                  <span className="material-symbols-outlined text-gray-600 dark:text-gray-300">
-                    arrow_back
-                  </span>
-                </button>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {generatedPlan?.destination}
-                  </h2>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">
-                    {generatedPlan?.days.length} dias • {generatedPlan?.totalEstimatedCost}
-                  </p>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-3">
-                {/* Weather Summary */}
-                {generatedPlan?.weatherSummary && (
-                  <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 rounded-xl">
-                    <span className="material-symbols-outlined text-blue-500">partly_cloudy_day</span>
-                    <span className="text-sm text-blue-700 dark:text-blue-300">
-                      {generatedPlan.weatherSummary}
-                    </span>
-                  </div>
-                )}
 
-                <button
-                  onClick={handleSaveToTrips}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-medium rounded-xl transition-all shadow-lg shadow-indigo-200 dark:shadow-indigo-900"
-                >
-                  <span className="material-symbols-outlined text-lg">bookmark</span>
-                  Salvar em Minhas Viagens
-                </button>
-              </div>
-            </div>
-
-            {/* Day Tabs */}
-            <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
+          {/* Day Tabs */}
+          <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
+            <button
+              onClick={() => setSelectedDay(null)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedDay === null
+                ? 'bg-primary text-text-main shadow-sm'
+                : 'bg-white text-text-muted hover:bg-gray-50 border border-gray-100'
+                }`}
+            >
+              Todos os Dias
+            </button>
+            {generatedPlan?.days.map((day) => (
               <button
-                onClick={() => setSelectedDay(null)}
-                className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${selectedDay === null
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                key={day.day}
+                onClick={() => setSelectedDay(day.day)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selectedDay === day.day
+                  ? 'bg-primary text-text-main shadow-sm'
+                  : 'bg-white text-text-muted hover:bg-gray-50 border border-gray-100'
                   }`}
               >
-                Todos os Dias
+                Dia {day.day}
               </button>
-              {generatedPlan?.days.map((day) => (
-                <button
-                  key={day.day}
-                  onClick={() => setSelectedDay(day.day)}
-                  className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${selectedDay === day.day
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                >
-                  Dia {day.day}
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
 
           {/* Split View: Itinerary + Map */}
@@ -373,8 +365,9 @@ const AIAssistant: React.FC = () => {
             </div>
           </div>
         </>
-      )}
-    </div>
+      )
+      }
+    </PageContainer>
   );
 };
 

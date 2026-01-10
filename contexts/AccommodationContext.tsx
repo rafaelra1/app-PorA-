@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { HotelReservation } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
@@ -65,8 +65,8 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
         }
     }, [user]);
 
-    const addAccommodation = async (tripId: string, accommodation: Omit<HotelReservation, 'id'>) => {
-        if (!user || !tripId) return;
+    const addAccommodation = useCallback(async (tripId: string, accommodation: Omit<HotelReservation, 'id'>) => {
+        if (!user || !tripId) return null;
 
         // Optimistic update
         const tempId = `temp-${Date.now()}`;
@@ -108,9 +108,9 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
             setAccommodations(prev => prev.filter(acc => acc.id !== tempId));
             return null;
         }
-    };
+    }, [user]);
 
-    const updateAccommodation = async (tripId: string, accommodation: HotelReservation) => {
+    const updateAccommodation = useCallback(async (tripId: string, accommodation: HotelReservation) => {
         if (!user || !tripId) return;
 
         setAccommodations(prev => prev.map(acc => acc.id === accommodation.id ? accommodation : acc));
@@ -138,12 +138,11 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
         } catch (err: any) {
             console.error('Error updating accommodation:', err);
             setError(err.message || 'Failed to update accommodation');
-            // Optimistic revert could be hard without previous state history, but usually we just refresh
             fetchAccommodations(tripId);
         }
-    };
+    }, [user, fetchAccommodations]);
 
-    const deleteAccommodation = async (tripId: string, accommodationId: string) => {
+    const deleteAccommodation = useCallback(async (tripId: string, accommodationId: string) => {
         if (!user || !tripId) return;
 
         setAccommodations(prev => prev.filter(acc => acc.id !== accommodationId));
@@ -157,12 +156,11 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
             setError(err.message || 'Failed to delete accommodation');
             fetchAccommodations(tripId);
         }
-    };
+    }, [user, fetchAccommodations]);
 
-    const migrateFromLocalStorage = async (tripId: string, localAccommodations: HotelReservation[]) => {
+    const migrateFromLocalStorage = useCallback(async (tripId: string, localAccommodations: HotelReservation[]) => {
         if (!user || !tripId || localAccommodations.length === 0) return;
 
-        // This is a bulk insert simulation
         try {
             const toInsert = localAccommodations.map(acc => ({
                 user_id: user.id,
@@ -186,26 +184,34 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
             const { error } = await supabase.from('accommodations').insert(toInsert);
             if (error) throw error;
 
-            // Refresh to get IDs
             await fetchAccommodations(tripId);
         } catch (err: any) {
             console.error('Error migrating accommodations:', err);
         }
-    };
+    }, [user, fetchAccommodations]);
+
+    const value = useMemo(() => ({
+        accommodations,
+        isLoading,
+        error,
+        fetchAccommodations,
+        addAccommodation,
+        updateAccommodation,
+        deleteAccommodation,
+        migrateFromLocalStorage
+    }), [
+        accommodations,
+        isLoading,
+        error,
+        fetchAccommodations,
+        addAccommodation,
+        updateAccommodation,
+        deleteAccommodation,
+        migrateFromLocalStorage
+    ]);
 
     return (
-        <AccommodationContext.Provider
-            value={{
-                accommodations,
-                isLoading,
-                error,
-                fetchAccommodations,
-                addAccommodation,
-                updateAccommodation,
-                deleteAccommodation,
-                migrateFromLocalStorage
-            }}
-        >
+        <AccommodationContext.Provider value={value}>
             {children}
         </AccommodationContext.Provider>
     );

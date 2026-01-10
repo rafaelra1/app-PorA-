@@ -1,6 +1,7 @@
 
 export type TripStatus = 'confirmed' | 'planning' | 'completed';
 export type ActivityType = 'flight' | 'hotel' | 'food' | 'transport' | 'culture';
+export * from './types/checklist';
 
 // =============================================================================
 // Notification Types
@@ -42,14 +43,15 @@ export interface UserPreferences {
   emailFrequency: EmailFrequency;
   quietHoursStart?: string;
   quietHoursEnd?: string;
+  autoCreateEntities: boolean;
 }
 
 // Tab types for TripDetails navigation
-export type SubTab = 'overview' | 'itinerary' | 'cities' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal';
-export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'tips';
+export type SubTab = 'overview' | 'checklist' | 'itinerary' | 'cities' | 'logistics' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories';
+export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map';
 export type DocsFilter = 'Tudo' | 'Reservas' | 'Pessoais' | 'Outros';
-export type ReservationType = 'hotel' | 'flight' | 'car' | 'insurance' | 'activity' | 'other';
-export type DocumentType = ReservationType | 'passport' | 'visa' | 'vaccine';
+export type ReservationType = 'hotel' | 'flight' | 'car' | 'insurance' | 'activity' | 'train' | 'bus' | 'transfer' | 'ferry' | 'other';
+export type DocumentType = ReservationType | 'passport' | 'visa' | 'vaccine' | 'other';
 export type DocumentStatus = 'confirmed' | 'pending' | 'printed' | 'expiring' | 'cancelled';
 
 export interface TripDocument {
@@ -177,6 +179,7 @@ export interface HotelReservation {
   stars?: number;
   type?: 'hotel' | 'home'; // Distinguish between Hotel and Rental Home/Apartment
   cityId?: string; // Link to specific city
+  documentId?: string; // Link to source document
 }
 
 export interface CarRental {
@@ -188,6 +191,7 @@ export interface CarRental {
   startDate: string;
   endDate: string;
   confirmation: string;
+  documentId?: string; // Link to source document
 }
 
 export type TransportType = 'flight' | 'train' | 'car' | 'transfer' | 'bus' | 'ferry';
@@ -213,6 +217,62 @@ export interface Transport {
   vehicle?: string; // For car rentals: model
   confirmation: string;
   status: TransportStatus;
+  documentId?: string; // Link to source document
+}
+
+// =============================================================================
+// Flight Status Types (Real-time Tracking)
+// =============================================================================
+
+export type FlightStatusCode =
+  | 'scheduled'    // Programado
+  | 'active'       // Em voo
+  | 'landed'       // Pousou
+  | 'cancelled'    // Cancelado
+  | 'diverted'     // Desviado
+  | 'delayed'      // Atrasado
+  | 'unknown';
+
+export interface FlightLiveStatus {
+  flightNumber: string;
+  status: FlightStatusCode;
+
+  // Departure Info
+  departureAirport: string;
+  departureTerminal?: string;
+  departureGate?: string;
+  scheduledDeparture: string;    // ISO datetime
+  estimatedDeparture?: string;   // ISO datetime (if delayed)
+  actualDeparture?: string;      // ISO datetime
+
+  // Arrival Info
+  arrivalAirport: string;
+  arrivalTerminal?: string;
+  arrivalGate?: string;
+  arrivalBaggage?: string;
+  scheduledArrival: string;
+  estimatedArrival?: string;
+  actualArrival?: string;
+
+  // Delay Info
+  departureDelay?: number;       // minutes
+  arrivalDelay?: number;         // minutes
+
+  // Aircraft Info
+  aircraftType?: string;
+  aircraftRegistration?: string;
+
+  // Meta
+  lastUpdated: string;
+}
+
+export interface FlightStatusChange {
+  transportId: string;
+  previousStatus: FlightStatusCode;
+  newStatus: FlightStatusCode;
+  changeType: 'delay' | 'gate_change' | 'cancellation' | 'diversion' | 'status_update';
+  details: string;
+  timestamp: string;
 }
 
 export interface Insurance {
@@ -577,12 +637,50 @@ export interface BudgetBreakdown {
   activities?: number;
   shopping?: number;
   emergency?: number;
+  // Currency fields for dual-currency support
+  currency?: string;              // "BRL" or destination currency
+  totalInBRL?: number;            // Value converted to BRL
+  totalInDestination?: number;    // Value converted to destination currency
+  exchangeRate?: number;          // Rate used in conversion
+  exchangeRateDate?: string;      // Date of the rate
 }
 
 export interface CurrencyInfo {
   code: string; // e.g., "EUR", "JPY"
   symbol: string; // e.g., "€", "¥"
-  rateToBRL?: number;
+  rateToBRL?: number;      // Real-time rate
+  lastUpdated?: string;    // Timestamp of the rate
+}
+
+// =============================================================================
+// Currency Exchange Types
+// =============================================================================
+
+export interface ExchangeRate {
+  from: string;           // "BRL"
+  to: string;             // "EUR"
+  rate: number;           // 0.18 (1 BRL = 0.18 EUR)
+  inverseRate: number;    // 5.56 (1 EUR = 5.56 BRL)
+  lastUpdated: string;    // ISO datetime
+}
+
+export interface CurrencyConversion {
+  amount: number;
+  from: string;
+  to: string;
+  result: number;
+  rate: number;
+  formattedResult: string;  // "€ 180,00"
+}
+
+export interface DestinationCurrency {
+  code: string;           // "EUR"
+  symbol: string;         // "€"
+  name: string;           // "Euro"
+  flag: string;           // "🇪🇺"
+  rateToBRL: number;      // 5.56
+  rateFromBRL: number;    // 0.18
+  lastUpdated: string;
 }
 
 // --- Accommodation / Where to Stay ---
@@ -737,6 +835,7 @@ export interface TravelPreferencesV2 {
 
 export type CalendarEventType =
   | 'trip'
+  | 'transport' // Added Generic transport
   | 'flight'
   | 'train'
   | 'bus'
@@ -778,6 +877,8 @@ export interface CalendarEvent {
   tripId?: string; // Link to specific trip
   activityId?: string; // Link to itinerary activity
   transportId?: string; // Link to transport
+  accommodationId?: string; // Link to accommodation
+  documentId?: string; // Link to source document
   color?: string; // Custom color for this event
   location?: string;
   locationDetail?: string;
@@ -797,3 +898,96 @@ export interface CalendarFilter {
 }
 
 export type CalendarViewMode = 'day' | 'week' | 'month' | 'year';
+
+// =============================================================================
+// Document Analysis & Feedback Types
+// =============================================================================
+
+export interface FieldWithConfidence<T> {
+  value: T;
+  confidence: number;
+}
+
+export interface DocumentAnalysisResult {
+  type: 'flight' | 'hotel' | 'car' | 'activity' | 'insurance' | 'passport' | 'visa' | 'other';
+  typeConfidence?: number;
+
+  // Legacy fields for backward compatibility
+  name?: string;
+  date?: string;
+  endDate?: string;
+  reference?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  details?: string;
+  address?: string;
+  stars?: number;
+  rating?: number;
+  pickupLocation?: string;
+  dropoffLocation?: string;
+  model?: string;
+
+  // Richer data structure
+  fields?: Record<string, FieldWithConfidence<string | number | boolean>>;
+  warnings?: string[];
+  overallConfidence?: number;
+
+  // Metadata for batch processing
+  fileName?: string;
+  originalFile?: File;
+
+  // Debug Info
+  debugInfo?: DebugInfo;
+}
+
+export interface BatchAnalysisResult {
+  successful: DocumentAnalysisResult[];
+  failed: { file: File; error: string; fileName: string }[];
+  duplicates: { file: File; duplicateOf: string; fileName: string }[];
+}
+
+export interface CorrectionFeedback {
+  documentId?: string;
+  originalValue: { field: string; value: any }[];
+  correctedValue: { field: string; value: any }[];
+  documentType: string;
+  imageHash?: string;
+  timestamp: string;
+}
+
+export interface DebugInfo {
+  prompt: string;
+  rawResponse: string;
+  imageHash?: string;
+  model: string;
+}
+
+export interface TripContext {
+  destination: string;
+  startDate: string;
+  endDate: string;
+  travelers: Participant[];
+  interests?: string[];
+}
+
+export interface ChecklistInsight {
+  id: string;
+  type: 'weather' | 'event' | 'logistics' | 'local_tip';
+  title: string;
+  description: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface ChecklistTask {
+  id: string;
+  title: string;
+  category: 'preparation' | 'packing' | 'documents' | 'health';
+  reason: string;
+  isUrgent: boolean;
+}
+
+export interface ChecklistAnalysisResult {
+  insights: ChecklistInsight[];
+  suggestedTasks: ChecklistTask[];
+}
+

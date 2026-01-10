@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import NotificationFeed from './NotificationFeed';
@@ -22,8 +23,8 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ activeTab, onTabChange, o
     };
 
     return (
-        <header className="bg-white border-b border-gray-100 flex-none relative z-[100]">
-            <div className="max-w-7xl mx-auto px-4 md:px-6">
+        <header className="flex-none relative z-[100]" role="banner">
+            <div className="max-w-screen-2xl mx-auto px-4 md:px-6">
                 <div className="flex items-center justify-between h-16">
                     {/* Left: Logo */}
                     <div className="flex items-center gap-2 shrink-0">
@@ -34,7 +35,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ activeTab, onTabChange, o
                     </div>
 
                     {/* Center: Navigation Pills */}
-                    <nav className="hidden md:flex items-center gap-1 bg-sl-bg rounded-full p-1">
+                    <nav className="hidden md:flex items-center gap-1 bg-sl-bg rounded-full p-1" aria-label="Menu principal">
                         {NAV_ITEMS.map((item) => (
                             <button
                                 key={item.id}
@@ -140,7 +141,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ activeTab, onTabChange, o
 
             {/* Mobile Navigation (Bottom of Header) */}
             <div className="md:hidden overflow-x-auto hide-scrollbar border-t border-gray-50">
-                <nav className="flex items-center gap-1 p-2 min-w-max">
+                <nav className="flex items-center gap-1 p-2 min-w-max" aria-label="Menu móvel">
                     {NAV_ITEMS.map((item) => (
                         <button
                             key={item.id}

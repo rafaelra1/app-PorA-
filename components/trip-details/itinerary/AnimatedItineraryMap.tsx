@@ -150,7 +150,7 @@ const AnimatedItineraryMap: React.FC<AnimatedItineraryMapProps> = ({
     const totalSegments = Math.max(stops.length - 1, 1);
 
     // Current position based on progress
-    const currentPosition = useMemo(() => {
+    const currentPosition = useMemo((): [number, number] => {
         if (stops.length < 2) return stops[0]?.coordinates || [0, 0];
 
         const segment = Math.min(currentSegment, stops.length - 2);
@@ -283,7 +283,7 @@ const AnimatedItineraryMap: React.FC<AnimatedItineraryMapProps> = ({
                 <div className="text-center text-gray-500">
                     <span className="material-symbols-outlined text-4xl mb-2">route</span>
                     <p className="font-medium">Nenhuma parada definida</p>
-                    <p className="text-sm">Adicione paradas ao seu itinerário para ver a animação</p>
+                    <p className="text-sm">Adicione atividades ao roteiro para visualizar no mapa</p>
                 </div>
             </div>
         );

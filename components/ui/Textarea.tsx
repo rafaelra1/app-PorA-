@@ -27,6 +27,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             className = '',
             disabled,
             value,
+            required,
             ...props
         },
         ref
@@ -54,18 +55,39 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         const charCount = typeof value === 'string' ? value.length : 0;
         const showCount = showCharCount || maxLength;
 
+        const textareaId = props.id || `textarea-${Math.random().toString(36).substr(2, 9)}`;
+        const errorId = error ? `${textareaId}-error` : undefined;
+        const countId = showCount ? `${textareaId}-count` : undefined;
+
+        // Combine describedby IDs
+        const describedBy = [errorId, countId].filter(Boolean).join(' ') || undefined;
+
         return (
             <div className={`${widthStyles}`}>
                 {label && (
-                    <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">
+                    <label
+                        htmlFor={textareaId}
+                        className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider"
+                    >
                         {label}
+                        {required && (
+                            <>
+                                <span aria-hidden="true" className="text-red-500 ml-0.5">*</span>
+                                <span className="sr-only">(obrigatório)</span>
+                            </>
+                        )}
                     </label>
                 )}
                 <textarea
                     ref={textareaRef}
+                    id={textareaId}
                     disabled={disabled}
                     value={value}
                     maxLength={maxLength}
+                    required={required}
+                    aria-required={required}
+                    aria-invalid={!!error}
+                    aria-describedby={describedBy}
                     className={`
             ${baseStyles}
             ${error ? errorStyles : normalStyles}
@@ -77,11 +99,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
                 />
                 <div className="flex justify-between items-center mt-1">
                     <div className="flex-1">
-                        {error && <p className="text-xs text-red-600">{error}</p>}
+                        {error && (
+                            <p id={errorId} role="alert" className="text-xs text-red-600">
+                                {error}
+                            </p>
+                        )}
                         {helperText && !error && <p className="text-xs text-text-muted">{helperText}</p>}
                     </div>
                     {showCount && (
-                        <p className="text-xs text-text-muted ml-2">
+                        <p id={countId} className="text-xs text-text-muted ml-2">
                             {charCount}
                             {maxLength && `/${maxLength}`}
                         </p>

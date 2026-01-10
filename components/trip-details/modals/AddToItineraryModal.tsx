@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Clock, FileText } from 'lucide-react';
 import Modal from './Modal';
+import { toISODate } from '../../../lib/dateUtils';
 
 interface AddToItineraryModalProps {
     isOpen: boolean;
@@ -35,14 +37,18 @@ const AddToItineraryModal: React.FC<AddToItineraryModalProps> = ({
     const [time, setTime] = useState('12:30');
     const [notes, setNotes] = useState('');
 
+    // Normalize constraints
+    const min = toISODate(minDate || '');
+    const max = toISODate(maxDate || '');
+
     useEffect(() => {
         if (isOpen && item) {
-            // Set initial date to minDate if available, otherwise fallback to today or provided default
-            const initialDate = minDate || '2026-01-05';
+            // Set initial date to minDate if available (and valid), otherwise fallback to today or provided default
+            const initialDate = min || '2026-01-05';
             setDate(initialDate);
             if (!time) setTime('12:30');
         }
-    }, [isOpen, item, minDate]);
+    }, [isOpen, item, min]);
 
     if (!item) return null;
 
@@ -131,8 +137,8 @@ const AddToItineraryModal: React.FC<AddToItineraryModalProps> = ({
                             <input
                                 type="date"
                                 value={date}
-                                min={minDate}
-                                max={maxDate}
+                                min={min || undefined}
+                                max={max || undefined}
                                 onChange={(e) => setDate(e.target.value)}
                                 className="w-full pl-12 pr-4 py-4 bg-white border border-gray-100 rounded-2xl text-sm font-bold text-gray-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500/20 transition-all shadow-sm"
                             />

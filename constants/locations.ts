@@ -1,3 +1,7 @@
+/**
+ * DADOS DE REFERÊNCIA - NÃO REMOVER
+ * Este arquivo contém as listas de países e cidades usadas em formulários e sugestões.
+ */
 export const COUNTRIES_PT_BR = [
     "África do Sul", "Albânia", "Alemanha", "Andorra", "Angola", "Arábia Saudita", "Argélia", "Argentina", "Armênia", "Austrália", "Áustria", "Azerbaijão",
     "Bahamas", "Bangladesh", "Barbados", "Barein", "Bélgica", "Belize", "Benin", "Bielorrússia", "Bolívia", "Bósnia e Herzegovina", "Botsuana", "Brasil", "Brunei", "Bulgária", "Burkina Faso", "Burundi",

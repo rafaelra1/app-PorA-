@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { CountryInfo, CostOfLiving } from '../../../types';
 
 // =============================================================================
@@ -24,13 +24,13 @@ interface InfoItemProps {
 }
 
 const InfoItem: React.FC<InfoItemProps> = ({ icon, label, value, iconColor = 'text-primary' }) => (
-    <div className="flex items-center gap-3 p-3 bg-gray-50/50 rounded-xl">
-        <div className={`size-10 rounded-xl bg-white shadow-sm flex items-center justify-center ${iconColor}`}>
-            <span className="material-symbols-outlined text-lg">{icon}</span>
+    <div className="flex items-center gap-2 p-2 bg-gray-50/50 rounded-xl border border-gray-100/50">
+        <div className={`size-8 rounded-lg bg-white shadow-sm flex items-center justify-center shrink-0 ${iconColor}`}>
+            <span className="material-symbols-outlined text-sm">{icon}</span>
         </div>
-        <div className="min-w-0">
-            <p className="text-[10px] text-text-muted uppercase tracking-wider font-bold">{label}</p>
-            <p className="text-sm font-bold text-text-main truncate">{value}</p>
+        <div className="min-w-0 flex-1">
+            <p className="text-[8px] text-text-muted uppercase tracking-wider font-bold leading-tight mb-0.5">{label}</p>
+            <p className="text-[10px] font-bold text-text-main truncate leading-tight" title={value}>{value}</p>
         </div>
     </div>
 );
@@ -47,11 +47,11 @@ const CostBar: React.FC<CostBarProps> = ({ label, value, maxValue, prefix = '$' 
 
     return (
         <div className="space-y-1">
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between text-[10px]">
                 <span className="text-text-muted">{label}</span>
                 <span className="font-bold text-text-main">{prefix}{value}</span>
             </div>
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                     className="h-full bg-gradient-to-r from-primary to-emerald-400 rounded-full transition-all duration-500"
                     style={{ width: `${percentage}%` }}
@@ -78,9 +78,9 @@ const CountryInfoCard: React.FC<CountryInfoCardProps> = ({
                     <div className="size-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                     <span className="text-sm text-text-muted">Carregando informações do país...</span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-2">
                     {[1, 2, 3, 4, 5, 6].map(i => (
-                        <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+                        <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />
                     ))}
                 </div>
             </div>
@@ -92,28 +92,28 @@ const CountryInfoCard: React.FC<CountryInfoCardProps> = ({
     }
 
     return (
-        <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 space-y-5">
+        <div className="bg-white rounded-2xl p-4 shadow-soft border border-gray-100/50 space-y-4">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary">public</span>
-                    <h4 className="font-bold text-text-main">Informações de {countryName}</h4>
+                    <span className="material-symbols-outlined text-primary text-xl">public</span>
+                    <h4 className="font-bold text-text-main text-sm">Informações de {countryName}</h4>
                 </div>
                 {countryInfo.visaRequired ? (
-                    <span className="px-2.5 py-1 text-[10px] font-bold uppercase bg-amber-100 text-amber-700 rounded-full flex items-center gap-1">
-                        <span className="material-symbols-outlined text-xs">warning</span>
-                        Visto Necessário
+                    <span className="px-2 py-0.5 text-[8px] font-bold uppercase bg-amber-100 text-amber-700 rounded-full flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[10px]">warning</span>
+                        Visto
                     </span>
                 ) : (
-                    <span className="px-2.5 py-1 text-[10px] font-bold uppercase bg-green-100 text-green-700 rounded-full flex items-center gap-1">
-                        <span className="material-symbols-outlined text-xs">check_circle</span>
-                        Sem Visto
+                    <span className="px-2 py-0.5 text-[8px] font-bold uppercase bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[10px]">check_circle</span>
+                        Livre
                     </span>
                 )}
             </div>
 
             {/* Info Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-2">
                 <InfoItem
                     icon="payments"
                     label="Moeda"
@@ -160,10 +160,10 @@ const CountryInfoCard: React.FC<CountryInfoCardProps> = ({
                             <span className="material-symbols-outlined text-primary">savings</span>
                             <h5 className="font-bold text-sm text-text-main">Custo de Vida</h5>
                         </div>
-                        <div className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full ${costOfLiving.overall <= 80 ? 'bg-green-100 text-green-700' :
-                                costOfLiving.overall <= 120 ? 'bg-blue-100 text-blue-700' :
-                                    costOfLiving.overall <= 150 ? 'bg-amber-100 text-amber-700' :
-                                        'bg-rose-100 text-rose-700'
+                        <div className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded-full ${costOfLiving.overall <= 80 ? 'bg-green-100 text-green-700' :
+                            costOfLiving.overall <= 120 ? 'bg-blue-100 text-blue-700' :
+                                costOfLiving.overall <= 150 ? 'bg-amber-100 text-amber-700' :
+                                    'bg-rose-100 text-rose-700'
                             }`}>
                             {costOfLiving.overall <= 80 ? 'Mais barato que BR' :
                                 costOfLiving.overall <= 120 ? 'Similar ao BR' :
@@ -178,7 +178,7 @@ const CountryInfoCard: React.FC<CountryInfoCardProps> = ({
                         <CostBar label="Hotel (diária)" value={costOfLiving.hotel} maxValue={200} />
                     </div>
 
-                    <p className="text-[10px] text-text-muted mt-3 text-center">
+                    <p className="text-[9px] text-text-muted mt-3 text-center">
                         Valores médios em USD • Índice geral: {costOfLiving.overall}% do custo brasileiro
                     </p>
                 </div>

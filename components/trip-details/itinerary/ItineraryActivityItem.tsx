@@ -1,4 +1,4 @@
-import React from 'react';
+import * as React from 'react';
 import { ItineraryActivity, ItineraryActivityType } from '../../../types';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -62,7 +62,7 @@ export const ItineraryActivityItem: React.FC<ItineraryActivityItemProps> = ({
                     <span className="material-symbols-outlined text-lg">drag_indicator</span>
                 </div>
                 <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide ${config.bgColor} ${config.textColor}`}>
-                    {activity.time}
+                    {activity.time?.slice(0, 5)}
                 </div>
                 <div className="flex-1 w-0.5 bg-gray-100 rounded-full my-1 group-hover:bg-gray-200 transition-colors" />
                 <div className={`size-8 rounded-full flex items-center justify-center shrink-0 ${config.bgColor} text-${config.textColor}`}>

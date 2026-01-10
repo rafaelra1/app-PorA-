@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { TripDocument, DocumentType, DocumentStatus, Participant } from '../../../types';
 import { Badge } from '../../ui/Base';
 
@@ -12,6 +12,7 @@ interface DocumentCardProps {
     viewMode?: 'grid' | 'list';
     onClick?: () => void;
     onCopyReference?: (ref: string) => void;
+    onDelete?: () => void;
 }
 
 // =============================================================================
@@ -123,12 +124,13 @@ const TravelerAvatars: React.FC<{ travelers: Participant[] }> = ({ travelers }) 
 // Main Component
 // =============================================================================
 
-const DocumentCard: React.FC<DocumentCardProps> = ({
+const DocumentCardComponent: React.FC<DocumentCardProps> = ({
     document,
     travelers = [],
     viewMode = 'grid',
     onClick,
-    onCopyReference
+    onCopyReference,
+    onDelete
 }) => {
     const typeConfig = TYPE_CONFIG[document.type] || TYPE_CONFIG.other;
     const statusConfig = STATUS_CONFIG[document.status] || STATUS_CONFIG.confirmed;
@@ -160,6 +162,15 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
                         {statusConfig.icon && <span className="material-symbols-outlined text-[10px] mr-1">{statusConfig.icon}</span>}
                         {statusConfig.label}
                     </Badge>
+                    {onDelete && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                            className="size-8 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100"
+                            title="Excluir documento"
+                        >
+                            <span className="material-symbols-outlined text-lg">delete</span>
+                        </button>
+                    )}
                 </div>
 
                 {/* Body: Title, Subtitle, Date */}
@@ -299,6 +310,16 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
                 <TravelerAvatars travelers={docTravelers} />
             </div>
 
+            {onDelete && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    className="size-9 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors flex items-center justify-center"
+                    title="Excluir documento"
+                >
+                    <span className="material-symbols-outlined text-lg">delete</span>
+                </button>
+            )}
+
             {/* Arrow */}
             <span className="material-symbols-outlined text-indigo-600 group-hover:translate-x-1 transition-transform shrink-0">
                 arrow_forward
@@ -306,5 +327,7 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
         </div>
     );
 };
+
+const DocumentCard = memo(DocumentCardComponent);
 
 export default DocumentCard;

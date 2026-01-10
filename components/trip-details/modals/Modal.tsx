@@ -12,7 +12,7 @@ interface ModalProps {
     footer?: React.ReactNode;
 }
 
-const Modal: React.FC<ModalProps> = ({
+const Modal = ({
     isOpen,
     onClose,
     title,
@@ -21,8 +21,12 @@ const Modal: React.FC<ModalProps> = ({
     showCloseButton = true,
     closeOnOverlayClick = true,
     footer
-}) => {
-    // Close modal on ESC key press
+}: ModalProps): React.ReactElement | null => {
+    const modalRef = React.useRef<HTMLDivElement>(null);
+    const previousActiveElement = React.useRef<HTMLElement | null>(null);
+    const titleId = `modal-title-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Focus management and close on ESC
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && isOpen) {
@@ -30,15 +34,64 @@ const Modal: React.FC<ModalProps> = ({
             }
         };
 
+        const handleTab = (e: KeyboardEvent) => {
+            if (!isOpen || !modalRef.current) return;
+
+            const updateFocusableElements = () => {
+                if (!modalRef.current) return [];
+                return modalRef.current.querySelectorAll(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                );
+            };
+
+            const focusableElements = updateFocusableElements();
+            if (focusableElements.length === 0) return;
+
+            const firstElement = focusableElements[0] as HTMLElement;
+            const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+            if (e.key === 'Tab') {
+                if (e.shiftKey) {
+                    if (document.activeElement === firstElement) {
+                        e.preventDefault();
+                        lastElement.focus();
+                    }
+                } else {
+                    if (document.activeElement === lastElement) {
+                        e.preventDefault();
+                        firstElement.focus();
+                    }
+                }
+            }
+        };
+
         if (isOpen) {
+            previousActiveElement.current = document.activeElement as HTMLElement;
             document.addEventListener('keydown', handleEscape);
-            // Prevent body scroll when modal is open
+            document.addEventListener('keydown', handleTab);
             document.body.style.overflow = 'hidden';
+
+            // Focus on first element after a small delay to ensure rendering
+            setTimeout(() => {
+                const focusableElements = modalRef.current?.querySelectorAll(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                );
+                if (focusableElements && focusableElements.length > 0) {
+                    (focusableElements[0] as HTMLElement).focus();
+                } else {
+                    modalRef.current?.focus();
+                }
+            }, 50);
         }
 
         return () => {
             document.removeEventListener('keydown', handleEscape);
+            document.removeEventListener('keydown', handleTab);
             document.body.style.overflow = 'unset';
+            // Restore focus
+            if (previousActiveElement.current) {
+                previousActiveElement.current.focus();
+            }
         };
     }, [isOpen, onClose]);
 
@@ -63,13 +116,21 @@ const Modal: React.FC<ModalProps> = ({
         <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={handleOverlayClick}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
         >
             <div
-                className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full ${sizeClasses[size]} mx-4 animate-in zoom-in-95 duration-200`}
+                ref={modalRef}
+                className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full ${sizeClasses[size]} mx-4 animate-in zoom-in-95 duration-200 focus:outline-none`}
+                tabIndex={-1}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-2xl font-bold bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] bg-clip-text text-transparent">
+                    <h2
+                        id={titleId}
+                        className="text-2xl font-bold bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] bg-clip-text text-transparent"
+                    >
                         {title}
                     </h2>
                     {showCloseButton && (

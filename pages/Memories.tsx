@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { DEMO_USER } from '../constants';
-import { Card, Button, Badge } from '../components/ui/Base';
+import * as React from 'react';
+import { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { Card, Button, Badge, PageContainer, PageHeader } from '../components/ui/Base';
+import { EmptyState } from '../components/ui/EmptyState';
 
 interface JournalAlbum {
   id: string;
@@ -12,38 +14,6 @@ interface JournalAlbum {
   entriesCount: number;
   description: string;
 }
-
-const DEMO_ALBUMS: JournalAlbum[] = [
-  {
-    id: '1',
-    title: 'Aventura no Japão',
-    cover: 'https://images.unsplash.com/photo-1524413840807-0c3cb6fa808d?auto=format&fit=crop&q=80&w=1000',
-    startDate: '2023-10-05',
-    endDate: '2023-10-20',
-    status: 'completed',
-    entriesCount: 12,
-    description: 'Templos, sushi e muita caminhada em Tokyo e Kyoto.'
-  },
-  {
-    id: '2',
-    title: 'Verão Europeu',
-    cover: 'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&q=80&w=1000',
-    startDate: '2024-07-15',
-    status: 'active',
-    entriesCount: 5,
-    description: 'Explorando a Costa Amalfitana e as ilhas gregas.'
-  },
-  {
-    id: '3',
-    title: 'Escapada Serra Gaúcha',
-    cover: 'https://images.unsplash.com/photo-1613564993170-c75080ee279d?auto=format&fit=crop&q=80&w=1000',
-    startDate: '2023-05-10',
-    endDate: '2023-05-15',
-    status: 'draft',
-    entriesCount: 0,
-    description: 'Vinhos e frio em Gramado.'
-  }
-];
 
 // Reusing existing interfaces for detail view
 export interface JournalEntry {
@@ -59,32 +29,27 @@ export interface JournalEntry {
   comments: number;
 }
 
-const DEMO_ENTRIES: JournalEntry[] = [
-  {
-    id: 'e1',
-    author: DEMO_USER,
-    timestamp: '10:30',
-    date: '2023-10-06',
-    location: 'Senso-ji Temple, Tokyo',
-    content: 'A energia deste lugar é inexplicável. O cheiro de incenso logo pela manhã traz uma paz que eu não esperava encontrar no meio de uma metrópole tão caótica.',
-    images: ['https://images.unsplash.com/photo-1596724859878-838634594c48?auto=format&fit=crop&q=80&w=800'],
-    tags: ['Tokyo', 'Espiritualidade'],
-    likes: 24,
-    comments: 3
-  }
-];
-
-const Journal: React.FC = () => {
+const Memories: React.FC = () => {
+  const { user } = useAuth();
+  const [albums, setAlbums] = useState<JournalAlbum[]>([]);
   const [selectedAlbum, setSelectedAlbum] = useState<JournalAlbum | null>(null);
-  const [entries, setEntries] = useState<JournalEntry[]>(DEMO_ENTRIES);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [newPost, setNewPost] = useState('');
   const [location, setLocation] = useState('');
+
+  const handleCreateAlbum = () => {
+    // Placeholder for creating an album
+    alert("Funcionalidade de criar álbum será implementada em breve.");
+  };
 
   const handleCreatePost = () => {
     if (!newPost.trim()) return;
     const entry: JournalEntry = {
       id: Date.now().toString(),
-      author: DEMO_USER,
+      author: {
+        name: user?.name || 'Usuário',
+        avatar: user?.avatar || 'https://ui-avatars.com/api/?name=User&background=667eea&color=fff'
+      },
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       date: new Date().toISOString().split('T')[0],
       location: location || 'Local Desconhecido',
@@ -101,37 +66,34 @@ const Journal: React.FC = () => {
   // -- REPOSITORY VIEW (ALBUMS) --
   const [activeTab, setActiveTab] = useState<'published' | 'drafts'>('published');
 
-  const publishedAlbums = DEMO_ALBUMS.filter(a => a.status === 'completed');
-  const draftAlbums = DEMO_ALBUMS.filter(a => a.status !== 'completed');
+  const publishedAlbums = albums.filter(a => a.status === 'completed');
+  const draftAlbums = albums.filter(a => a.status !== 'completed');
 
   const displayedAlbums = activeTab === 'published' ? publishedAlbums : draftAlbums;
 
   if (!selectedAlbum) {
     return (
-      <div className="max-w-6xl mx-auto flex flex-col gap-10 pb-20 animate-in fade-in duration-500">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
-          <div>
-            <h2 className="text-3xl font-black text-text-main tracking-tight">Acervo de Viagens</h2>
-            <p className="text-text-muted text-sm font-medium mt-2 max-w-xl">
-              Sua coleção de roteiros finalizados. Transforme suas experiências em guias prontos para compartilhar ou revisitar.
-            </p>
-          </div>
-
-          <div className="flex bg-gray-100/80 p-1 rounded-xl">
-            <button
-              onClick={() => setActiveTab('published')}
-              className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'published' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'}`}
-            >
-              Publicados
-            </button>
-            <button
-              onClick={() => setActiveTab('drafts')}
-              className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'drafts' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'}`}
-            >
-              Rascunhos
-            </button>
-          </div>
-        </div>
+      <PageContainer>
+        <PageHeader
+          title="Suas Memórias de Viagem"
+          description="Álbum de lembranças de todas as suas aventuras. Reviva momentos especiais e compartilhe experiências."
+          actions={
+            <div className="flex bg-gray-100/80 p-1 rounded-xl">
+              <button
+                onClick={() => setActiveTab('published')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'published' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'}`}
+              >
+                Galeria
+              </button>
+              <button
+                onClick={() => setActiveTab('drafts')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'drafts' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'}`}
+              >
+                Rascunhos
+              </button>
+            </div>
+          }
+        />
 
         {displayedAlbums.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -164,31 +126,33 @@ const Journal: React.FC = () => {
                 {activeTab === 'drafts' && (
                   <div className="flex justify-between items-center px-2">
                     <span className="text-xs text-text-muted font-bold">Última edição: há 2 dias</span>
-                    <Button variant="primary" className="h-8 px-4 text-[10px] uppercase">Continuar</Button>
+                    <Button variant="primary" className="h-10 px-5 text-xs font-bold uppercase">Continuar</Button>
                   </div>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-24 bg-gray-50/50 rounded-2xl border-2 border-dashed border-gray-100">
-            <div className="size-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4 text-gray-300">
-              <span className="material-symbols-outlined text-3xl">{activeTab === 'published' ? 'auto_stories' : 'edit_note'}</span>
-            </div>
-            <p className="text-text-muted font-bold text-sm">
-              {activeTab === 'published'
-                ? 'Nenhum diário publicado ainda.'
-                : 'Você não tem rascunhos em andamento.'}
-            </p>
+          <div className="py-12">
+            <EmptyState
+              variant="illustrated"
+              icon={activeTab === 'published' ? 'auto_stories' : 'edit_note'}
+              title={activeTab === 'published' ? 'Seu diário está vazio' : 'Nenhum rascunho'}
+              description={activeTab === 'published' ? 'Registre memórias das suas viagens' : 'Você não tem rascunhos em andamento.'}
+              action={{
+                label: "Criar Primeiro Álbum",
+                onClick: handleCreateAlbum
+              }}
+            />
           </div>
         )}
-      </div>
+      </PageContainer>
     );
   }
 
   // -- DETAIL VIEW (EXISTING FEED LOGIC) --
   return (
-    <div className="max-w-3xl mx-auto flex flex-col gap-8 pb-20 animate-in fade-in duration-500">
+    <PageContainer className="max-w-3xl mx-auto">
       {/* Navigation Header */}
       <div className="flex items-center gap-4 mb-2">
         <button
@@ -198,7 +162,7 @@ const Journal: React.FC = () => {
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <div className="flex-1">
-          <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Diário de Viagem</span>
+          <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Memórias de Viagem</span>
           <h2 className="text-2xl font-black text-text-main leading-none mt-1">{selectedAlbum.title}</h2>
         </div>
         <Button variant="outline" className="text-xs h-9">
@@ -210,9 +174,9 @@ const Journal: React.FC = () => {
       {/* New Entry Form */}
       <Card className="p-0 border-none shadow-soft overflow-hidden group">
         <div className="flex items-center gap-3 p-4 bg-gray-50/50 border-b border-gray-100">
-          <img src={DEMO_USER.avatar} className="size-8 rounded-lg object-cover" alt={DEMO_USER.name} />
+          <img src={user?.avatar || 'https://ui-avatars.com/api/?name=User&background=667eea&color=fff'} className="size-8 rounded-lg object-cover" alt={user?.name || 'User'} />
           <div className="flex flex-col text-left">
-            <span className="text-xs font-bold text-text-main leading-none">{DEMO_USER.name}</span>
+            <span className="text-xs font-bold text-text-main leading-none">{user?.name || 'Usuário'}</span>
             <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Nova Memória em {selectedAlbum.title}</span>
           </div>
         </div>
@@ -256,33 +220,53 @@ const Journal: React.FC = () => {
 
       {/* Feed */}
       <div className="flex flex-col gap-8">
-        {entries.map((entry) => (
-          <div key={entry.id} className="relative text-left animate-in slide-in-from-bottom-4 duration-700">
-            <div className="absolute -left-12 top-0 bottom-0 hidden lg:flex flex-col items-center">
-              <div className="size-8 rounded-full bg-white border-2 border-primary/20 flex items-center justify-center text-[10px] font-black text-primary shadow-sm z-10">
-                {new Date(entry.date).getDate()}
+        {entries.length === 0 ? (
+          <EmptyState
+            variant="minimal"
+            icon="notes"
+            title="Nenhuma memória neste álbum"
+            description="Comece a escrever sobre suas experiências!"
+          />
+        ) : (
+          entries.map((entry) => (
+            <div key={entry.id} className="relative text-left animate-in slide-in-from-bottom-4 duration-700">
+              <div className="absolute -left-12 top-0 bottom-0 hidden lg:flex flex-col items-center">
+                <div className="size-8 rounded-full bg-white border-2 border-primary/20 flex items-center justify-center text-[10px] font-black text-primary shadow-sm z-10">
+                  {new Date(entry.date).getDate()}
+                </div>
+                <div className="w-px flex-1 bg-gradient-to-b from-primary/20 to-transparent my-2" />
               </div>
-              <div className="w-px flex-1 bg-gradient-to-b from-primary/20 to-transparent my-2" />
-            </div>
 
-            <Card className="overflow-hidden border-none shadow-soft hover:shadow-xl transition-all duration-500 rounded-xl">
-              {entry.images && entry.images.length > 0 && (
-                <div className="relative aspect-video overflow-hidden">
-                  <img src={entry.images[0]} className="w-full h-full object-cover" alt="Post" />
+              <Card className="overflow-hidden border-none shadow-soft hover:shadow-xl transition-all duration-500 rounded-xl">
+                {entry.images && entry.images.length > 0 && (
+                  <div className="relative aspect-video overflow-hidden">
+                    <img src={entry.images[0]} className="w-full h-full object-cover" alt="Post" />
+                  </div>
+                )}
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-xs font-bold text-gray-400">{entry.timestamp} • {entry.location}</span>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Excluir esta memória?')) {
+                          setEntries(prev => prev.filter(e => e.id !== entry.id));
+                        }
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-rose-50 text-gray-300 hover:text-rose-500 transition-colors"
+                      title="Excluir"
+                    >
+                      <span className="material-symbols-outlined text-sm">delete</span>
+                    </button>
+                  </div>
+                  <p className="text-sm text-text-main leading-relaxed whitespace-pre-wrap">{entry.content}</p>
                 </div>
-              )}
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold text-gray-400">{entry.timestamp} • {entry.location}</span>
-                </div>
-                <p className="text-sm text-text-main leading-relaxed whitespace-pre-wrap">{entry.content}</p>
-              </div>
-            </Card>
-          </div>
-        ))}
+              </Card>
+            </div>
+          ))
+        )}
       </div>
-    </div>
+    </PageContainer>
   );
 };
 
-export default Journal;
+export default Memories;

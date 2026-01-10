@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import * as React from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { Transport, TransportType, TransportStatus } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
@@ -23,7 +24,7 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchTransports = async (tripId: string) => {
+    const fetchTransports = useCallback(async (tripId: string) => {
         if (!user || !tripId) return;
         setIsLoading(true);
         setError(null);
@@ -55,8 +56,7 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
                     seat: row.seat,
                     vehicle: row.vehicle,
                     status: row.status as TransportStatus,
-                    confirmation: row.reference, // Mapping reference to confirmation for compatibility
-                    ...row.metadata
+                    confirmation: row.reference
                 }));
                 setTransports(loadedTransports);
             }
@@ -66,39 +66,42 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [user]);
 
-    const addTransport = async (tripId: string, transport: Omit<Transport, 'id'>) => {
+    const addTransport = useCallback(async (tripId: string, transport: Omit<Transport, 'id'>) => {
         if (!user || !tripId) return null;
         setError(null);
 
         // Optimistic Update
-        const tempId = `temp-${Date.now()}`;
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const tempTransport = { ...transport, id: tempId };
         setTransports(prev => [...prev, tempTransport]);
 
         try {
-            const { error, data } = await supabase.from('transports').insert({
-                user_id: user.id,
+            const departureDateISO = toISODate(transport.departureDate);
+            const arrivalDateISO = toISODate(transport.arrivalDate) || departureDateISO;
+
+            const payload = {
                 trip_id: tripId,
                 type: transport.type,
-                operator: transport.operator,
-                reference: transport.reference,
-                departure_location: transport.departureLocation,
-                departure_city: transport.departureCity,
-                departure_date: toISODate(transport.departureDate),
-                departure_time: transport.departureTime,
-                arrival_location: transport.arrivalLocation,
-                arrival_city: transport.arrivalCity,
-                arrival_date: toISODate(transport.arrivalDate),
-                arrival_time: transport.arrivalTime,
-                duration: transport.duration,
-                class: transport.class,
-                seat: transport.seat,
-                vehicle: transport.vehicle,
-                status: transport.status,
-                metadata: {} // For future Use
-            }).select().single();
+                operator: transport.operator || 'Unknown',
+                reference: transport.reference || '',
+                departure_location: transport.departureLocation || '',
+                departure_city: transport.departureCity || '',
+                departure_date: departureDateISO,
+                departure_time: transport.departureTime ? transport.departureTime.slice(0, 5) : '00:00',
+                arrival_location: transport.arrivalLocation || '',
+                arrival_city: transport.arrivalCity || '',
+                arrival_date: arrivalDateISO,
+                arrival_time: transport.arrivalTime ? transport.arrivalTime.slice(0, 5) : '00:00',
+                duration: transport.duration || null,
+                class: transport.class || null,
+                seat: transport.seat || null,
+                vehicle: transport.vehicle || null,
+                status: transport.status
+            };
+
+            const { error, data } = await supabase.from('transports').insert(payload).select().single();
 
             if (error) throw error;
 
@@ -114,9 +117,9 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
             setTransports(prev => prev.filter(t => t.id !== tempId));
             return null;
         }
-    };
+    }, [user]);
 
-    const updateTransport = async (tripId: string, transport: Transport) => {
+    const updateTransport = useCallback(async (tripId: string, transport: Transport) => {
         if (!user || !tripId) return;
         setError(null);
 
@@ -147,12 +150,11 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
         } catch (err: any) {
             console.error('Error updating transport:', err);
             setError(err.message);
-            // Revert or fetch? Fetching is safer
             fetchTransports(tripId);
         }
-    };
+    }, [user, fetchTransports]);
 
-    const deleteTransport = async (tripId: string, transportId: string) => {
+    const deleteTransport = useCallback(async (tripId: string, transportId: string) => {
         if (!user || !tripId) return;
         setTransports(prev => prev.filter(t => t.id !== transportId));
 
@@ -164,33 +166,40 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
             setError(err.message);
             fetchTransports(tripId);
         }
-    };
+    }, [user, fetchTransports]);
 
-    const migrateFromLocalStorage = async (tripId: string, localTransports: Transport[]) => {
+    const migrateFromLocalStorage = useCallback(async (tripId: string, localTransports: Transport[]) => {
         if (!user || !tripId || localTransports.length === 0) return;
 
-        // Build promise array
         const promises = localTransports.map(t => {
-            // Basic check to see if we already have it? 
-            // Ideally we just insert. Supabase ID will be different from Local ID.
-            // We can check if similar transport exists (same reference & date) but let's trust the user runs this once.
             return addTransport(tripId, t);
         });
 
         await Promise.all(promises);
-    };
+    }, [user, addTransport]);
+
+    const value = useMemo(() => ({
+        transports,
+        isLoading,
+        error,
+        fetchTransports,
+        addTransport,
+        updateTransport,
+        deleteTransport,
+        migrateFromLocalStorage
+    }), [
+        transports,
+        isLoading,
+        error,
+        fetchTransports,
+        addTransport,
+        updateTransport,
+        deleteTransport,
+        migrateFromLocalStorage
+    ]);
 
     return (
-        <TransportContext.Provider value={{
-            transports,
-            isLoading,
-            error,
-            fetchTransports,
-            addTransport,
-            updateTransport,
-            deleteTransport,
-            migrateFromLocalStorage
-        }}>
+        <TransportContext.Provider value={value}>
             {children}
         </TransportContext.Provider>
     );

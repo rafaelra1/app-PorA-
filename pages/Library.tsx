@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
-import { Card, Button, Badge } from '../components/ui/Base';
-
+import * as React from 'react';
+import { useState, useMemo } from 'react';
+import { Card, Button, Badge, PageContainer, PageHeader, FilterBar, FilterButton } from '../components/ui/Base';
+import { useTrips } from '../contexts/TripContext';
 import { getGeminiService } from '../services/geminiService';
 
 interface UserDocument {
@@ -12,12 +13,14 @@ interface UserDocument {
   date: string;
   size: string;
   trip?: string;
+  tripId?: string;
   fileData?: string;
 }
 
 const DEMO_DOCS: UserDocument[] = [];
 
-const Documents: React.FC = () => {
+const Library: React.FC = () => {
+  const { trips } = useTrips();
   const [filter, setFilter] = useState('Tudo');
   const [search, setSearch] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -25,6 +28,18 @@ const Documents: React.FC = () => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [pendingScan, setPendingScan] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'all' | 'by-trip'>('all');
+
+  // Group documents by trip
+  const documentsByTrip = useMemo(() => {
+    const grouped: Record<string, UserDocument[]> = {};
+    documents.forEach(doc => {
+      const tripKey = doc.tripId || 'global';
+      if (!grouped[tripKey]) grouped[tripKey] = [];
+      grouped[tripKey].push(doc);
+    });
+    return grouped;
+  }, [documents]);
 
   const categories = ['Tudo', 'Voucher', 'Passaporte', 'Seguro', 'Outros'];
 
@@ -158,7 +173,7 @@ const Documents: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-8 animate-in fade-in duration-500 text-left">
+    <PageContainer>
       {/* Hidden File Input */}
       <input
         type="file"
@@ -168,68 +183,58 @@ const Documents: React.FC = () => {
         accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
       />
 
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
-        <div>
-          <h2 className="text-3xl font-black text-text-main tracking-tight">Documentos & Vouchers</h2>
-          <p className="text-text-muted text-sm font-medium mt-2 max-w-lg">
-            Centralize seus arquivos importantes. Deixe nossa IA extrair automaticamente dados de reservas e datas dos seus PDFs.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" className="h-10 px-4 text-xs font-bold uppercase tracking-wide border-gray-200 hover:border-primary hover:text-primary">
-            <span className="material-symbols-outlined text-lg mr-2">sync</span>
-            Sincronizar
-          </Button>
-          <Button
-            variant="primary"
-            className="h-10 px-5 text-xs font-bold uppercase tracking-wide shadow-lg shadow-primary/20 hover:shadow-primary/40"
-            onClick={() => handleUploadClick(false)}
-          >
-            <span className="material-symbols-outlined text-lg mr-2">cloud_upload</span>
-            Upload
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={
+          <div className="flex items-center gap-3">
+            <span>Biblioteca de Documentos</span>
+            <Badge variant="neutral" className="text-[10px] font-bold">🌐 Repositório Global</Badge>
+          </div>
+        }
+        description="Seu repositório central de arquivos importantes. Documentos específicos de viagens são salvos automaticamente aqui."
+        actions={
+          <>
+            <Button variant="outline" className="h-10 px-4 text-xs font-bold uppercase tracking-wide border-gray-200 hover:border-primary hover:text-primary">
+              <span className="material-symbols-outlined text-lg mr-2">sync</span>
+              Sincronizar
+            </Button>
+            <Button
+              variant="primary"
+              className="h-10 px-5 text-xs font-bold uppercase tracking-wide shadow-lg shadow-primary/20 hover:shadow-primary/40"
+              onClick={() => handleUploadClick(false)}
+            >
+              <span className="material-symbols-outlined text-sm mr-1">cloud_upload</span>
+              Upload
+            </Button>
+          </>
+        }
+      />
 
       {/* Main Content Area */}
       <div className="flex flex-col lg:flex-row gap-8 items-start">
 
         {/* Left Column: Filters & Grid */}
         <div className="flex-1 w-full space-y-6">
-          {/* Filters Bar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
-            <div className="flex gap-1 overflow-x-auto hide-scrollbar w-full sm:w-auto p-1">
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setFilter(cat)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${filter === cat
-                    ? 'bg-text-main text-white shadow-md'
-                    : 'bg-transparent text-text-muted hover:bg-gray-50'
-                    }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-            <div className="relative w-full sm:w-64 pr-1">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg">search</span>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar documentos..."
-                className="w-full bg-gray-50 border-none rounded-xl pl-10 pr-4 py-2 text-sm font-medium focus:ring-2 focus:ring-primary/20 text-text-main placeholder:text-gray-400 transition-all"
-              />
-            </div>
-          </div>
+          <FilterBar
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Buscar documentos..."
+          >
+            {categories.map(cat => (
+              <FilterButton
+                key={cat}
+                isActive={filter === cat}
+                onClick={() => setFilter(cat)}
+              >
+                {cat}
+              </FilterButton>
+            ))}
+          </FilterBar>
 
           {/* Documents Grid */}
           {filteredDocs.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {filteredDocs.map((doc) => (
-                <Card key={doc.id} className="p-0 border border-gray-100 shadow-sm hover:shadow-md transition-all group overflow-hidden flex flex-col h-full rounded-2xl bg-white hover:border-primary/30">
+                <Card key={doc.id} className="p-0 border border-gray-100 shadow-soft hover:shadow-lg transition-shadow group overflow-hidden flex flex-col h-full rounded-2xl bg-white hover:border-primary/30">
                   <div className="p-6 bg-gray-50/50 flex items-center justify-center h-40 relative group-hover:bg-primary/5 transition-colors">
                     <div className={`size-16 rounded-2xl flex items-center justify-center bg-white shadow-sm ${doc.type === 'pdf' ? 'text-rose-500' : doc.type === 'image' ? 'text-blue-500' : 'text-primary'
                       }`}>
@@ -327,7 +332,7 @@ const Documents: React.FC = () => {
               </p>
               <Button
                 variant="primary"
-                className="shadow-lg shadow-primary/20"
+                className="h-10 px-5 text-xs font-bold shadow-lg shadow-primary/20"
                 onClick={() => handleUploadClick(false)}
               >
                 Upload de Arquivo
@@ -339,7 +344,7 @@ const Documents: React.FC = () => {
         {/* Right Column: AI & Stats */}
         <div className="w-full lg:w-80 shrink-0 space-y-6">
           {/* AI Smart Scan Card */}
-          <Card className="bg-gradient-to-br from-primary to-primary-dark p-6 border-none shadow-xl shadow-primary/20 relative overflow-hidden group rounded-2xl">
+          <Card className="bg-gradient-to-br from-primary to-primary-dark p-6 border-none shadow-soft hover:shadow-lg transition-shadow relative overflow-hidden group rounded-2xl">
             <div className="relative z-10">
               <div className="size-12 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
                 <span className={`material-symbols-outlined text-2xl ${isAnalyzing ? 'animate-spin' : ''}`}>auto_awesome</span>
@@ -375,7 +380,7 @@ const Documents: React.FC = () => {
           </Card>
 
           {/* Storage Stats */}
-          <Card className="p-5 border border-gray-100 shadow-sm rounded-2xl bg-white">
+          <Card className="p-5 border border-gray-100 shadow-soft rounded-2xl bg-white">
             <div className="flex items-center gap-3 mb-4">
               <div className="size-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
                 <span className="material-symbols-outlined text-xl">cloud_done</span>
@@ -401,10 +406,10 @@ const Documents: React.FC = () => {
           </Card>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 };
 
-export default Documents;
+export default Library;
 
 

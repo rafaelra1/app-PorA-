@@ -1,65 +1,50 @@
 import React, { useState } from 'react';
 import { Icon } from '../ui/Base';
-import { Trip } from '../../types';
+import { EmptyState } from '../ui/EmptyState';
+import { useTrips } from '../../contexts/TripContext'; // Updated import path to match context location
 
 interface MyTripsViewProps {
     onSelectTrip: (tripId: string) => void;
+    onOpenAddModal?: () => void;
 }
 
-// Mock data matching the image
-const MOCK_TRIPS = [
-    {
-        id: 't1',
-        title: 'Aventura em Kyoto',
-        date: '12 Out - 24 Out, 2023',
-        status: 'CONFIRMADO',
-        image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&q=80&w=1000',
-        collaborators: ['https://i.pravatar.cc/150?u=1', 'LM']
-    },
-    {
-        id: 't2',
-        title: 'Fim de Ano em Paris',
-        date: '28 Dez - 03 Jan, 2024',
-        status: 'PLANEJANDO',
-        image: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&q=80&w=1000',
-        collaborators: ['https://i.pravatar.cc/150?u=2', '+1']
-    },
-    {
-        id: 't3',
-        title: 'Tour Itália – Veneza',
-        date: '15 Mai - 20 Mai, 2024',
-        status: 'CONFIRMADO',
-        image: 'https://images.unsplash.com/photo-1514890547357-a9ee288728e0?auto=format&fit=crop&q=80&w=1000',
-        collaborators: ['https://i.pravatar.cc/150?u=3']
-    },
-    {
-        id: 't4',
-        title: 'Verão na Grécia',
-        date: '02 Ago - 10 Ago, 2023',
-        status: 'CONCLUÍDO',
-        image: 'https://images.unsplash.com/photo-1569383746724-6f1b882b8f46?auto=format&fit=crop&q=80&w=1000',
-        collaborators: ['https://i.pravatar.cc/150?u=4', 'TR']
-    },
-    {
-        id: 't5',
-        title: 'Exploração Urbana',
-        date: '10 Fev - 18 Fev, 2023',
-        status: 'CONCLUÍDO',
-        image: 'https://images.unsplash.com/photo-1449824913929-79aa4361e851?auto=format&fit=crop&q=80&w=1000',
-        collaborators: ['https://i.pravatar.cc/150?u=5']
-    },
-    {
-        id: 't6',
-        title: 'Retiro Espiritual Bali',
-        date: 'A definir, 2024',
-        status: 'PLANEJANDO',
-        image: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&q=80&w=1000',
-        collaborators: ['https://i.pravatar.cc/150?u=6', '+3']
-    }
-];
-
-const MyTripsView: React.FC<MyTripsViewProps> = ({ onSelectTrip }) => {
+const MyTripsView: React.FC<MyTripsViewProps> = ({ onSelectTrip, onOpenAddModal }) => {
+    const { trips } = useTrips();
     const [filter, setFilter] = useState<'Todas' | 'Próximas' | 'Planejamento' | 'Concluídas'>('Todas');
+
+    // Filter trips based on selection
+    const filteredTrips = trips.filter(trip => {
+        if (filter === 'Todas') return true;
+        if (filter === 'Próximas') return trip.status === 'confirmed';
+        if (filter === 'Planejamento') return trip.status === 'planning';
+        if (filter === 'Concluídas') return trip.status === 'completed';
+        return true;
+    });
+
+    if (trips.length === 0) {
+        return (
+            <div className="p-8 md:p-12 max-w-[1600px] mx-auto animate-in fade-in duration-500">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                    <div>
+                        <h1 className="text-3xl font-black text-[#231212] mb-2 tracking-tight">Minhas Viagens</h1>
+                        <p className="text-gray-500 text-sm">Gerencie e planeje suas próximas aventuras pelo mundo.</p>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-[32px] p-8 border border-gray-100 shadow-sm min-h-[400px] flex items-center justify-center">
+                    <EmptyState
+                        icon="luggage"
+                        title="Nenhuma viagem cadastrada"
+                        description="Comece a planejar sua próxima aventura!"
+                        action={onOpenAddModal ? {
+                            label: "Criar Primeira Viagem",
+                            onClick: onOpenAddModal
+                        } : undefined}
+                    />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="p-8 md:p-12 max-w-[1600px] mx-auto animate-in fade-in duration-500">
@@ -69,7 +54,10 @@ const MyTripsView: React.FC<MyTripsViewProps> = ({ onSelectTrip }) => {
                     <h1 className="text-3xl font-black text-[#231212] mb-2 tracking-tight">Minhas Viagens</h1>
                     <p className="text-gray-500 text-sm">Gerencie e planeje suas próximas aventuras pelo mundo.</p>
                 </div>
-                <button className="bg-[#1a1a1a] text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-black transition-all flex items-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-0.5">
+                <button
+                    onClick={onOpenAddModal}
+                    className="bg-[#1a1a1a] text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-black transition-all flex items-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                >
                     <Icon name="add" className="text-lg" /> Nova Viagem
                 </button>
             </div>
@@ -92,7 +80,7 @@ const MyTripsView: React.FC<MyTripsViewProps> = ({ onSelectTrip }) => {
 
             {/* Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
-                {MOCK_TRIPS.map((trip) => (
+                {filteredTrips.map((trip) => (
                     <div
                         key={trip.id}
                         onClick={() => onSelectTrip(trip.id)}
@@ -100,16 +88,18 @@ const MyTripsView: React.FC<MyTripsViewProps> = ({ onSelectTrip }) => {
                     >
                         {/* Image */}
                         <div className="relative aspect-[16/10] rounded-[20px] overflow-hidden mb-4">
-                            <img src={trip.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={trip.title} />
+                            <img src={trip.coverImage || 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&q=80&w=1000'} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={trip.title} />
 
                             <div className="absolute top-3 right-3">
                                 <span className={`
                                     px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider backdrop-blur-md
-                                    ${trip.status === 'CONFIRMADO' ? 'bg-green-400/90 text-white' : ''}
-                                    ${trip.status === 'PLANEJANDO' ? 'bg-blue-400/90 text-white' : ''}
-                                    ${trip.status === 'CONCLUÍDO' ? 'bg-gray-400/90 text-white' : ''}
+                                    ${trip.status === 'confirmed' ? 'bg-green-400/90 text-white' : ''}
+                                    ${trip.status === 'planning' ? 'bg-blue-400/90 text-white' : ''}
+                                    ${trip.status === 'completed' ? 'bg-gray-400/90 text-white' : ''}
                                 `}>
-                                    {trip.status}
+                                    {trip.status === 'confirmed' ? 'CONFIRMADO' :
+                                        trip.status === 'planning' ? 'PLANEJANDO' :
+                                            trip.status === 'completed' ? 'CONCLUÍDO' : trip.status}
                                 </span>
                             </div>
                         </div>
@@ -119,15 +109,15 @@ const MyTripsView: React.FC<MyTripsViewProps> = ({ onSelectTrip }) => {
                             <h3 className="font-bold text-[#231212] text-lg mb-1 group-hover:text-indigo-600 transition-colors">{trip.title}</h3>
                             <div className="flex items-center gap-2 text-gray-400 text-xs font-medium mb-4">
                                 <Icon name="calendar_today" className="text-xs" />
-                                {trip.date}
+                                {trip.startDate ? `${new Date(trip.startDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} - ${new Date(trip.endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}` : 'Data a definir'}
                             </div>
 
                             <div className="flex items-center justify-between border-t border-gray-50 pt-3">
                                 {/* Collaborators */}
                                 <div className="flex -space-x-2">
-                                    {trip.collaborators.map((c, i) => (
+                                    {trip.participants && trip.participants.map((c, i) => (
                                         <div key={i} className="w-6 h-6 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[8px] font-bold text-gray-600 overflow-hidden">
-                                            {c.startsWith('http') ? <img src={c} alt="User" /> : c}
+                                            {c.avatar ? <img src={c.avatar} alt={c.name} /> : (c.name ? c.name.charAt(0) : '?')}
                                         </div>
                                     ))}
                                 </div>

@@ -1,11 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ItineraryDay, Activity, ItineraryActivity, ItineraryActivityType, HotelReservation, Transport } from '../../../types';
-import { Button, Card } from '../../ui/Base';
+import { Button, Card, Skeleton, SkeletonText } from '../../ui/Base';
 import { getGeminiService } from '../../../services/geminiService';
 import AddActivityModal from '../modals/AddActivityModal';
 import ActivityDetailsModal from '../modals/ActivityDetailsModal';
 import { JournalEntryModal } from '../modals/JournalEntryModal';
 import { formatDate, parseDisplayDate } from '../../../lib/dateUtils';
+import { generateItineraryFromDocuments, identifyItineraryGaps } from '../../../services/itineraryGenerationService';
+import { useNotifications } from '../../../contexts/NotificationContext';
 import {
     DndContext,
     closestCenter,
@@ -44,6 +47,8 @@ interface ItineraryViewProps {
     customActivities?: ItineraryActivity[];
     onDeleteActivity?: (id: string) => void;
     onUpdateActivity?: (activity: ItineraryActivity) => void;
+    onUpdateCustomActivities?: (activities: ItineraryActivity[]) => void;
+    isLoading?: boolean;
 }
 
 // Activity type configuration for colors and icons
@@ -79,11 +84,76 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     onDeleteActivity,
     onUpdateActivity,
     onAddActivity,
+    isLoading,
 }) => {
     const [selectedDay, setSelectedDay] = useState(1);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingActivity, setEditingActivity] = useState<ItineraryActivity | null>(null);
     const [deletingActivityId, setDeletingActivityId] = useState<string | null>(null);
+    const [isSyncingDocs, setIsSyncingDocs] = useState(false);
+    const { preferences } = useNotifications();
+
+    const handleSyncDocuments = async () => {
+        if (!tripStartDate || isSyncingDocs) return;
+        setIsSyncingDocs(true);
+        try {
+            const newActivities = generateItineraryFromDocuments(
+                'current-trip',
+                tripStartDate,
+                {
+                    documents: [], // Since we have entities, we primarily use those
+                    transports,
+                    accommodations: hotels,
+                    carRentals: []
+                }
+            );
+
+            // Merge with existing activities (avoid duplicates by documentId)
+            const existingIds = new Set(customActivities.map(a => a.id));
+            const toAdd = newActivities.filter(a => !existingIds.has(a.id));
+
+            if (toAdd.length > 0 && onAddActivity) {
+                for (const act of toAdd) {
+                    await onAddActivity(act);
+                }
+            }
+        } finally {
+            setIsSyncingDocs(false);
+        }
+    };
+
+    const handleFillGaps = async (day: number, date: string) => {
+        if (isSyncingDocs) return;
+        setIsSyncingDocs(true);
+        try {
+            const destination = cities.find(c => {
+                const arr = new Date(c.arrivalDate);
+                const dep = new Date(c.departureDate);
+                const currDate = new Date(date + 'T00:00:00');
+                return currDate >= arr && currDate <= dep;
+            })?.name || 'seu destino';
+
+            const existing = currentDayData?.itineraryActivities || [];
+            const suggestions = await getGeminiService().fillItineraryGaps(destination, date, existing);
+
+            if (suggestions && suggestions.length > 0 && onAddActivity) {
+                for (const sug of suggestions) {
+                    await onAddActivity({
+                        day,
+                        date,
+                        time: sug.time,
+                        title: sug.title,
+                        notes: sug.description,
+                        type: sug.type as any,
+                        location: sug.location,
+                        completed: false
+                    });
+                }
+            }
+        } finally {
+            setIsSyncingDocs(false);
+        }
+    };
 
     // DND Sensors
     const sensors = useSensors(
@@ -303,7 +373,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                         id: `transport-${transport.id}`,
                         day: dayNumber,
                         date: dateStr,
-                        time: transport.departureTime,
+                        time: transport.departureTime?.slice(0, 5),
                         title: `${transport.operator} ${transport.reference}`,
                         location: transport.departureLocation,
                         locationDetail: transport.route || `→ ${transport.arrivalLocation}`,
@@ -315,7 +385,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
             });
 
             // Add custom activities (from City Guide / persisted manual additions)
-            const dateCustomActivities = customActivities.filter(a => a.date === dateStr);
+            const dateCustomActivities = customActivities.filter(a => formatDate(a.date) === dateStr);
             dateCustomActivities.forEach(act => {
                 dayActivities.push(act);
             });
@@ -532,6 +602,60 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     ] as const;
 
 
+    if (isLoading) {
+        return (
+            <div className="space-y-4 pb-20 animate-in fade-in duration-300">
+                {/* Global Filter Bar Skeleton */}
+                <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-transparent p-1.5 rounded-2xl border border-gray-100">
+                    <div className="flex gap-2 w-full md:w-auto overflow-hidden">
+                        {[1, 2, 3, 4, 5].map(i => (
+                            <Skeleton key={i} width={70} height={32} className="rounded-xl shrink-0" />
+                        ))}
+                    </div>
+                    <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                        <Skeleton width={120} height={32} className="rounded-xl hidden md:block" />
+                        <Skeleton width={80} height={32} className="rounded-xl" />
+                    </div>
+                </div>
+
+                {/* Day Skeletons */}
+                {[1, 2].map(day => (
+                    <div key={day} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between p-5">
+                            <div className="flex items-center gap-4">
+                                <Skeleton variant="rectangular" width={48} height={48} className="rounded-xl" />
+                                <div className="space-y-2">
+                                    <Skeleton width={150} height={20} />
+                                    <Skeleton width={100} height={14} />
+                                </div>
+                            </div>
+                            <Skeleton variant="circular" width={32} height={32} />
+                        </div>
+                        <div className="p-5 pt-0 border-t border-gray-100 space-y-4 mt-4">
+                            {[1, 2, 3].map(act => (
+                                <div key={act} className="flex gap-4">
+                                    <div className="flex flex-col items-center gap-1">
+                                        <Skeleton width={40} height={14} />
+                                        <div className="w-0.5 h-16 bg-gray-100" />
+                                    </div>
+                                    <Card className="flex-1 p-4 border-gray-100">
+                                        <div className="flex items-start gap-3">
+                                            <Skeleton variant="rectangular" width={40} height={40} className="rounded-xl" />
+                                            <div className="flex-1 space-y-2">
+                                                <Skeleton width="40%" height={16} />
+                                                <Skeleton width="30%" height={12} />
+                                            </div>
+                                        </div>
+                                    </Card>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    }
+
     return (
         <div className="animate-in fade-in duration-300 space-y-4 pb-20">
             {/* Filter Bar */}
@@ -583,6 +707,15 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                             <span className="material-symbols-outlined text-lg">grid_view</span>
                         </button>
                     </div>
+
+                    {/* Smart Generate Button */}
+                    <button
+                        onClick={handleSyncDocuments}
+                        className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 text-xs font-bold transition-all shadow-md active:scale-95 bubble-effect"
+                    >
+                        <span className="material-symbols-outlined text-base">auto_awesome</span>
+                        Sincronizar Documentos
+                    </button>
                 </div>
             </div>
 
@@ -599,7 +732,11 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                     const conflicts = detectConflicts(day.itineraryActivities);
 
                     return (
-                        <div key={day.day} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
+                        <div
+                            key={day.day}
+                            className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 animate-slide-up"
+                            style={{ animationDelay: `${day.day * 100}ms` }}
+                        >
                             {/* Day Header - Click to toggle */}
                             <div
                                 onClick={() => toggleDay(day.day)}
@@ -675,12 +812,21 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                                                         <span className="material-symbols-outlined text-2xl">event_busy</span>
                                                     </div>
                                                     <p className="text-sm text-text-muted font-medium">Nenhuma atividade planejada</p>
-                                                    <button
-                                                        onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
-                                                        className="text-xs font-bold text-primary hover:underline mt-1"
-                                                    >
-                                                        Adicionar a primeira
-                                                    </button>
+                                                    <div className="flex flex-col gap-2 mt-3 items-center">
+                                                        <button
+                                                            onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
+                                                            className="px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-text-main hover:bg-gray-50 transition-all shadow-sm"
+                                                        >
+                                                            Manual
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleFillGaps(day.day, day.date)}
+                                                            className="px-4 py-1.5 rounded-xl bg-purple-50 text-purple-600 text-xs font-bold hover:bg-purple-100 transition-all flex items-center gap-1.5"
+                                                        >
+                                                            <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                                                            Sugerir com IA
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             )}
 

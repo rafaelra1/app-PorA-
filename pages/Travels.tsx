@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Trip } from '../types';
-import { Card, Badge, Button } from '../components/ui/Base';
+import { Card, Badge, Button, PageContainer, PageHeader, FilterBar, FilterButton, EmptyState } from '../components/ui/Base';
 import { getFlagsForDestinations } from '../lib/countryUtils';
 
 // Status labels in Portuguese
@@ -81,135 +81,94 @@ const Travels: React.FC<TravelsProps> = ({ trips, onOpenAddModal, onEditTrip, on
   };
 
   return (
-    <div className="flex flex-col gap-8 text-left">
+    <PageContainer>
       {/* Header with Stats */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-text-main">Minhas Viagens</h2>
-          <p className="text-text-muted text-sm">
-            {filteredTrips.length} {filteredTrips.length === 1 ? 'viagem' : 'viagens'}
-            {searchQuery && ` encontrada${filteredTrips.length !== 1 ? 's' : ''}`}
-            {filter !== 'all' && ` (${filter === 'active' ? 'ativas' : 'concluídas'})`}
-          </p>
-        </div>
-        <Button variant="primary" onClick={onOpenAddModal} className="h-10 !px-4 !py-0 !text-xs">
-          <span className="material-symbols-outlined text-sm">add</span>
-          Nova Viagem
-        </Button>
-      </div>
+      <PageHeader
+        title="Minhas Viagens"
+        description={`${filteredTrips.length} ${filteredTrips.length === 1 ? 'viagem' : 'viagens'}${searchQuery ? ` encontrada${filteredTrips.length !== 1 ? 's' : ''}` : ''}${filter !== 'all' ? ` (${filter === 'active' ? 'ativas' : 'concluídas'})` : ''}`}
+        actions={
+          <Button variant="primary" onClick={onOpenAddModal} className="h-10 px-5 text-xs font-bold">
+            <span className="material-symbols-outlined text-sm mr-1">add</span>
+            Nova Viagem
+          </Button>
+        }
+      />
 
       {/* Controls Bar */}
-      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-white p-4 rounded-2xl shadow-soft border border-gray-100">
-        {/* Filters */}
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${filter === 'all' ? 'bg-text-main text-white shadow-md' : 'bg-gray-50 text-text-muted hover:bg-gray-100'
-              }`}
-          >
-            Tudo ({stats.total})
-          </button>
-          <button
-            onClick={() => setFilter('active')}
-            className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${filter === 'active' ? 'bg-text-main text-white shadow-md' : 'bg-gray-50 text-text-muted hover:bg-gray-100'
-              }`}
-          >
-            Ativas ({stats.active})
-          </button>
-          <button
-            onClick={() => setFilter('completed')}
-            className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${filter === 'completed' ? 'bg-text-main text-white shadow-md' : 'bg-gray-50 text-text-muted hover:bg-gray-100'
-              }`}
-          >
-            Concluídas ({stats.completed})
-          </button>
-        </div>
+      <FilterBar
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Buscar viagem..."
+        rightContent={
+          <div className="flex gap-2 flex-wrap items-center">
+            {/* Sort */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="px-3 py-2 rounded-xl border border-gray-100 text-xs font-bold text-text-main focus:ring-2 focus:ring-primary cursor-pointer outline-none bg-white"
+            >
+              <option value="date">Data</option>
+              <option value="name">Nome</option>
+              <option value="status">Status</option>
+            </select>
 
-        {/* Search, Sort, and View Mode */}
-        <div className="flex gap-2 flex-wrap items-center">
-          {/* Search */}
-          <div className="relative">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">search</span>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar viagem..."
-              className="pl-9 pr-3 py-2 rounded-xl border border-gray-100 text-xs font-medium focus:ring-2 focus:ring-primary focus:border-primary w-48"
-            />
-            {searchQuery && (
+            {/* View Mode Toggle */}
+            <div className="flex gap-1 bg-gray-50 p-1 rounded-xl">
               <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main"
+                onClick={() => setViewMode('grid')}
+                className={`size-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'grid' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
+                  }`}
               >
-                <span className="material-symbols-outlined text-sm">close</span>
+                <span className="material-symbols-outlined text-sm">grid_view</span>
               </button>
-            )}
+              <button
+                onClick={() => setViewMode('list')}
+                className={`size-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'list' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
+                  }`}
+              >
+                <span className="material-symbols-outlined text-sm">view_list</span>
+              </button>
+            </div>
           </div>
-
-          {/* Sort */}
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-3 py-2 rounded-xl border border-gray-100 text-xs font-bold text-text-main focus:ring-2 focus:ring-primary cursor-pointer"
-          >
-            <option value="date">Data</option>
-            <option value="name">Nome</option>
-            <option value="status">Status</option>
-          </select>
-
-          {/* View Mode Toggle */}
-          <div className="flex gap-1 bg-gray-50 p-1 rounded-xl">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`size-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'grid' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
-                }`}
-            >
-              <span className="material-symbols-outlined text-sm">grid_view</span>
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`size-8 rounded-lg flex items-center justify-center transition-all ${viewMode === 'list' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
-                }`}
-            >
-              <span className="material-symbols-outlined text-sm">view_list</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        }
+      >
+        <FilterButton
+          isActive={filter === 'all'}
+          onClick={() => setFilter('all')}
+          count={stats.total}
+        >
+          Tudo
+        </FilterButton>
+        <FilterButton
+          isActive={filter === 'active'}
+          onClick={() => setFilter('active')}
+          count={stats.active}
+        >
+          Ativas
+        </FilterButton>
+        <FilterButton
+          isActive={filter === 'completed'}
+          onClick={() => setFilter('completed')}
+          count={stats.completed}
+        >
+          Concluídas
+        </FilterButton>
+      </FilterBar>
 
       {/* Trips Display */}
       {filteredTrips.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="size-20 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 mb-4">
-            <span className="material-symbols-outlined text-4xl">
-              {searchQuery ? 'search_off' : 'luggage'}
-            </span>
-          </div>
-          <h3 className="text-xl font-bold text-text-main mb-2">
-            {searchQuery ? 'Nenhuma viagem encontrada' : 'Nenhuma viagem ainda'}
-          </h3>
-          <p className="text-text-muted mb-6">
-            {searchQuery
-              ? `Não encontramos viagens com "${searchQuery}"`
-              : 'Comece a planejar sua próxima aventura!'}
-          </p>
-          {searchQuery ? (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="px-6 py-2 bg-text-main text-white rounded-xl font-bold hover:bg-gray-800 transition-colors"
-            >
-              Limpar busca
-            </button>
-          ) : (
-            <button
-              onClick={onOpenAddModal}
-              className="px-6 py-2 bg-text-main text-white rounded-xl font-bold hover:bg-gray-800 transition-colors"
-            >
-              Adicionar primeira viagem
-            </button>
-          )}
-        </div>
+        <EmptyState
+          icon={searchQuery ? 'search_off' : 'luggage'}
+          title={searchQuery ? 'Nenhuma viagem encontrada' : 'Nenhuma viagem ainda'}
+          description={searchQuery
+            ? `Não encontramos viagens com "${searchQuery}"`
+            : 'Comece a planejar sua próxima aventura!'}
+          action={{
+            label: searchQuery ? 'Limpar busca' : 'Adicionar primeira viagem',
+            onClick: searchQuery ? () => setSearchQuery('') : onOpenAddModal
+          }}
+          variant="default"
+        />
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredTrips.map((trip) => (
@@ -316,8 +275,8 @@ const Travels: React.FC<TravelsProps> = ({ trips, onOpenAddModal, onEditTrip, on
           {filteredTrips.map((trip) => (
             <Card
               key={trip.id}
-              className="group flex flex-row items-center gap-4 p-4 hover:shadow-lg transition-all cursor-pointer relative overflow-hidden"
-              onClick={() => deletingTripId !== trip.id && onViewTrip(trip.id)}
+              onClick={() => onViewTrip(trip.id)}
+              className="group flex flex-row items-center gap-4 p-4 shadow-soft hover:shadow-lg transition-all duration-300 cursor-pointer relative overflow-hidden border-none"
             >
               {/* Delete Confirmation Overlay for List View */}
               {deletingTripId === trip.id && (
@@ -395,7 +354,7 @@ const Travels: React.FC<TravelsProps> = ({ trips, onOpenAddModal, onEditTrip, on
           ))}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 };
 

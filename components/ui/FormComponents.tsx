@@ -32,8 +32,8 @@ export function ToggleGroup<T extends string>({
                     type="button"
                     onClick={() => onChange(option.value)}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all ${value === option.value
-                            ? `bg-white shadow-sm ${option.activeColor || 'text-text-main'}`
-                            : 'text-text-muted'
+                        ? `bg-white shadow-sm ${option.activeColor || 'text-text-main'}`
+                        : 'text-text-muted'
                         }`}
                 >
                     {option.icon && (
@@ -52,31 +52,39 @@ export function ToggleGroup<T extends string>({
 
 export interface DocumentUploadZoneProps {
     isProcessing: boolean;
-    onFileSelect: (file: File) => void;
+    onFileSelect?: (file: File) => void;
+    onFilesSelect?: (files: File[]) => void;
     accept?: string;
     title?: string;
     subtitle?: string;
     processingTitle?: string;
     processingSubtitle?: string;
+    multiple?: boolean;
 }
 
 export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
     isProcessing,
     onFileSelect,
+    onFilesSelect,
     accept = 'image/*,application/pdf',
     title = 'Envie seu documento',
     subtitle = 'PDF, imagem ou captura de tela',
     processingTitle = 'Analisando documento...',
-    processingSubtitle = 'Extraindo informações com IA'
+    processingSubtitle = 'Extraindo informações com IA',
+    multiple = false
 }) => {
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const handleClick = () => fileInputRef.current?.click();
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            onFileSelect(file);
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            if (multiple && onFilesSelect) {
+                onFilesSelect(Array.from(files));
+            } else if (onFileSelect) {
+                onFileSelect(files[0]);
+            }
             // Reset input to allow re-uploading same file
             e.target.value = '';
         }
@@ -89,13 +97,14 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
             tabIndex={0}
             onKeyDown={(e) => e.key === 'Enter' && handleClick()}
             className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${isProcessing
-                    ? 'border-primary bg-primary/5'
-                    : 'border-gray-200 hover:border-primary hover:bg-primary/5'
+                ? 'border-primary bg-primary/5'
+                : 'border-gray-200 hover:border-primary hover:bg-primary/5'
                 }`}
         >
             <input
                 ref={fileInputRef}
                 type="file"
+                multiple={multiple}
                 accept={accept}
                 onChange={handleChange}
                 className="hidden"
@@ -114,10 +123,14 @@ export const DocumentUploadZone: React.FC<DocumentUploadZoneProps> = ({
             ) : (
                 <>
                     <div className="size-12 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-primary text-2xl">cloud_upload</span>
+                        <span className="material-symbols-outlined text-primary text-2xl">
+                            {multiple ? 'uploads' : 'cloud_upload'}
+                        </span>
                     </div>
                     <p className="font-bold text-text-main">{title}</p>
-                    <p className="text-sm text-text-muted mt-1">{subtitle}</p>
+                    <p className="text-sm text-text-muted mt-1">
+                        {multiple ? 'Selecione múltiplos arquivos' : subtitle}
+                    </p>
                     <p className="text-xs text-primary font-bold mt-3">
                         A IA extrairá os dados automaticamente
                     </p>
@@ -301,8 +314,8 @@ export function CategorySelector<T extends string>({
                         type="button"
                         onClick={() => onChange(cat.value)}
                         className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${selected === cat.value
-                                ? `${cat.borderColor} ${cat.bgColor}`
-                                : 'border-gray-200 hover:border-gray-300'
+                            ? `${cat.borderColor} ${cat.bgColor}`
+                            : 'border-gray-200 hover:border-gray-300'
                             }`}
                     >
                         <span className={`material-symbols-outlined ${cat.color}`}>{cat.icon}</span>

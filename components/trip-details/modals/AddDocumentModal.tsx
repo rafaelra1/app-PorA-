@@ -1,9 +1,23 @@
-import React, { useState, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useCallback } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
 import { Button, DocumentUploadZone } from '../../ui/Base';
-import { DocumentType, Participant } from '../../../types';
+import { DocumentType, Participant, TripDocument, BatchAnalysisResult, DocumentAnalysisResult, DebugInfo } from '../../../types';
 import { getGeminiService } from '../../../services/geminiService';
+import { BatchReviewView } from '../documents/BatchReviewView';
+import { imagePreprocessor, QualityAnalysis } from '../../../services/imagePreprocessor';
+import { pdfService } from '../../../services/pdfService';
+import { ImageQualityWarning } from '../../ui/ImageQualityWarning';
+import { DebugPanel } from '../../shared/DebugPanel';
+import { EntitySyncModal } from './EntitySyncModal';
+import { useCalendar } from '../../../contexts/CalendarContext';
+import { useTransport } from '../../../contexts/TransportContext';
+import { useAccommodation } from '../../../contexts/AccommodationContext';
+import { createCalendarEventsFromDocument, getAutoSyncData } from '../../../services/entitySyncService';
+import { useNotifications } from '../../../contexts/NotificationContext';
+import { validators } from '../../../validators/documentValidators';
+import { DOCUMENT_TYPES, DocumentTypeConfig, getDocumentTypesByCategory, FILE_UPLOAD_CONFIG } from '../../../config/constants';
 
 // =============================================================================
 // Types & Interfaces
@@ -12,11 +26,13 @@ import { getGeminiService } from '../../../services/geminiService';
 interface AddDocumentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAdd: (doc: DocumentFormData) => void;
+    onAdd: (doc: DocumentFormData) => Promise<TripDocument | void>;
     travelers?: Participant[];
+    tripId?: string;
+    tripEndDate?: string;
 }
 
-interface DocumentFormData {
+export interface DocumentFormData {
     type: DocumentType;
     name: string;
     date: string;
@@ -30,36 +46,8 @@ interface DocumentFormData {
     checkInUrl?: string;
     mapUrl?: string;
     contactPhone?: string;
+    fieldConfidences?: Record<string, number>;
 }
-
-interface DocumentTypeConfig {
-    id: DocumentType;
-    label: string;
-    icon: string;
-    nameLabel: string;
-    namePlaceholder: string;
-    category: 'reservation' | 'identity' | 'health';
-}
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-const DOCUMENT_TYPES: DocumentTypeConfig[] = [
-    // Reservations
-    { id: 'flight', label: 'Voo', icon: 'flight', nameLabel: 'Companhia Aérea / Voo', namePlaceholder: 'Ex: Latam LA3040', category: 'reservation' },
-    { id: 'hotel', label: 'Hotel', icon: 'hotel', nameLabel: 'Nome do Hotel', namePlaceholder: 'Ex: Hotel Ibis Paulista', category: 'reservation' },
-    { id: 'car', label: 'Carro', icon: 'directions_car', nameLabel: 'Locadora', namePlaceholder: 'Ex: Localiza', category: 'reservation' },
-    { id: 'activity', label: 'Atividade', icon: 'local_activity', nameLabel: 'Nome / Título', namePlaceholder: 'Ex: Ingresso Museu', category: 'reservation' },
-    { id: 'insurance', label: 'Seguro', icon: 'health_and_safety', nameLabel: 'Seguradora', namePlaceholder: 'Ex: Assist Card', category: 'reservation' },
-    // Identity
-    { id: 'passport', label: 'Passaporte', icon: 'badge', nameLabel: 'Titular do Passaporte', namePlaceholder: 'Ex: João da Silva', category: 'identity' },
-    { id: 'visa', label: 'Visto', icon: 'verified_user', nameLabel: 'Tipo de Visto / País', namePlaceholder: 'Ex: Visto Turista - EUA', category: 'identity' },
-    // Health
-    { id: 'vaccine', label: 'Vacina', icon: 'vaccines', nameLabel: 'Nome da Vacina', namePlaceholder: 'Ex: Febre Amarela', category: 'health' },
-    // Other
-    { id: 'other', label: 'Outro', icon: 'folder', nameLabel: 'Nome / Título', namePlaceholder: 'Ex: Documento importante', category: 'reservation' },
-];
 
 const INITIAL_FORM_STATE: DocumentFormData = {
     type: 'other',
@@ -77,8 +65,7 @@ const INITIAL_FORM_STATE: DocumentFormData = {
     contactPhone: ''
 };
 
-const VALID_FILE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+// Using FILE_UPLOAD_CONFIG from centralized constants
 
 const DEFAULT_TRAVELERS: Participant[] = [
     { id: 'u1', name: 'Elena R.', avatar: '', initials: 'ER' },
@@ -200,98 +187,216 @@ const TravelerSelector: React.FC<TravelerSelectorProps> = ({ travelers, selected
 };
 
 // =============================================================================
-// Custom Hooks
+// Document Upload Logic
 // =============================================================================
 
-const useDocumentAnalysis = (onDataExtracted: (data: Partial<DocumentFormData>) => void) => {
+const useDocumentAnalysis = (onDataExtracted?: (data: Partial<DocumentFormData>) => void) => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [progress, setProgress] = useState<string>('');
+    const [qualityWarning, setQualityWarning] = useState<QualityAnalysis | null>(null);
+    const [pendingBase64, setPendingBase64] = useState<string | null>(null);
 
-    const analyzeFile = useCallback(async (file: File) => {
-        // Validate file type
-        if (!VALID_FILE_TYPES.includes(file.type)) {
-            alert('Tipo de arquivo não suportado. Por favor use Imagens ou PDF.');
+    const processImage = useCallback(async (base64: string) => {
+        setProgress('Otimizando imagem...');
+        const result = await imagePreprocessor.process(base64);
+
+        setProgress('Analisando informações...');
+        const aiData = await getGeminiService().analyzeDocumentImage(result.processedBase64);
+        return aiData;
+    }, []);
+
+    const processPdf = useCallback(async (base64: string) => {
+        setProgress('Extraindo páginas do PDF...');
+        const pages = await pdfService.extractPdfPages(base64);
+
+        if (pages.length === 0) throw new Error('Nenhuma página encontrada no PDF');
+
+        let combinedData: any = {};
+
+        for (let i = 0; i < pages.length; i++) {
+            setProgress(`Analisando página ${i + 1} de ${pages.length}...`);
+            const aiData = await getGeminiService().analyzeDocumentImage(pages[i]);
+
+            if (aiData && aiData.length > 0) {
+                const pageData = aiData[0];
+                combinedData = { ...combinedData, ...Object.fromEntries(Object.entries(pageData).filter(([k, v]) => v)) };
+            }
+        }
+
+        return [combinedData];
+    }, []);
+
+    const finalizeAnalysis = useCallback((aiData: any[]) => {
+        if (!aiData || aiData.length === 0) {
+            alert('A IA não conseguiu ler o documento.');
             return;
         }
 
-        // Validate file size
-        if (file.size > MAX_FILE_SIZE) {
-            alert(`O arquivo é muito grande (${(file.size / 1024 / 1024).toFixed(2)}MB). Limite é 10MB.`);
+        const data = aiData[0];
+        if (onDataExtracted) {
+            const cleanDate = (d: string | undefined) => d?.match(/^\d{4}-\d{2}-\d{2}$/) ? d : '';
+            let detailsValue = data.details || '';
+            if (data.type === 'hotel' && data.endDate) detailsValue = cleanDate(data.endDate);
+
+            const mapped: Partial<DocumentFormData> = {
+                type: data.type as DocumentType,
+                name: data.name || '',
+                date: cleanDate(data.date) || '',
+                reference: data.reference || '',
+                details: detailsValue,
+                pickupLocation: data.pickupLocation || '',
+                dropoffLocation: data.dropoffLocation || '',
+                model: data.model || '',
+                expiryDate: data.endDate && (['passport', 'visa'].includes(data.type)) ? cleanDate(data.endDate) : ''
+            };
+
+            if (data.fields) {
+                (mapped as any).fieldConfidences = {};
+            }
+
+            // Capture debug info if present
+            // We can't pass it easily via Partial<DocumentFormData> unless we extend types or manage it side-band.
+            // But the component uses mapAnalysisToForm anyway for its own logic if we returned the result.
+            // Here we are calling the callback. 
+            // Ideally we should return the raw result to the caller too?
+            // But analyzeFile is async void.
+
+            onDataExtracted(mapped);
+        }
+        setIsAnalyzing(false);
+        setProgress('');
+    }, [onDataExtracted]);
+
+    const analyzeFile = useCallback(async (file: File) => {
+        if (!(FILE_UPLOAD_CONFIG.validTypes as readonly string[]).includes(file.type)) {
+            alert('Tipo não suportado.');
+            return;
+        }
+        if (file.size > FILE_UPLOAD_CONFIG.maxSize) {
+            alert('Arquivo muito grande (max 10MB).');
             return;
         }
 
         setIsAnalyzing(true);
+        setQualityWarning(null);
+        setProgress('Lendo arquivo...');
 
         try {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-
             reader.onload = async () => {
                 const base64 = reader.result as string;
-
-                if (!base64 || !base64.includes('base64,')) {
-                    console.error('Failed to read file as base64');
-                    setIsAnalyzing(false);
-                    return;
-                }
+                if (!base64) { setIsAnalyzing(false); return; }
 
                 try {
-                    const aiData = await getGeminiService().analyzeDocumentImage(base64);
-
-                    if (aiData) {
-                        console.log('AI Data received:', aiData);
-
-                        // Clean date format
-                        const cleanDate = (d: string) => d?.match(/^\d{4}-\d{2}-\d{2}$/) ? d : '';
-
-                        // For hotels, 'details' field is used as Check-out date
-                        let detailsValue = aiData.details || '';
-                        if (aiData.type === 'hotel' && aiData.endDate) {
-                            detailsValue = cleanDate(aiData.endDate);
-                        }
-
-                        onDataExtracted({
-                            type: aiData.type || undefined,
-                            name: aiData.name || undefined,
-                            date: cleanDate(aiData.date) || undefined,
-                            reference: aiData.reference || undefined,
-                            details: detailsValue || undefined,
-                            pickupLocation: aiData.pickupLocation || undefined,
-                            dropoffLocation: aiData.dropoffLocation || undefined,
-                            model: aiData.model || undefined
-                        });
-                    } else {
-                        alert('A IA não conseguiu ler o documento. Verifique se a imagem está nítida ou preencha manualmente.');
+                    if (file.type === 'application/pdf') {
+                        const aiData = await processPdf(base64);
+                        finalizeAnalysis(aiData);
+                        return;
                     }
-                } catch (err) {
-                    console.error("AI Analysis failed:", err);
-                    alert('Não foi possível analisar o documento. Tente novamente ou preencha manualmente.');
-                } finally {
+
+                    setProgress('Verificando qualidade...');
+                    const quality = await imagePreprocessor.analyzeQuality(base64);
+                    if (!quality.isAcceptable) {
+                        setQualityWarning(quality);
+                        setPendingBase64(base64);
+                        setProgress('');
+                        setIsAnalyzing(false); // Stop block
+                        return;
+                    }
+
+                    const aiData = await processImage(base64);
+                    finalizeAnalysis(aiData);
+                } catch (e: any) {
+                    console.error(e);
+                    alert(e.message || 'Erro na análise');
                     setIsAnalyzing(false);
                 }
             };
-
-            reader.onerror = () => {
-                console.error('Error reading file');
-                alert('Erro ao ler o arquivo. Tente novamente.');
-                setIsAnalyzing(false);
-            };
-        } catch (error) {
-            console.error("File reading failed:", error);
-            alert('Erro ao processar o arquivo.');
+        } catch (e) {
+            console.error(e);
             setIsAnalyzing(false);
         }
-    }, [onDataExtracted]);
+    }, [processPdf, processImage, finalizeAnalysis]);
 
-    return { isAnalyzing, analyzeFile };
+    const confirmAnalysis = useCallback(async () => {
+        if (!pendingBase64) return;
+        try {
+            setIsAnalyzing(true);
+            setQualityWarning(null);
+            const aiData = await processImage(pendingBase64);
+            finalizeAnalysis(aiData);
+        } catch (e) {
+            alert('Erro ao processar.');
+        } finally {
+            setPendingBase64(null);
+            setIsAnalyzing(false);
+        }
+    }, [pendingBase64, processImage, finalizeAnalysis]);
+
+    const cancelAnalysis = useCallback(() => {
+        setIsAnalyzing(false);
+        setQualityWarning(null);
+        setPendingBase64(null);
+        setProgress('');
+    }, []);
+
+    const analyzeBatch = useCallback(async (files: File[]): Promise<BatchAnalysisResult> => {
+        setIsAnalyzing(true);
+        try {
+            return await getGeminiService().analyzeDocumentBatch(files);
+        } finally {
+            setIsAnalyzing(false);
+        }
+    }, []);
+
+    return {
+        isAnalyzing,
+        analyzeFile,
+        analyzeBatch,
+        progress,
+        qualityWarning,
+        confirmAnalysis,
+        cancelAnalysis
+    };
 };
 
 // =============================================================================
 // Main Component
 // =============================================================================
 
-const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ isOpen, onClose, onAdd, travelers = DEFAULT_TRAVELERS }) => {
+const AddDocumentModal: React.FC<AddDocumentModalProps> = (props) => {
+    const { isOpen, onClose, onAdd, travelers = DEFAULT_TRAVELERS, tripId, tripEndDate } = props;
+    const [mode, setMode] = useState<'single' | 'batch'>('single');
     const [formData, setFormData] = useState<DocumentFormData>(INITIAL_FORM_STATE);
+    const [aiInitialData, setAiInitialData] = useState<Partial<DocumentFormData> | null>(null);
+    const [debugInfo, setDebugInfo] = useState<DebugInfo | undefined>(undefined);
+    const [batchResults, setBatchResults] = useState<BatchAnalysisResult | null>(null);
+    const [showSyncModal, setShowSyncModal] = useState(false);
+    const [savedDocument, setSavedDocument] = useState<TripDocument | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
+    const { addCalendarEvent } = useCalendar() as any; // The hook name might be addEvent, checking context
+    const { addEvent } = useCalendar();
+    const { addTransport } = useTransport();
+    const { addAccommodation } = useAccommodation();
+    const { preferences } = useNotifications();
+
+    // Reset state on close
+    const handleClose = useCallback(() => {
+        setFormData(INITIAL_FORM_STATE);
+        setAiInitialData(null);
+        setBatchResults(null);
+        setDebugInfo(undefined);
+        setMode('single');
+        setError(null);
+        setShowSyncModal(false);
+        setSavedDocument(null);
+        onClose();
+    }, [onClose]);
+
+
+    // Field updates
     const updateField = useCallback(<K extends keyof DocumentFormData>(
         field: K,
         value: DocumentFormData[K]
@@ -300,226 +405,387 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ isOpen, onClose, on
     }, []);
 
     const updateFields = useCallback((updates: Partial<DocumentFormData>) => {
-        setFormData(prev => ({
-            ...prev,
-            ...Object.fromEntries(
-                Object.entries(updates).filter(([_, v]) => v !== undefined)
-            )
-        }));
+        setFormData(prev => ({ ...prev, ...updates }));
     }, []);
 
-    const { isAnalyzing, analyzeFile } = useDocumentAnalysis(updateFields);
+    const {
+        isAnalyzing,
+        analyzeBatch,
+        analyzeFile,
+        progress,
+        qualityWarning,
+        confirmAnalysis,
+        cancelAnalysis
+    } = useDocumentAnalysis(updateFields);
 
-    const resetForm = useCallback(() => {
-        setFormData(INITIAL_FORM_STATE);
-    }, []);
+    // File Handling
+    const mapAnalysisToForm = (data: DocumentAnalysisResult): Partial<DocumentFormData> => {
+        const cleanDate = (d: string | undefined) => d?.match(/^\d{4}-\d{2}-\d{2}$/) ? d : '';
+        let detailsValue = data.details || '';
 
-    const handleSubmit = useCallback((e?: React.FormEvent) => {
+        // Special logic for hotel end date mapping
+        if (data.type === 'hotel' && data.endDate) {
+            detailsValue = cleanDate(data.endDate);
+        }
+
+        return {
+            type: data.type as DocumentType, // Cast assuming types match (verified in types.ts)
+            name: data.name || '',
+            date: cleanDate(data.date) || '',
+            reference: data.reference || '',
+            details: detailsValue,
+            pickupLocation: data.pickupLocation || '',
+            dropoffLocation: data.dropoffLocation || '',
+            model: data.model || '',
+            expiryDate: data.endDate && (data.type === 'passport' || data.type === 'visa') ? cleanDate(data.endDate) : ''
+        };
+    };
+
+    const handleFilesSelect = async (files: File[]) => {
+        if (files.length === 0) return;
+
+        // SINGLE MODE
+        if (files.length === 1) {
+            setMode('single');
+            const file = files[0];
+            analyzeFile(file);
+            return;
+        }
+
+        // BATCH MODE
+        setMode('batch');
+        const results = await analyzeBatch(files);
+        setBatchResults(results);
+    };
+
+    // Form Submission (Single)
+    const handleSubmit = useCallback(async (e?: React.FormEvent) => {
         e?.preventDefault();
-        if (!formData.name || !formData.date) return;
+        setError(null);
 
-        onAdd(formData);
-        resetForm();
-        onClose();
-    }, [formData, onAdd, onClose, resetForm]);
+        if (!formData.name || !formData.date) {
+            setError("Preencha os campos obrigatórios.");
+            return;
+        }
 
-    const handleClose = useCallback(() => {
-        resetForm();
-        onClose();
-    }, [onClose, resetForm]);
+        // Passport Validation
+        if (formData.type === 'passport' && formData.expiryDate && tripEndDate) {
+            if (!validators.passportExpiry(formData.expiryDate, tripEndDate)) {
+                setError("O passaporte deve ter validade de pelo menos 6 meses após a data de retorno da viagem.");
+                return;
+            }
+        }
 
-    // Get current type config for dynamic labels
+        try {
+            const newDoc = await onAdd(formData);
+
+            // Check if document type is eligible for sync
+            const syncableTypes = ['flight', 'hotel', 'car', 'bus', 'train', 'ferry'];
+            if (newDoc && typeof newDoc !== 'undefined' && syncableTypes.includes(formData.type)) {
+                if (preferences?.autoCreateEntities) {
+                    // AUTO-SYNC logic bypassing modal
+                    const { entityType, data } = getAutoSyncData(newDoc);
+                    if (entityType) {
+                        await handleSyncConfirm(entityType, data, newDoc);
+                    } else {
+                        handleClose();
+                    }
+                } else {
+                    setSavedDocument(newDoc);
+                    setShowSyncModal(true);
+                }
+            } else {
+                handleClose();
+            }
+        } catch (error) {
+            console.error("Error saving document:", error);
+            setError("Ocorreu um erro ao salvar o documento.");
+        }
+    }, [formData, onAdd, handleClose, aiInitialData, tripEndDate]);
+
+    const handleSyncConfirm = async (entityType: 'transport' | 'accommodation' | 'car', data: any, docOverride?: TripDocument) => {
+        const doc = docOverride || savedDocument;
+        if (!doc || !tripId) return;
+
+        try {
+            // 1. Create Entity
+            if (entityType === 'transport' || entityType === 'car') {
+                await addTransport(tripId, data);
+            } else if (entityType === 'accommodation') {
+                if (addAccommodation) await addAccommodation(tripId, data);
+            }
+
+            // 2. Create Calendar Events
+            const events = createCalendarEventsFromDocument(doc, tripId);
+            for (const event of events) {
+                await addEvent(event);
+            }
+
+        } catch (error) {
+            console.error("Error syncing entity:", error);
+        } finally {
+            setShowSyncModal(false);
+            setSavedDocument(null);
+            handleClose();
+        }
+    };
+
+    // Batch Confirmation
+    const handleBatchConfirm = useCallback(() => {
+        if (!batchResults) return;
+
+        batchResults.successful.forEach(doc => {
+            const mapped = mapAnalysisToForm(doc);
+            const submission: DocumentFormData = {
+                ...INITIAL_FORM_STATE,
+                ...mapped,
+                travelers: formData.travelers // Use travelers selected in the modal
+            } as DocumentFormData;
+
+            onAdd(submission);
+        });
+
+        handleClose();
+    }, [batchResults, onAdd, handleClose, formData.travelers]);
+
+    const handleBatchRemove = (index: number, type: 'success' | 'failed' | 'duplicate') => {
+        if (!batchResults) return;
+
+        const newResults = { ...batchResults };
+        if (type === 'success') newResults.successful.splice(index, 1);
+        if (type === 'failed') newResults.failed.splice(index, 1);
+        if (type === 'duplicate') newResults.duplicates.splice(index, 1);
+
+        const total = newResults.successful.length + newResults.failed.length + newResults.duplicates.length;
+        if (total === 0) {
+            setMode('single');
+            setBatchResults(null);
+            setDebugInfo(undefined);
+        } else {
+            setBatchResults(newResults);
+        }
+    };
+
+    // Render logic
     const currentTypeConfig = DOCUMENT_TYPES.find(t => t.id === formData.type) || DOCUMENT_TYPES[DOCUMENT_TYPES.length - 1];
     const isIdentityType = currentTypeConfig.category === 'identity';
     const isHealthType = currentTypeConfig.category === 'health';
 
-    const footer = (
-        <>
-            <Button variant="outline" onClick={handleClose}>
-                Cancelar
-            </Button>
-            <Button
-                type="submit"
-                form="document-form"
-                disabled={!formData.name || !formData.date}
-            >
-                Adicionar Documento
-            </Button>
-        </>
+    const renderSingleForm = () => (
+        <form id="document-form" onSubmit={handleSubmit} className="space-y-6">
+            <DocumentTypeSelector
+                selected={formData.type}
+                onChange={(type) => updateField('type', type)}
+            />
+
+            <TravelerSelector
+                travelers={travelers}
+                selected={formData.travelers}
+                onChange={(ids) => updateField('travelers', ids)}
+            />
+
+            <div className="space-y-4 pt-4 border-t border-gray-100">
+                <Input
+                    label={currentTypeConfig.nameLabel}
+                    value={formData.name}
+                    onChange={(e) => updateField('name', e.target.value)}
+                    placeholder={currentTypeConfig.namePlaceholder}
+                    required
+                    fullWidth
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                        label={
+                            formData.type === 'hotel' ? 'Check-in' :
+                                isIdentityType ? 'Data de Emissão' :
+                                    isHealthType ? 'Data da Vacina' :
+                                        'Data'
+                        }
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) => updateField('date', e.target.value)}
+                        required
+                        fullWidth
+                    />
+                    {isIdentityType ? (
+                        <Input
+                            label="Data de Validade"
+                            type="date"
+                            value={formData.expiryDate || ''}
+                            onChange={(e) => updateField('expiryDate', e.target.value)}
+                            fullWidth
+                        />
+                    ) : (
+                        <Input
+                            label={formData.type === 'hotel' ? 'Check-out' : 'Horário / Detalhes'}
+                            type={formData.type === 'hotel' ? 'date' : 'text'}
+                            value={formData.details}
+                            onChange={(e) => updateField('details', e.target.value)}
+                            placeholder={formData.type === 'hotel' ? '' : 'Ex: 14:00 ou informações extras'}
+                            fullWidth
+                        />
+                    )}
+                </div>
+
+                {formData.type === 'flight' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                        <Input
+                            label="Origem (IATA)"
+                            value={formData.pickupLocation}
+                            onChange={(e) => updateField('pickupLocation', e.target.value)}
+                            placeholder="Ex: GRU"
+                            fullWidth
+                        />
+                        <Input
+                            label="Destino (IATA)"
+                            value={formData.dropoffLocation}
+                            onChange={(e) => updateField('dropoffLocation', e.target.value)}
+                            placeholder="Ex: JFK"
+                            fullWidth
+                        />
+                    </div>
+                )}
+
+                {/* Car-specific Fields */}
+                {formData.type === 'car' && (
+                    <div className="animate-in fade-in slide-in-from-top-2">
+                        <Input
+                            label="Modelo do Veículo"
+                            value={formData.model}
+                            onChange={(e) => updateField('model', e.target.value)}
+                            placeholder="Ex: Jeep Compass ou similar"
+                            fullWidth
+                        />
+                    </div>
+                )}
+
+                {/* Insurance-specific Fields */}
+                {formData.type === 'insurance' && (
+                    <div className="animate-in fade-in slide-in-from-top-2">
+                        <Input
+                            label="Telefone de Emergência"
+                            value={formData.contactPhone}
+                            onChange={(e) => updateField('contactPhone', e.target.value)}
+                            placeholder="Ex: +55 11 4004-1234"
+                            fullWidth
+                            leftIcon={<span className="material-symbols-outlined text-red-500 text-sm">call</span>}
+                        />
+                    </div>
+                )}
+
+                <Input
+                    label={
+                        isIdentityType ? 'Número do Documento' :
+                            isHealthType ? 'Número do Certificado' :
+                                'Código de Reserva / Localizador'
+                    }
+                    value={formData.reference}
+                    onChange={(e) => updateField('reference', e.target.value.toUpperCase())}
+                    placeholder={
+                        isIdentityType ? 'Ex: BR123456789' :
+                            isHealthType ? 'Ex: ICV-2023-001' :
+                                'Ex: XYZ123'
+                    }
+                    fullWidth
+                    leftIcon={<span className="material-symbols-outlined text-purple-600 text-sm">tag</span>}
+                />
+            </div>
+
+            {qualityWarning ? (
+                <ImageQualityWarning
+                    analysis={qualityWarning}
+                    onProceed={confirmAnalysis}
+                    onRetake={cancelAnalysis}
+                />
+            ) : (
+                <DocumentUploadZone
+                    isProcessing={isAnalyzing}
+                    onFilesSelect={handleFilesSelect}
+                    multiple={true}
+                    title="Anexar Documentos"
+                    subtitle="Arraste múltiplos arquivos ou clique para selecionar"
+                    processingTitle={mode === 'batch' ? "Processando em lote..." : "Analisando documento..."}
+                    processingSubtitle={mode === 'batch' || !progress ? "Nossa IA está lendo seus arquivos" : progress}
+                />
+            )}
+
+            {/* Error Message */}
+            {error && (
+                <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg flex items-center gap-2 text-rose-700 text-sm animate-in fade-in slide-in-from-bottom-2">
+                    <span className="material-symbols-outlined text-lg">error</span>
+                    {error}
+                </div>
+            )}
+
+            {/* Debug Panel - Only shows if debugInfo is present and debug mode is active */}
+            {debugInfo && (window.location.search.includes('debug=documents') || window.location.search.includes('debug=true')) && (
+                <DebugPanel info={debugInfo} />
+            )}
+        </form>
     );
 
     return (
         <Modal
             isOpen={isOpen}
             onClose={handleClose}
-            title="Adicionar Documento"
+            title={mode === 'batch' ? "Importação em Lote" : "Adicionar Documento"}
             size="lg"
-            footer={footer}
+            footer={
+                mode === 'single' ? (
+                    <>
+                        <Button variant="outline" onClick={handleClose}>
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="submit"
+                            form="document-form"
+                            disabled={!formData.name || !formData.date}
+                        >
+                            Adicionar Documento
+                        </Button>
+                    </>
+                ) : null // Batch mode has its own buttons in BatchReviewView
+            }
         >
-            <form id="document-form" onSubmit={handleSubmit} className="space-y-6">
-                {/* Type Selection */}
-                <DocumentTypeSelector
-                    selected={formData.type}
-                    onChange={(type) => updateField('type', type)}
-                />
-
-                {/* Traveler Selection */}
-                <TravelerSelector
-                    travelers={travelers}
-                    selected={formData.travelers}
-                    onChange={(ids) => updateField('travelers', ids)}
-                />
-
-                {/* Common Fields */}
-                <div className="space-y-4 pt-4 border-t border-gray-100">
-                    <Input
-                        label={currentTypeConfig.nameLabel}
-                        value={formData.name}
-                        onChange={(e) => updateField('name', e.target.value)}
-                        placeholder={currentTypeConfig.namePlaceholder}
-                        required
-                        fullWidth
-                    />
-
-                    {/* Date Fields - Dynamic based on type */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input
-                            label={
-                                formData.type === 'hotel' ? 'Check-in' :
-                                    isIdentityType ? 'Data de Emissão' :
-                                        isHealthType ? 'Data da Vacina' :
-                                            'Data'
-                            }
-                            type="date"
-                            value={formData.date}
-                            onChange={(e) => updateField('date', e.target.value)}
-                            required
-                            fullWidth
+            {mode === 'batch' && batchResults ? (
+                <>
+                    <div className="mb-4 p-4 bg-gray-50 rounded-xl">
+                        <TravelerSelector
+                            travelers={travelers}
+                            selected={formData.travelers}
+                            onChange={(ids) => updateField('travelers', ids)}
                         />
-                        {isIdentityType ? (
-                            <Input
-                                label="Data de Validade"
-                                type="date"
-                                value={formData.expiryDate || ''}
-                                onChange={(e) => updateField('expiryDate', e.target.value)}
-                                fullWidth
-                            />
-                        ) : (
-                            <Input
-                                label={formData.type === 'hotel' ? 'Check-out' : 'Horário / Detalhes'}
-                                type={formData.type === 'hotel' ? 'date' : 'text'}
-                                value={formData.details}
-                                onChange={(e) => updateField('details', e.target.value)}
-                                placeholder={formData.type === 'hotel' ? '' : 'Ex: 14:00 ou informações extras'}
-                                fullWidth
-                            />
-                        )}
+                        <p className="text-xs text-text-muted mt-2">
+                            * Estes viajantes serão atribuídos a todos os documentos importados.
+                        </p>
                     </div>
-
-                    {/* Flight-specific Fields */}
-                    {formData.type === 'flight' && (
-                        <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
-                            <Input
-                                label="Origem (IATA)"
-                                value={formData.pickupLocation}
-                                onChange={(e) => updateField('pickupLocation', e.target.value)}
-                                placeholder="Ex: GRU"
-                                fullWidth
-                            />
-                            <Input
-                                label="Destino (IATA)"
-                                value={formData.dropoffLocation}
-                                onChange={(e) => updateField('dropoffLocation', e.target.value)}
-                                placeholder="Ex: JFK"
-                                fullWidth
-                            />
-                        </div>
-                    )}
-
-                    {/* Car-specific Fields */}
-                    {formData.type === 'car' && (
-                        <div className="animate-in fade-in slide-in-from-top-2">
-                            <Input
-                                label="Modelo do Veículo"
-                                value={formData.model}
-                                onChange={(e) => updateField('model', e.target.value)}
-                                placeholder="Ex: Jeep Compass ou similar"
-                                fullWidth
-                            />
-                        </div>
-                    )}
-
-                    {/* Insurance-specific Fields */}
-                    {formData.type === 'insurance' && (
-                        <div className="animate-in fade-in slide-in-from-top-2">
-                            <Input
-                                label="Telefone de Emergência"
-                                value={formData.contactPhone}
-                                onChange={(e) => updateField('contactPhone', e.target.value)}
-                                placeholder="Ex: +55 11 4004-1234"
-                                fullWidth
-                                leftIcon={<span className="material-symbols-outlined text-red-500 text-sm">call</span>}
-                            />
-                        </div>
-                    )}
-
-                    {/* Reference */}
-                    <Input
-                        label={
-                            isIdentityType ? 'Número do Documento' :
-                                isHealthType ? 'Número do Certificado' :
-                                    'Código de Reserva / Localizador'
-                        }
-                        value={formData.reference}
-                        onChange={(e) => updateField('reference', e.target.value.toUpperCase())}
-                        placeholder={
-                            isIdentityType ? 'Ex: BR123456789' :
-                                isHealthType ? 'Ex: ICV-2023-001' :
-                                    'Ex: XYZ123'
-                        }
-                        fullWidth
-                        leftIcon={<span className="material-symbols-outlined text-purple-600 text-sm">tag</span>}
+                    <BatchReviewView
+                        results={batchResults}
+                        onRemove={handleBatchRemove}
+                        onConfirm={handleBatchConfirm}
+                        onCancel={() => {
+                            setMode('single');
+                            setBatchResults(null);
+                            setDebugInfo(undefined);
+                        }}
+                        isSaving={false}
                     />
+                </>
+            ) : (
+                renderSingleForm()
+            )}
 
-                    {/* Quick Actions (Optional) */}
-                    {(formData.type === 'flight' || formData.type === 'hotel') && (
-                        <div className="p-4 bg-gray-50 rounded-xl space-y-3 animate-in fade-in slide-in-from-top-2">
-                            <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider flex items-center gap-2">
-                                <span className="material-symbols-outlined text-sm text-indigo-600">bolt</span>
-                                Ações Rápidas (Opcional)
-                            </p>
-                            {formData.type === 'flight' && (
-                                <Input
-                                    label="Link para Check-in Online"
-                                    value={formData.checkInUrl || ''}
-                                    onChange={(e) => updateField('checkInUrl', e.target.value)}
-                                    placeholder="https://..."
-                                    fullWidth
-                                />
-                            )}
-                            {formData.type === 'hotel' && (
-                                <Input
-                                    label="Link do Mapa / Endereço"
-                                    value={formData.mapUrl || ''}
-                                    onChange={(e) => updateField('mapUrl', e.target.value)}
-                                    placeholder="https://maps.google.com/..."
-                                    fullWidth
-                                />
-                            )}
-                        </div>
-                    )}
-                </div>
-
-                {/* Document Upload */}
-                <DocumentUploadZone
-                    isProcessing={isAnalyzing}
-                    onFileSelect={analyzeFile}
-                    title="Anexar Imagem do Documento"
-                    subtitle="Nós preencheremos os campos para você"
-                    processingTitle="Analisando documento..."
-                    processingSubtitle="Extraindo informações com IA"
-                />
-            </form>
+            <EntitySyncModal
+                isOpen={showSyncModal}
+                onClose={() => {
+                    setShowSyncModal(false);
+                    setSavedDocument(null);
+                    handleClose();
+                }}
+                document={savedDocument}
+                onConfirm={handleSyncConfirm}
+            />
         </Modal>
     );
 };

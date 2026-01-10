@@ -30,6 +30,7 @@ const mapPreferencesFromDB = (row: any): UserPreferences => ({
     emailFrequency: row.email_frequency,
     quietHoursStart: row.quiet_hours_start,
     quietHoursEnd: row.quiet_hours_end,
+    autoCreateEntities: row.auto_create_entities || false,
 });
 
 // =============================================================================
@@ -183,6 +184,7 @@ async function createDefaultPreferences(userId: string): Promise<UserPreferences
         emailNotifications: true,
         pushNotifications: false,
         emailFrequency: 'immediate',
+        autoCreateEntities: false,
     };
 
     const { data, error } = await supabase
@@ -195,6 +197,7 @@ async function createDefaultPreferences(userId: string): Promise<UserPreferences
             email_notifications: defaultPrefs.emailNotifications,
             push_notifications: defaultPrefs.pushNotifications,
             email_frequency: defaultPrefs.emailFrequency,
+            auto_create_entities: defaultPrefs.autoCreateEntities,
         })
         .select()
         .single();
@@ -224,6 +227,7 @@ export async function updatePreferences(
     if (prefs.emailFrequency !== undefined) updates.email_frequency = prefs.emailFrequency;
     if (prefs.quietHoursStart !== undefined) updates.quiet_hours_start = prefs.quietHoursStart;
     if (prefs.quietHoursEnd !== undefined) updates.quiet_hours_end = prefs.quietHoursEnd;
+    if (prefs.autoCreateEntities !== undefined) updates.auto_create_entities = prefs.autoCreateEntities;
 
     const { data, error } = await supabase
         .from('user_preferences')

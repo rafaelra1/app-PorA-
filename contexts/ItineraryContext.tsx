@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import * as React from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { ItineraryActivity } from '../types';
 import { useAuth } from './AuthContext';
@@ -22,7 +23,7 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [error, setError] = useState<string | null>(null);
     const { user } = useAuth();
 
-    const fetchActivities = async (tripId: string) => {
+    const fetchActivities = useCallback(async (tripId: string) => {
         if (!user) return;
         setIsLoading(true);
         setError(null);
@@ -50,8 +51,6 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 notes: item.notes,
                 image: item.image,
                 price: item.price ? String(item.price) : undefined,
-                // New fields
-                // duration: item.duration
             }));
 
             setActivities(validActivities);
@@ -61,9 +60,9 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [user]);
 
-    const addActivity = async (tripId: string, activity: Omit<ItineraryActivity, 'id'>) => {
+    const addActivity = useCallback(async (tripId: string, activity: Omit<ItineraryActivity, 'id'>) => {
         if (!user) return null;
 
         // Optimistic Update
@@ -72,23 +71,34 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setActivities(prev => [...prev, tempActivity]);
 
         try {
+            // Prepare the data to insert, only including fields that exist in the table
+            const insertData: any = {
+                trip_id: tripId,
+                day: activity.day,
+                date: activity.date,
+                time: activity.time,
+                title: activity.title,
+                type: activity.type,
+                completed: activity.completed || false,
+            };
+
+            // Add optional fields only if they have values
+            if (activity.location) insertData.location = activity.location;
+            if (activity.locationDetail) insertData.location_detail = activity.locationDetail;
+            if (activity.notes) insertData.notes = activity.notes;
+            if (activity.image) insertData.image = activity.image;
+            if (activity.price) {
+                const priceValue = typeof activity.price === 'string'
+                    ? parseFloat(activity.price.replace(/[^0-9.]/g, ''))
+                    : activity.price;
+                if (!isNaN(priceValue)) insertData.price = priceValue;
+            }
+
+            console.log('📝 Inserting data:', insertData);
+
             const { data, error } = await supabase
                 .from('itinerary_activities')
-                .insert([{
-                    trip_id: tripId,
-                    user_id: user.id,
-                    day: activity.day,
-                    date: activity.date,
-                    time: activity.time,
-                    title: activity.title,
-                    location: activity.location,
-                    location_detail: activity.locationDetail,
-                    type: activity.type,
-                    completed: activity.completed,
-                    notes: activity.notes,
-                    image: activity.image,
-                    price: activity.price ? parseFloat(activity.price.replace(/[^0-9.]/g, '')) : null,
-                }])
+                .insert([insertData])
                 .select()
                 .single();
 
@@ -108,9 +118,9 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setActivities(prev => prev.filter(a => a.id !== tempId));
             return null;
         }
-    };
+    }, [user]);
 
-    const updateActivity = async (tripId: string, activity: ItineraryActivity) => {
+    const updateActivity = useCallback(async (tripId: string, activity: ItineraryActivity) => {
         if (!user) return;
 
         // Optimistic Update
@@ -142,9 +152,9 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             // Ideally rollback here, but for simplicity assuming success or refresh
             fetchActivities(tripId);
         }
-    };
+    }, [user, fetchActivities]);
 
-    const deleteActivity = async (tripId: string, activityId: string) => {
+    const deleteActivity = useCallback(async (tripId: string, activityId: string) => {
         if (!user) return;
 
         // Optimistic Update
@@ -165,19 +175,10 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             // Rollback
             setActivities(previousActivities);
         }
-    };
+    }, [user, activities]);
 
-    const migrateFromLocalStorage = async (tripId: string) => {
-        // Check if migration is needed (or just run every time and check duplicates? Better to check LS)
-        const localData = localStorage.getItem(`porai_trip_${tripId}_itinerary_activities`); // Correct key? Need to verify
-
-        // Note: The previous logic in TripDetails.tsx likely didn't save "customActivities" to a specific key 
-        // but might have relied on "itineraryData" or similar.
-        // However, looking at ItineraryView, it seemed to persist via a prop or internal state if passed.
-        // Let's assume there is NO standard local storage key for activities yet because the user complaint was 
-        // "Atividades customizadas armazenadas em localStorage são perdidas". 
-        // They probably meant they *want* persistence.
-        // If there ARE activities in LS, we parse and insert them.
+    const migrateFromLocalStorage = useCallback(async (tripId: string) => {
+        const localData = localStorage.getItem(`porai_trip_${tripId}_itinerary_activities`);
 
         if (localData) {
             try {
@@ -185,34 +186,40 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 if (parsed.length > 0) {
                     console.log('Migrating activities from LocalStorage...');
                     for (const act of parsed) {
-                        // Check if already exists? Or just insert.
-                        // For safety, let's just insert and confuse duplicates rather than losing data, 
-                        // but checking title/date/time uniqueness is better.
-                        // Simple approach: Migrate if Supabase is empty for this trip.
                         if (activities.length === 0) {
                             await addActivity(tripId, act);
                         }
                     }
-                    // Clear LS after successful migration
                     localStorage.removeItem(`porai_trip_${tripId}_itinerary_activities`);
                 }
             } catch (e) {
                 console.error('Migration failed', e);
             }
         }
-    };
+    }, [activities.length, addActivity]);
+
+    const value = useMemo(() => ({
+        activities,
+        isLoading,
+        error,
+        fetchActivities,
+        addActivity,
+        updateActivity,
+        deleteActivity,
+        migrateFromLocalStorage
+    }), [
+        activities,
+        isLoading,
+        error,
+        fetchActivities,
+        addActivity,
+        updateActivity,
+        deleteActivity,
+        migrateFromLocalStorage
+    ]);
 
     return (
-        <ItineraryContext.Provider value={{
-            activities,
-            isLoading,
-            error,
-            fetchActivities,
-            addActivity,
-            updateActivity,
-            deleteActivity,
-            migrateFromLocalStorage
-        }}>
+        <ItineraryContext.Provider value={value}>
             {children}
         </ItineraryContext.Provider>
     );

@@ -1,13 +1,42 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Trip, Expense, City, HotelReservation, Transport, TaskItem, LuggageItem } from '../../../types';
-import { Card, Button } from '../../ui/Base';
+import * as React from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { Trip, Expense, City, HotelReservation, Transport, TaskItem, LuggageItem, ItineraryActivity } from '../../../types';
+import { Card, Button, Skeleton, SkeletonText } from '../../ui/Base';
 import AnimatedItineraryMap, { ItineraryStop } from '../itinerary/AnimatedItineraryMap';
 import TravelCoverage from '../dashboard/TravelCoverage';
 import { getGeminiService } from '../../../services/geminiService';
-import { getInitialTasks } from '../../../data/checklistData';
 import { useTrips } from '../../../contexts/TripContext';
+import { EmptyState } from '../../ui/EmptyState';
 import { YouTubeVideo } from '../../../types';
 import { VideoGallery } from './VideoGallery';
+import useImageGeneration from '../../../hooks/useImageGeneration';
+import ActivityDetailsModal from '../modals/ActivityDetailsModal';
+import SmartChecklist from '../SmartChecklist';
+import {
+    CountdownWidget,
+    BudgetWidget,
+    CitiesWidget,
+    TransportsWidget,
+    TimelineWidget,
+    WeatherWidget
+} from './widgets';
+
+// Helper for activity labels
+const getActivityTypeLabel = (type: string) => {
+    const config: Record<string, string> = {
+        transport: 'Transporte',
+        accommodation: 'Acomodação',
+        meal: 'Refeição',
+        food: 'Gastronomia',
+        sightseeing: 'Passeio',
+        culture: 'Cultura',
+        nature: 'Natureza',
+        shopping: 'Compras',
+        nightlife: 'Vida Noturna',
+        other: 'Outro',
+    };
+    return config[type] || 'Atividade';
+};
 
 // =============================================================================
 // Types & Interfaces
@@ -19,10 +48,15 @@ interface OverviewTabProps {
     cities: City[];
     hotels: HotelReservation[];
     transports: Transport[];
+    activities?: ItineraryActivity[];
     totalBudget: number;
     onInvite?: () => void;
     onCityClick?: (city: City) => void;
     onAddCity?: () => void;
+    onUpdateCity?: (updatedCity: City) => void;
+    onDeleteCity?: (city: City) => void;
+    onTabChange?: (tab: any) => void;
+    isLoading?: boolean;
 }
 
 interface WidgetProps {
@@ -75,52 +109,12 @@ interface TimelineStop {
 
 
 
-const TRIP_ALERTS: TripAlert[] = [
-    {
-        id: 'a1',
-        type: 'danger',
-        title: 'Vacina Obrigatória',
-        message: 'Febre amarela obrigatória. Vacinar até 10 dias antes da viagem.',
-        icon: 'vaccines'
-    },
-    {
-        id: 'a2',
-        type: 'warning',
-        title: 'Temporada de Chuvas',
-        message: 'Período de monções previsto. Recomendado levar capa de chuva e guarda-chuva.',
-        icon: 'rainy'
-    },
-    {
-        id: 'a3',
-        type: 'info',
-        title: 'Feriado Local',
-        message: 'Dia 18/02 é feriado nacional - museus e bancos podem estar fechados.',
-        icon: 'event'
-    }
-];
-
 const PREPARATION_ITEMS = [
     { label: 'Voos', icon: 'flight', key: 'flights' },
     { label: 'Hotéis', icon: 'hotel', key: 'hotels' },
     { label: 'Transporte', icon: 'directions_car', key: 'transport' },
     { label: 'Documentos', icon: 'description', key: 'documents' },
 ];
-
-// Demo stops data for animated map (with coordinates)
-const DEMO_STOPS: ItineraryStop[] = [
-    { id: 's1', title: 'São Paulo (GRU)', location: 'Aeroporto de Guarulhos', coordinates: [-23.4356, -46.4731], transportMode: 'plane', day: 0 },
-    { id: 's2', title: 'Aeroporto Haneda', location: 'Tokyo, Japan', coordinates: [35.5494, 139.7798], transportMode: 'train', day: 1 },
-    { id: 's3', title: 'Shinjuku', location: 'Hotel Gracery', coordinates: [35.6938, 139.7034], transportMode: 'walk', day: 1 },
-    { id: 's4', title: 'Omoide Yokocho', location: 'Shinjuku', coordinates: [35.6936, 139.6999], transportMode: 'train', day: 1 },
-    { id: 's5', title: 'Asakusa', location: 'Templo Senso-ji', coordinates: [35.7148, 139.7967], transportMode: 'walk', day: 2 },
-    { id: 's6', title: 'Shibuya', location: 'Shibuya Crossing', coordinates: [35.6595, 139.7004], transportMode: 'train', day: 3 },
-    { id: 's7', title: 'Kyoto', location: 'Quioto', coordinates: [35.0116, 135.7681], transportMode: 'train', day: 4 },
-    { id: 's8', title: 'Osaka', location: 'Dotonbori', coordinates: [34.6687, 135.5031], transportMode: 'plane', day: 5 },
-];
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
 
 const calculateDaysUntilTrip = (startDate: string): { value: number; label: string; isOngoing: boolean } => {
     const start = new Date(startDate.split('/').reverse().join('-'));
@@ -161,126 +155,202 @@ const StatusWidget: React.FC<WidgetProps> = ({ icon, iconBg, label, value, subte
     </div>
 );
 
-const CountdownWidget: React.FC<{ startDate: string }> = ({ startDate }) => {
-    const countdown = calculateDaysUntilTrip(startDate);
+// Old inline widgets removed - now using modular widgets from ./widgets/
 
-    return (
-        <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-5 shadow-soft border border-gray-100/50 dark:border-gray-700/50 flex items-center gap-4 hover:shadow-md transition-all">
-            <div className={`size-14 rounded-xl ${countdown.isOngoing ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'} flex items-center justify-center shrink-0`}>
-                <span className="material-symbols-outlined text-2xl">
-                    {countdown.isOngoing ? 'flight_takeoff' : 'schedule'}
-                </span>
-            </div>
-            <div>
-                <p className="text-xs text-text-muted dark:text-gray-400 uppercase font-bold tracking-wider">
-                    {countdown.isOngoing ? 'Viagem em Andamento' : 'Contagem Regressiva'}
-                </p>
-                {countdown.value === 0 ? (
-                    <p className="text-xl font-black text-green-600 dark:text-green-400">Hoje é o dia!</p>
-                ) : (
-                    <div className="flex items-baseline gap-1.5">
-                        <span className="text-3xl font-black text-text-main dark:text-white">{countdown.value}</span>
-                        <span className="text-sm text-text-muted dark:text-gray-400 font-medium">{countdown.label}</span>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
 
-const BudgetWidget: React.FC<{ spent: number; total: number }> = ({ spent, total }) => {
-    const percentage = Math.min(Math.round((spent / total) * 100), 100);
-    const remaining = total - spent;
-    const isOverBudget = spent > total;
-
-    return (
-        <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-5 shadow-soft border border-gray-100/50 dark:border-gray-700/50 hover:shadow-md transition-all">
-            <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                    <div className="size-10 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-xl">account_balance_wallet</span>
-                    </div>
-                    <div>
-                        <p className="text-xs text-text-muted dark:text-gray-400 uppercase font-bold tracking-wider">Orçamento</p>
-                        <p className="text-lg font-black text-text-main dark:text-white">{formatCurrency(total)}</p>
-                    </div>
-                </div>
-                <div className="text-right">
-                    <p className={`text-sm font-bold ${isOverBudget ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                        {isOverBudget ? '-' : ''}{formatCurrency(Math.abs(remaining))}
-                    </p>
-                    <p className="text-xs text-text-muted dark:text-gray-400">{isOverBudget ? 'acima' : 'restante'}</p>
-                </div>
-            </div>
-            <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div
-                    className={`h-full rounded-full transition-all ${isOverBudget ? 'bg-rose-500' : percentage > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                    style={{ width: `${Math.min(percentage, 100)}%` }}
-                />
-            </div>
-            <p className="text-xs text-text-muted dark:text-gray-400 mt-2">{percentage}% utilizado</p>
-        </div>
-    );
-};
-
-const WeatherWidget: React.FC<{ destination: string }> = ({ destination }) => (
-    <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-5 shadow-soft border border-gray-100/50 dark:border-gray-700/50 flex items-center gap-4 hover:shadow-md transition-all">
-        <div className="size-14 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-500 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-3xl">wb_sunny</span>
-        </div>
-        <div>
-            <p className="text-xs text-text-muted dark:text-gray-400 uppercase font-bold tracking-wider">Clima Previsto</p>
-            <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl font-black text-text-main dark:text-white">24°</span>
-                <span className="text-sm text-text-muted dark:text-gray-400 font-medium">Ensolarado</span>
-            </div>
-            <p className="text-xs text-text-muted dark:text-gray-400">{destination}</p>
-        </div>
-    </div>
-);
 
 // =============================================================================
 // Sub-Components: Main Column
 // =============================================================================
+interface MacroTimelineProps {
+    cities: City[];
+    onCityClick?: (city: City) => void;
+    onAddCity?: () => void;
+    onUpdateCity?: (updatedCity: City) => void;
+    onTabChange?: (tab: any) => void;
+}
 
-const NextStepCard: React.FC<{ transports: Transport[]; hotels: HotelReservation[] }> = ({ transports, hotels }) => {
+const NextStepCard: React.FC<{
+    transports: Transport[];
+    hotels: HotelReservation[];
+    activities?: ItineraryActivity[];
+    onTabChange?: (tab: any) => void;
+    onViewDetails?: (activity: ItineraryActivity) => void;
+}> = ({ transports, hotels, activities = [], onTabChange, onViewDetails }) => {
     // Find the next upcoming event
     const nextFlight = transports.find(t => t.type === 'flight');
     const nextHotel = hotels[0];
 
-    return (
-        <Card className="p-6 border-l-4 border-l-primary">
-            <div className="flex items-start gap-4">
-                <div className="size-12 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-2xl">priority_high</span>
+    // Find next activity (that is not completed)
+    const nextActivity = activities.filter(a => !a.completed).sort((a, b) => {
+        // Sort by date then time
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return a.time.localeCompare(b.time);
+    })[0];
+
+    const events: { type: 'flight' | 'hotel' | 'activity', data: any, dateStr: string, timeStr?: string }[] = [];
+
+    if (nextFlight) events.push({ type: 'flight', data: nextFlight, dateStr: nextFlight.departureDate, timeStr: nextFlight.departureTime });
+    if (nextHotel) events.push({ type: 'hotel', data: nextHotel, dateStr: nextHotel.checkIn, timeStr: nextHotel.checkInTime });
+    if (nextActivity) events.push({ type: 'activity', data: nextActivity, dateStr: nextActivity.date, timeStr: nextActivity.time });
+
+    // Sort all events by date
+    events.sort((a, b) => {
+        if (a.dateStr !== b.dateStr) return a.dateStr.localeCompare(b.dateStr);
+        return (a.timeStr || '').localeCompare(b.timeStr || '');
+    });
+
+    const priorityEvent = events[0];
+
+    const handleViewItinerary = () => {
+        if (onTabChange) {
+            onTabChange('itinerary');
+        }
+    };
+
+    // Default state if nothing found
+    if (!priorityEvent) {
+        return (
+            <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <span className="material-symbols-outlined text-6xl text-gray-400">explore</span>
                 </div>
-                <div className="flex-1">
-                    <p className="text-xs text-primary uppercase font-bold tracking-widest mb-1">Próximo Passo</p>
-                    <h4 className="text-lg font-bold text-text-main">
-                        {nextFlight
-                            ? `Check-in do voo ${nextFlight.reference}`
-                            : nextHotel
-                                ? `Confirmar reserva: ${nextHotel.name}`
-                                : 'Adicionar seu primeiro transporte ou hotel'}
-                    </h4>
-                    <p className="text-sm text-text-muted mt-1">
-                        {nextFlight
-                            ? `${nextFlight.departureDate} às ${nextFlight.departureTime} - ${nextFlight.departureLocation} → ${nextFlight.arrivalLocation}`
-                            : nextHotel
-                                ? `Check-in: ${nextHotel.checkIn} às ${nextHotel.checkInTime}`
-                                : 'Comece a planejar sua viagem adicionando reservas.'}
-                    </p>
+                <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
+                            <span className="material-symbols-outlined text-gray-500">explore</span> Sem Atividades
+                        </h3>
+                    </div>
+                    <p className="font-bold text-sm text-text-main mb-1">Comece a planejar</p>
+                    <p className="text-xs text-text-muted line-clamp-2">Adicione voos, hotéis ou atividades para ver seu próximo passo aqui.</p>
                 </div>
-                <Button variant="primary" className="!px-4 !py-2 !text-sm">
-                    {nextFlight ? 'Fazer Check-in' : 'Ver Detalhes'}
-                </Button>
             </div>
-        </Card>
+        );
+    }
+
+    // Determine content based on event type
+    let title = '';
+    let subtext = '';
+    let icon = '';
+    let mainActionText = '';
+    let topActionText = '';
+    let onMainAction = () => { };
+    let onTopAction = () => { };
+
+    if (priorityEvent.type === 'activity') {
+        const act = priorityEvent.data as ItineraryActivity;
+        title = act.title;
+        subtext = `${new Date(act.date).toLocaleDateString('pt-BR')} às ${act.time} - ${act.location || 'Local a definir'}`;
+        icon = act.type === 'food' ? 'restaurant' : act.type === 'sightseeing' ? 'attractions' : 'event';
+
+        // USER REQUEST: Swap "Confirmed" (Badge) with "Ver Roteiro" (Action)
+        // Top right action: Ver Roteiro
+        topActionText = 'Ver Roteiro';
+        onTopAction = handleViewItinerary;
+
+        // Main action (bottom): "Ver Detalhes" opens the modal
+        mainActionText = 'Ver Detalhes';
+        onMainAction = () => {
+            if (onViewDetails) {
+                onViewDetails(act);
+            } else {
+                handleViewItinerary();
+            }
+        };
+
+    } else if (priorityEvent.type === 'flight') {
+        const flight = priorityEvent.data as Transport;
+        title = `Voo ${flight.reference || ''}`;
+        subtext = `${flight.departureDate} às ${flight.departureTime?.slice(0, 5)} - ${flight.departureLocation} → ${flight.arrivalLocation}`;
+        icon = 'flight';
+        topActionText = 'Viajando';
+        mainActionText = 'Ver Passagens';
+        onMainAction = () => {
+            if (onTabChange) onTabChange('transport');
+        };
+    } else {
+        const hotel = priorityEvent.data as HotelReservation;
+        title = hotel.name;
+        subtext = `Check-in: ${hotel.checkIn} às ${hotel.checkInTime}`;
+        icon = 'hotel';
+        topActionText = 'Hospedagem';
+        mainActionText = 'Ver Reserva';
+        onMainAction = () => {
+            if (onTabChange) onTabChange('accommodation'); // Navigate to accommodation
+        };
+    }
+
+    return (
+        <div className="bg-indigo-50 rounded-3xl p-5 border border-indigo-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all cursor-pointer" onClick={onMainAction}>
+            {/* Decorator */}
+            <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-1/4 -translate-y-1/4">
+                <span className="material-symbols-outlined text-[100px] text-indigo-600">{icon}</span>
+            </div>
+
+            <div className="relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
+                        <span className="material-symbols-outlined text-indigo-500">{icon}</span> Próxima Atividade
+                    </h3>
+
+                    {/* Top Right Action / Badge */}
+                    {topActionText && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onTopAction();
+                            }}
+                            className={`text-[10px] font-bold px-3 py-1 rounded-full shadow-sm transition-colors ${topActionText === 'Ver Roteiro'
+                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'
+                                : 'bg-white text-indigo-600 cursor-default'
+                                }`}
+                        >
+                            {topActionText}
+                        </button>
+                    )}
+                </div>
+
+                <div className="mb-4">
+                    <h4 className="font-bold text-lg text-text-main mb-1 line-clamp-1">{title}</h4>
+                    <p className="text-xs text-text-muted line-clamp-2">{subtext}</p>
+                </div>
+
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onMainAction();
+                    }}
+                    className="w-full py-2 bg-white rounded-xl text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-colors shadow-sm"
+                >
+                    {mainActionText}
+                </button>
+            </div>
+        </div>
     );
 };
 
-const MacroTimeline: React.FC<{ cities: City[]; onCityClick?: (city: City) => void; onAddCity?: () => void }> = ({ cities, onCityClick, onAddCity }) => {
+
+interface MacroTimelineProps {
+    cities: City[];
+    onCityClick?: (city: City) => void;
+    onAddCity?: () => void;
+    onUpdateCity?: (city: City) => void;
+    onDeleteCity?: (city: City) => void;
+}
+
+const MacroTimeline: React.FC<MacroTimelineProps> = ({ cities, onCityClick, onAddCity, onUpdateCity, onDeleteCity }) => {
     const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+    const { generateImage, isGenerating, isUploading } = useImageGeneration();
+    const [generatingCityId, setGeneratingCityId] = React.useState<string | null>(null);
+
+    // Sort cities by arrival date
+    const sortedCities = useMemo(() => {
+        return [...cities].sort((a, b) => {
+            const dateA = new Date(a.arrivalDate.split('/').reverse().join('-'));
+            const dateB = new Date(b.arrivalDate.split('/').reverse().join('-'));
+            return dateA.getTime() - dateB.getTime();
+        });
+    }, [cities]);
 
     const scroll = (direction: 'left' | 'right') => {
         if (scrollContainerRef.current) {
@@ -292,7 +362,31 @@ const MacroTimeline: React.FC<{ cities: City[]; onCityClick?: (city: City) => vo
         }
     };
 
-    if (cities.length === 0) {
+    const handleGenerateImage = async (city: City, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (generatingCityId) return;
+
+        setGeneratingCityId(city.id);
+
+        try {
+            const prompt = `Cinematic travel photography of ${city.name}, ${city.country}, iconic landmarks, high resolution, 4k, golden hour, photorealistic`;
+            // Use wide aspect ratio for better fit in the card
+            const result = await generateImage(prompt, { aspectRatio: '3:4' }, true, `cities/${city.id}-${Date.now()}.png`);
+
+            if (result && result.url && onUpdateCity) {
+                onUpdateCity({
+                    ...city,
+                    image: result.url
+                });
+            }
+        } catch (error) {
+            console.error("Failed to generate city image", error);
+        } finally {
+            setGeneratingCityId(null);
+        }
+    };
+
+    if (sortedCities.length === 0) {
         return (
             <Card className="p-6">
                 <h4 className="font-bold text-lg text-text-main mb-4 flex items-center gap-2">
@@ -344,19 +438,53 @@ const MacroTimeline: React.FC<{ cities: City[]; onCityClick?: (city: City) => vo
                     ref={scrollContainerRef}
                     className="flex items-start gap-4 overflow-x-auto pb-4 px-5 hide-scrollbar scroll-smooth"
                 >
-                    {cities.map((city, index) => (
+                    {sortedCities.map((city, index) => (
                         <React.Fragment key={city.id}>
                             <div
                                 className="flex flex-col items-center w-[180px] shrink-0 cursor-pointer group"
                                 onClick={() => onCityClick?.(city)}
                             >
-                                <div className="relative w-full aspect-[4/5] rounded-2xl overflow-hidden mb-0 shadow-md group-hover:shadow-xl group-hover:scale-105 transition-all duration-300">
+                                <div className="relative w-full aspect-[4/5] rounded-2xl overflow-hidden mb-0 shadow-md group-hover:shadow-xl group-hover:scale-105 transition-all duration-300 bg-gray-100">
                                     <img
                                         src={city.image}
                                         alt={city.name}
                                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                                     />
-                                    <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
+
+                                    {/* AI Generation Overlay */}
+                                    {generatingCityId === city.id && (
+                                        <div className="absolute inset-0 bg-black/60 z-20 flex flex-col items-center justify-center gap-2 text-white">
+                                            <div className="size-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <span className="text-xs font-bold animate-pulse">Criando Arte...</span>
+                                        </div>
+                                    )}
+
+                                    {/* AI Generate Button - Visible on Hover */}
+                                    {!generatingCityId && onUpdateCity && (
+                                        <div className="absolute top-2 right-2 flex flex-col gap-2 z-20">
+                                            <button
+                                                onClick={(e) => handleGenerateImage(city, e)}
+                                                className="p-2 bg-white/20 backdrop-blur-md border border-white/30 rounded-xl text-white opacity-0 group-hover:opacity-100 transition-all hover:bg-white hover:text-primary shadow-lg translate-y-2 group-hover:translate-y-0"
+                                                title="Gerar nova capa com IA"
+                                            >
+                                                <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (window.confirm(`Tem certeza que deseja excluir ${city.name} do seu roteiro?`)) {
+                                                        onDeleteCity?.(city);
+                                                    }
+                                                }}
+                                                className="p-2 bg-white/20 backdrop-blur-md border border-white/30 rounded-xl text-white opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white shadow-lg translate-y-2 group-hover:translate-y-0 delay-75"
+                                                title="Excluir cidade"
+                                            >
+                                                <span className="material-symbols-outlined text-lg">delete</span>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
 
                                     <div className="absolute bottom-0 left-0 right-0 p-3 text-left">
                                         <p className="text-white font-bold text-base leading-tight drop-shadow-md mb-0.5">{city.name}</p>
@@ -386,10 +514,6 @@ const MacroTimeline: React.FC<{ cities: City[]; onCityClick?: (city: City) => vo
                                                 <span>{city.nights} noites</span>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <span className="material-symbols-outlined text-white text-3xl drop-shadow-lg scale-75 group-hover:scale-100 transition-transform duration-300">explore</span>
                                     </div>
                                 </div>
                             </div>
@@ -442,25 +566,11 @@ const CityAlertsBox: React.FC<{ cities: City[]; tripStartDate: string }> = ({ ci
                         city: alert.cities?.join(', '),
                     })));
                 } else {
-                    // Fallback if AI returns nothing
-                    setAlerts([{
-                        id: 'general-1',
-                        type: 'info',
-                        title: 'Viagem Planejada',
-                        message: `Sua viagem para ${cities.map(c => c.name).join(', ')} está configurada. Boa viagem!`,
-                        icon: 'flight_takeoff'
-                    }]);
+                    setAlerts([]);
                 }
             } catch (error) {
                 console.error('Error generating trip alerts:', error);
-                // Fallback on error
-                setAlerts([{
-                    id: 'fallback-1',
-                    type: 'info',
-                    title: 'Dica de Segurança',
-                    message: 'Mantenha cópias digitais de documentos importantes durante sua viagem.',
-                    icon: 'security'
-                }]);
+                setAlerts([]);
             } finally {
                 setIsLoading(false);
             }
@@ -526,7 +636,7 @@ const CityAlertsBox: React.FC<{ cities: City[]; tripStartDate: string }> = ({ ci
         }
     };
 
-    if (cities.length === 0) return null;
+    if (cities.length === 0 || (!isLoading && alerts.length === 0)) return null;
 
     return (
         <Card className="p-5">
@@ -744,258 +854,7 @@ const PlanningStatusWidget: React.FC<{ hotels: HotelReservation[]; transports: T
     );
 };
 
-const TripChecklist: React.FC<{ trip: Trip }> = ({ trip }) => {
-    const { updateTrip } = useTrips();
 
-    // Initialize tasks with trip data or default
-    const initialTasks = useMemo(() => {
-        if (trip.tasks && trip.tasks.length > 0) return trip.tasks;
-        return getInitialTasks().map(t => ({
-            ...t,
-            deadline: t.deadline || '',
-        }));
-    }, [trip.tasks]);
-
-    const [tasks, setTasks] = React.useState<TaskItem[]>(initialTasks);
-
-    // Persist tasks on change
-    useEffect(() => {
-        // Only update if tasks different from props to avoid loops
-        if (JSON.stringify(tasks) !== JSON.stringify(trip.tasks)) {
-            const timer = setTimeout(() => {
-                updateTrip({ ...trip, tasks });
-            }, 1000); // Debounce
-            return () => clearTimeout(timer);
-        }
-    }, [tasks, trip, updateTrip]);
-    const [showAddInput, setShowAddInput] = React.useState(false);
-    const [newTaskText, setNewTaskText] = React.useState('');
-    const [newTaskDeadline, setNewTaskDeadline] = React.useState('');
-    const [showCompleted, setShowCompleted] = React.useState(false);
-
-    const toggleTask = (id: string) => {
-        setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-    };
-
-    const deleteTask = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        setTasks(prev => prev.filter(t => t.id !== id));
-    };
-
-    const clearCompleted = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setTasks(prev => prev.filter(t => !t.completed));
-        setShowCompleted(false);
-    };
-
-    const addTask = () => {
-        if (!newTaskText.trim()) return;
-
-        // Format deadline if provided (from YYYY-MM-DD to DD/MM/YYYY)
-        let formattedDeadline = '';
-        if (newTaskDeadline) {
-            const [year, month, day] = newTaskDeadline.split('-');
-            formattedDeadline = `${day}/${month}/${year}`;
-        }
-
-        const newTask = {
-            id: `custom-${Date.now()}`,
-            text: newTaskText.trim(),
-            completed: false,
-            priority: 'medium' as const,
-            isCritical: false,
-            deadline: formattedDeadline,
-            category: 'other' as const
-        };
-
-        setTasks(prev => [...prev, newTask]);
-        setNewTaskText('');
-        setNewTaskDeadline('');
-        setShowAddInput(false);
-    };
-
-    const handleKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            addTask();
-        } else if (e.key === 'Escape') {
-            setShowAddInput(false);
-            setNewTaskText('');
-            setNewTaskDeadline('');
-        }
-    };
-
-    // Filter tasks based on view mode
-    const visibleTasks = tasks.filter(t => showCompleted ? true : !t.completed);
-    const completedCount = tasks.filter(t => t.completed).length;
-
-    const getCategoryIcon = (category: string) => {
-        switch (category) {
-            case 'visa': return 'badge';
-            case 'booking': return 'hotel';
-            case 'health': return 'vaccines';
-            case 'insurance': return 'health_and_safety';
-            case 'packing': return 'inventory_2';
-            default: return 'task_alt';
-        }
-    };
-
-    const getCategoryColor = (category: string, isCritical: boolean) => {
-        if (isCritical) {
-            switch (category) {
-                case 'visa': return 'text-violet-600 bg-violet-50';
-                case 'booking': return 'text-blue-600 bg-blue-50';
-                case 'health': return 'text-rose-600 bg-rose-50';
-                case 'insurance': return 'text-emerald-600 bg-emerald-50';
-                case 'packing': return 'text-teal-600 bg-teal-50';
-                default: return 'text-amber-600 bg-amber-50';
-            }
-        }
-        return 'text-gray-500 bg-gray-100';
-    };
-
-    return (
-        <Card className="p-5">
-            <div className="flex items-center justify-between mb-4">
-                <span className="inline-block px-3 py-1.5 text-xs font-bold text-text-main bg-primary/30 rounded-full">
-                    Checklist de Tarefas
-                </span>
-                <span className="text-xs text-text-muted">
-                    {completedCount}/{tasks.length} concluídas
-                </span>
-            </div>
-
-            {/* Add Task Input Box */}
-            {showAddInput && (
-                <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                        <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                            <span className="material-symbols-outlined text-base">add_task</span>
-                        </div>
-                        <input
-                            type="text"
-                            value={newTaskText}
-                            onChange={(e) => setNewTaskText(e.target.value)}
-                            onKeyDown={handleKeyPress}
-                            placeholder="Digite a descrição da tarefa..."
-                            className="flex-1 text-sm bg-transparent border-none outline-none text-text-main placeholder:text-text-muted"
-                            autoFocus
-                        />
-                        <button
-                            onClick={() => { setShowAddInput(false); setNewTaskText(''); setNewTaskDeadline(''); }}
-                            className="p-1.5 text-text-muted hover:text-text-main transition-colors"
-                        >
-                            <span className="material-symbols-outlined text-base">close</span>
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-2 ml-10">
-                        <div className="flex items-center gap-2 flex-1">
-                            <span className="material-symbols-outlined text-sm text-text-muted">calendar_today</span>
-                            <input
-                                type="date"
-                                value={newTaskDeadline}
-                                onChange={(e) => setNewTaskDeadline(e.target.value)}
-                                className="text-xs bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-text-main focus:outline-none focus:border-primary"
-                            />
-                            <span className="text-xs text-text-muted">Prazo (opcional)</span>
-                        </div>
-                        <button
-                            onClick={addTask}
-                            disabled={!newTaskText.trim()}
-                            className="px-3 py-1.5 text-xs font-semibold bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                        >
-                            Adicionar
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            <div className={`space-y-2 max-h-[300px] overflow-y-auto pr-1 ${showCompleted ? 'scrollbar-thin' : ''}`}>
-                {visibleTasks.map(task => (
-                    <div
-                        key={task.id}
-                        onClick={() => toggleTask(task.id)}
-                        className={`group flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer hover:shadow-sm ${task.completed
-                            ? 'bg-gray-50 border-gray-200 opacity-60'
-                            : task.isCritical
-                                ? 'bg-white border-amber-200 hover:border-amber-300'
-                                : 'bg-white border-gray-100 hover:border-gray-200'
-                            }`}
-                    >
-                        <div className={`size-8 rounded-lg flex items-center justify-center shrink-0 ${getCategoryColor(task.category, !!task.isCritical)}`}>
-                            <span className="material-symbols-outlined text-base">{getCategoryIcon(task.category)}</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className={`font-medium text-sm text-text-main ${task.completed ? 'line-through' : ''}`}>
-                                {task.text}
-                            </p>
-                            {task.deadline && (
-                                <p className="text-[10px] text-text-muted flex items-center gap-1 mt-0.5">
-                                    <span className="material-symbols-outlined text-[10px]">calendar_today</span>
-                                    Até {task.deadline}
-                                </p>
-                            )}
-                        </div>
-                        {task.isCritical && !task.completed && (
-                            <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded shrink-0">
-                                URGENTE
-                            </span>
-                        )}
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={(e) => deleteTask(task.id, e)}
-                                className="size-6 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
-                                title="Excluir tarefa"
-                            >
-                                <span className="material-symbols-outlined text-sm">delete</span>
-                            </button>
-                            <div className={`size-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${task.completed
-                                ? 'bg-emerald-500 border-emerald-500'
-                                : 'border-gray-300 hover:border-primary'
-                                }`}>
-                                {task.completed && <span className="material-symbols-outlined text-white text-xs">check</span>}
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Add Task Button */}
-            {!showAddInput && (
-                <button
-                    onClick={() => setShowAddInput(true)}
-                    className="w-full mt-3 py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm font-semibold text-text-muted hover:border-primary hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
-                >
-                    <span className="material-symbols-outlined text-lg">add</span>
-                    Adicionar Tarefa
-                </button>
-            )}
-
-            {tasks.some(t => t.completed) && (
-                <div className="flex items-center gap-2 mt-3">
-                    <button
-                        onClick={() => setShowCompleted(!showCompleted)}
-                        className="flex-1 py-2 text-xs text-text-muted hover:text-primary transition-colors flex items-center justify-center gap-1"
-                    >
-                        <span className="material-symbols-outlined text-sm">
-                            {showCompleted ? 'visibility_off' : 'visibility'}
-                        </span>
-                        {showCompleted ? 'Ocultar tarefas concluídas' : `Ver ${completedCount} tarefas concluídas`}
-                    </button>
-                    {showCompleted && (
-                        <button
-                            onClick={clearCompleted}
-                            className="px-3 py-2 text-xs font-semibold text-rose-500 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors flex items-center gap-1"
-                            title="Limpar todas as tarefas concluídas"
-                        >
-                            <span className="material-symbols-outlined text-sm">delete_sweep</span>
-                            Limpar
-                        </button>
-                    )}
-                </div>
-            )}
-        </Card>
-    );
-};
 
 // =============================================================================
 // Luggage Checklist Component
@@ -1003,25 +862,31 @@ const TripChecklist: React.FC<{ trip: Trip }> = ({ trip }) => {
 
 // LuggageItem interface removed as it is now imported from types.ts
 
-const INITIAL_LUGGAGE_ITEMS: LuggageItem[] = [
-    { id: 'l1', text: 'Passaporte', packed: true, category: 'documents' },
-    { id: 'l2', text: 'RG / CNH', packed: true, category: 'documents' },
-    { id: 'l3', text: 'Cartão de crédito', packed: false, category: 'documents' },
-    { id: 'l4', text: 'Seguro viagem (impresso)', packed: false, category: 'documents' },
-    { id: 'l5', text: 'Casaco / Jaqueta', packed: false, category: 'clothes' },
-    { id: 'l6', text: 'Roupas íntimas', packed: true, category: 'clothes' },
-    { id: 'l7', text: 'Calçados confortáveis', packed: false, category: 'clothes' },
-    { id: 'l8', text: 'Escova de dente', packed: false, category: 'hygiene' },
-    { id: 'l9', text: 'Protetor solar', packed: false, category: 'hygiene' },
-    { id: 'l10', text: 'Medicamentos pessoais', packed: false, category: 'hygiene' },
-    { id: 'l11', text: 'Carregador de celular', packed: true, category: 'electronics' },
-    { id: 'l12', text: 'Adaptador de tomada', packed: false, category: 'electronics' },
-    { id: 'l13', text: 'Câmera fotográfica', packed: false, category: 'electronics' },
-];
-
 const LuggageChecklist: React.FC<{ trip: Trip }> = ({ trip }) => {
     const { updateTrip } = useTrips();
-    const [items, setItems] = React.useState<LuggageItem[]>(trip.luggage && trip.luggage.length > 0 ? trip.luggage : INITIAL_LUGGAGE_ITEMS);
+    const [items, setItems] = React.useState<LuggageItem[]>(trip.luggage || []);
+
+    const SUGGESTED_ITEMS: LuggageItem[] = [
+        { id: 's1', text: 'Passaporte', packed: false, category: 'documents' },
+        { id: 's2', text: 'RG / CNH', packed: false, category: 'documents' },
+        { id: 's3', text: 'Cartão de crédito', packed: false, category: 'documents' },
+        { id: 's4', text: 'Seguro viagem', packed: false, category: 'documents' },
+        { id: 's5', text: 'Carregador de celular', packed: false, category: 'electronics' },
+        { id: 's6', text: 'Adaptador de tomada', packed: false, category: 'electronics' },
+        { id: 's7', text: 'Escova de dente', packed: false, category: 'hygiene' },
+        { id: 's8', text: 'Protetor solar', packed: false, category: 'hygiene' },
+        { id: 's9', text: 'Calçados confortáveis', packed: false, category: 'clothes' },
+        { id: 's10', text: 'Medicamentos pessoais', packed: false, category: 'hygiene' },
+    ];
+
+    const loadSuggestions = () => {
+        const timestamp = Date.now();
+        const newItems = SUGGESTED_ITEMS.map((item, idx) => ({
+            ...item,
+            id: `suggestion-${timestamp}-${idx}`
+        }));
+        setItems(prev => [...prev, ...newItems]);
+    };
 
     // Persist luggage on change
     useEffect(() => {
@@ -1179,50 +1044,67 @@ const LuggageChecklist: React.FC<{ trip: Trip }> = ({ trip }) => {
 
             {/* Items List */}
             <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
-                {filteredItems.map(item => (
-                    <div
-                        key={item.id}
-                        className={`group/item flex items-center gap-2 p-2.5 rounded-xl border transition-all hover:shadow-sm ${item.packed
-                            ? 'bg-emerald-50/50 border-emerald-200 opacity-70'
-                            : 'bg-white border-gray-100 hover:border-gray-200'
-                            }`}
-                    >
-                        <div
-                            onClick={() => toggleItem(item.id)}
-                            className={`size-6 rounded-md flex items-center justify-center shrink-0 cursor-pointer ${getCategoryColor(item.category)}`}
-                        >
-                            <span className="material-symbols-outlined text-xs">{getCategoryIcon(item.category)}</span>
+                {items.length === 0 ? (
+                    <div className="py-8 flex flex-col items-center justify-center text-center">
+                        <div className="size-16 rounded-full bg-gray-50 flex items-center justify-center mb-3">
+                            <span className="material-symbols-outlined text-3xl text-gray-300">inventory_2</span>
                         </div>
-                        <span
-                            onClick={() => toggleItem(item.id)}
-                            className={`flex-1 text-xs font-medium text-text-main cursor-pointer ${item.packed ? 'line-through text-text-muted' : ''}`}
+                        <h5 className="font-bold text-sm text-text-main mb-1">Lista de bagagem vazia</h5>
+                        <p className="text-xs text-text-muted mb-4 max-w-[200px]">Adicione itens que você precisa levar ou carregue sugestões comuns.</p>
+                        <button
+                            onClick={loadSuggestions}
+                            className="text-xs font-bold text-primary hover:text-primary-dark transition-colors flex items-center gap-1"
                         >
-                            {item.text}
-                        </span>
-
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteItem(item.id);
-                                }}
-                                className="opacity-0 group-hover/item:opacity-100 p-1 text-text-muted hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
-                                title="Excluir item"
-                            >
-                                <span className="material-symbols-outlined text-xs">delete</span>
-                            </button>
+                            <span className="material-symbols-outlined text-sm">magic_button</span>
+                            Carregar Sugestões
+                        </button>
+                    </div>
+                ) : (
+                    filteredItems.map(item => (
+                        <div
+                            key={item.id}
+                            className={`group/item flex items-center gap-2 p-2.5 rounded-xl border transition-all hover:shadow-sm ${item.packed
+                                ? 'bg-emerald-50/50 border-emerald-200 opacity-70'
+                                : 'bg-white border-gray-100 hover:border-gray-200'
+                                }`}
+                        >
                             <div
                                 onClick={() => toggleItem(item.id)}
-                                className={`size-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${item.packed
-                                    ? 'bg-emerald-500 border-emerald-500'
-                                    : 'border-gray-300 hover:border-primary'
-                                    }`}
+                                className={`size-6 rounded-md flex items-center justify-center shrink-0 cursor-pointer ${getCategoryColor(item.category)}`}
                             >
-                                {item.packed && <span className="material-symbols-outlined text-white text-[8px]">check</span>}
+                                <span className="material-symbols-outlined text-xs">{getCategoryIcon(item.category)}</span>
+                            </div>
+                            <span
+                                onClick={() => toggleItem(item.id)}
+                                className={`flex-1 text-xs font-medium text-text-main cursor-pointer ${item.packed ? 'line-through text-text-muted' : ''}`}
+                            >
+                                {item.text}
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteItem(item.id);
+                                    }}
+                                    className="opacity-0 group-hover/item:opacity-100 p-1 text-text-muted hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
+                                    title="Excluir item"
+                                >
+                                    <span className="material-symbols-outlined text-xs">delete</span>
+                                </button>
+                                <div
+                                    onClick={() => toggleItem(item.id)}
+                                    className={`size-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer ${item.packed
+                                        ? 'bg-emerald-500 border-emerald-500'
+                                        : 'border-gray-300 hover:border-primary'
+                                        }`}
+                                >
+                                    {item.packed && <span className="material-symbols-outlined text-white text-[8px]">check</span>}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    ))
+                )}
             </div>
 
             {/* Add Item Input */}
@@ -1362,74 +1244,7 @@ const LuggageChecklist: React.FC<{ trip: Trip }> = ({ trip }) => {
 
 
 
-const AlertsSection: React.FC = () => {
-    if (TRIP_ALERTS.length === 0) return null;
-
-    const getAlertStyles = (type: TripAlert['type']) => {
-        switch (type) {
-            case 'danger':
-                return {
-                    bg: 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800',
-                    icon: 'text-rose-600 dark:text-rose-400',
-                    title: 'text-rose-800 dark:text-rose-300',
-                    text: 'text-rose-700 dark:text-rose-400'
-                };
-            case 'warning':
-                return {
-                    bg: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800',
-                    icon: 'text-amber-600 dark:text-amber-400',
-                    title: 'text-amber-800 dark:text-amber-300',
-                    text: 'text-amber-700 dark:text-amber-400'
-                };
-            case 'info':
-                return {
-                    bg: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
-                    icon: 'text-blue-600 dark:text-blue-400',
-                    title: 'text-blue-800 dark:text-blue-300',
-                    text: 'text-blue-700 dark:text-blue-400'
-                };
-        }
-    };
-
-    return (
-        <Card className="p-6">
-            <div className="flex items-center gap-3 mb-5">
-                <div className="size-12 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-2xl">warning</span>
-                </div>
-                <div>
-                    <h4 className="font-bold text-lg text-text-main dark:text-white">Alertas e Avisos</h4>
-                    <p className="text-sm text-text-muted dark:text-gray-400">Informações importantes para sua viagem</p>
-                </div>
-            </div>
-
-            <div className="space-y-3">
-                {TRIP_ALERTS.map(alert => {
-                    const styles = getAlertStyles(alert.type);
-                    return (
-                        <div
-                            key={alert.id}
-                            className={`flex items-start gap-4 p-4 rounded-xl border ${styles.bg}`}
-                        >
-                            <div className={`size-10 rounded-lg flex items-center justify-center shrink-0 ${styles.icon} bg-white/50 dark:bg-black/20`}>
-                                <span className="material-symbols-outlined text-xl">{alert.icon}</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className={`font-bold text-sm ${styles.title}`}>{alert.title}</p>
-                                <p className={`text-sm mt-0.5 ${styles.text}`}>{alert.message}</p>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </Card>
-    );
-};
-
-// =============================================================================
-// Sub-Components: Sidebar
-// =============================================================================
-
+// PreparationProgress component removed/merged...
 const PreparationProgress: React.FC<{ hotels: HotelReservation[]; transports: Transport[] }> = ({ hotels, transports }) => {
     const items = [
         { label: 'Voos', checked: transports.some(t => t.type === 'flight'), icon: 'flight' },
@@ -1497,8 +1312,7 @@ const PreparationProgress: React.FC<{ hotels: HotelReservation[]; transports: Tr
 
 const PendingTasksList: React.FC = () => {
     // Determine unrelated/separate instance of tasks for this sidebar widget
-    const initialTasks = useMemo(() => getInitialTasks().map(t => ({ ...t, deadline: t.deadline || '' })), []);
-    const [tasks, setTasks] = React.useState(initialTasks);
+    const [tasks, setTasks] = React.useState<TaskItem[]>([]);
 
     const toggleTask = (id: string) => {
         setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
@@ -1513,18 +1327,27 @@ const PendingTasksList: React.FC = () => {
                 <span className="text-xs text-text-muted">{pendingTasks.length} restantes</span>
             </div>
             <div className="space-y-2">
-                {pendingTasks.map(task => (
-                    <div
-                        key={task.id}
-                        onClick={() => toggleTask(task.id)}
-                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-                    >
-                        <div className={`size-5 rounded border-2 flex items-center justify-center shrink-0 ${task.priority === 'high' ? 'border-rose-400' : task.priority === 'medium' ? 'border-amber-400' : 'border-gray-300'
-                            }`}>
+                {tasks.length === 0 ? (
+                    <EmptyState
+                        variant="minimal"
+                        title="Tudo pronto!"
+                        description="Nenhuma tarefa pendente."
+                        icon="check_circle"
+                    />
+                ) : (
+                    pendingTasks.map(task => (
+                        <div
+                            key={task.id}
+                            onClick={() => toggleTask(task.id)}
+                            className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                        >
+                            <div className={`size-5 rounded border-2 flex items-center justify-center shrink-0 ${task.priority === 'high' ? 'border-rose-400' : task.priority === 'medium' ? 'border-amber-400' : 'border-gray-300'
+                                }`}>
+                            </div>
+                            <span className="text-sm text-text-main truncate">{task.text}</span>
                         </div>
-                        <span className="text-sm text-text-main truncate">{task.text}</span>
-                    </div>
-                ))}
+                    ))
+                )}
             </div>
             <Button variant="ghost" className="w-full mt-3 !text-xs !text-primary !py-2">
                 Ver todas as tarefas
@@ -1750,11 +1573,20 @@ const ParticipantsList: React.FC<{ participants?: any[]; onInvite?: () => void }
 // Main Component
 // =============================================================================
 
-const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotels, transports, totalBudget, onInvite, onCityClick, onAddCity }) => {
+const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotels, transports, activities, totalBudget, onInvite, onCityClick, onAddCity, onUpdateCity, onDeleteCity, onTabChange, isLoading }) => {
     const [showAnimatedMap, setShowAnimatedMap] = useState(false);
     const [realStops, setRealStops] = useState<ItineraryStop[]>([]);
     const [isLoadingStops, setIsLoadingStops] = useState(false);
     const { updateTrip } = useTrips();
+
+    // Details Modal State
+    const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+    const [selectedActivityForDetails, setSelectedActivityForDetails] = useState<ItineraryActivity | null>(null);
+
+    const openDetailsModal = (activity: ItineraryActivity) => {
+        setSelectedActivityForDetails(activity);
+        setDetailsModalOpen(true);
+    };
 
     const getYouTubeID = (url: string) => {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -2037,7 +1869,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
                     return dist > 0.001; // Filter out identical locations
                 });
 
-                setRealStops(uniqueStops.length > 0 ? uniqueStops : DEMO_STOPS);
+                setRealStops(uniqueStops.length > 0 ? uniqueStops : []);
                 setIsLoadingStops(false);
             };
 
@@ -2045,15 +1877,165 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
         }
     }, [showAnimatedMap, cities, transports]);
 
+    if (isLoading) {
+        return (
+            <div className="space-y-6 animate-in fade-in duration-300">
+                {/* Next Step Skeleton */}
+                <Card className="p-5 border border-indigo-100 bg-indigo-50/30">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                            <Skeleton variant="circular" width={24} height={24} />
+                            <Skeleton width={120} height={20} />
+                        </div>
+                    </div>
+                    <Skeleton width="60%" height={28} className="mb-2" />
+                    <Skeleton width="40%" height={16} className="mb-4" />
+                    <Skeleton width="100%" height={40} className="rounded-xl" />
+                </Card>
+
+                {/* Widgets Skeleton */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[1, 2, 3, 4].map(i => (
+                        <Card key={i} className="p-5 flex items-center gap-4">
+                            <Skeleton variant="rectangular" width={56} height={56} className="rounded-xl" />
+                            <div className="flex-1">
+                                <Skeleton width={60} height={12} className="mb-2" />
+                                <Skeleton width={100} height={24} />
+                            </div>
+                        </Card>
+                    ))}
+                </div>
+
+                {/* Timeline Skeleton */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <div className="lg:col-span-3">
+                        <Card className="p-5">
+                            <div className="flex items-center justify-between mb-4">
+                                <Skeleton width={100} height={24} className="rounded-full" />
+                                <div className="flex gap-2">
+                                    <Skeleton variant="circular" width={32} height={32} />
+                                    <Skeleton variant="circular" width={32} height={32} />
+                                </div>
+                            </div>
+                            <div className="flex gap-4 overflow-hidden">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className="w-[180px] shrink-0">
+                                        <Skeleton variant="rectangular" width="100%" height={225} className="rounded-2xl" />
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    </div>
+                    <div className="lg:col-span-1">
+                        <Skeleton variant="rectangular" width="100%" height="100%" className="rounded-2xl min-h-[150px]" />
+                    </div>
+                </div>
+
+                {/* Alerts Skeleton */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <div className="lg:col-span-3">
+                        <Card className="p-5">
+                            <div className="flex items-center justify-between mb-4">
+                                <Skeleton width={120} height={24} className="rounded-full" />
+                            </div>
+                            <div className="space-y-3">
+                                {[1, 2].map(i => (
+                                    <div key={i} className="flex gap-3">
+                                        <Skeleton variant="rectangular" width={40} height={40} className="rounded-xl" />
+                                        <div className="flex-1">
+                                            <Skeleton width="40%" height={16} className="mb-2" />
+                                            <Skeleton width="90%" height={12} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    </div>
+                    <div className="lg:col-span-1 space-y-4">
+                        <Card className="p-5">
+                            <Skeleton width={80} height={24} className="rounded-full mb-4" />
+                            <div className="space-y-3">
+                                {[1, 2].map(i => (
+                                    <div key={i} className="flex items-center gap-3">
+                                        <Skeleton variant="circular" width={36} height={36} />
+                                        <Skeleton width={100} height={16} />
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
             {/* NEW HEADER SECTION */}
             <div className="space-y-6">
+                {/* Top Row: Next Step */}
+                <div className="grid grid-cols-1">
+                    <NextStepCard transports={transports} hotels={hotels} activities={activities} onTabChange={onTabChange} onViewDetails={openDetailsModal} />
+                </div>
+
+                {/* NEW: Dashboard Widgets Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="animate-slide-up" style={{ animationDelay: '100ms' }}>
+                        <CountdownWidget
+                            startDate={trip.startDate}
+                            onNavigate={() => onTabChange?.('itinerary')}
+                        />
+                    </div>
+                    <div className="animate-slide-up" style={{ animationDelay: '200ms' }}>
+                        <BudgetWidget
+                            spent={expenses.reduce((sum, e) => sum + e.amount, 0)}
+                            total={totalBudget}
+                            onNavigate={() => onTabChange?.('budget')}
+                        />
+                    </div>
+                    <div className="animate-slide-up" style={{ animationDelay: '300ms' }}>
+                        <CitiesWidget
+                            cities={cities}
+                            onCityClick={onCityClick}
+                            onNavigate={() => onTabChange?.('cities')}
+                        />
+                    </div>
+                    <div className="animate-slide-up" style={{ animationDelay: '400ms' }}>
+                        <TransportsWidget
+                            transports={transports}
+                            onNavigate={() => onTabChange?.('logistics')}
+                        />
+                    </div>
+                </div>
+
+                {/* Row 2: Timeline + Weather (2 columns each) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="animate-slide-up" style={{ animationDelay: '500ms' }}>
+                        <TimelineWidget
+                            transports={transports}
+                            hotels={hotels}
+                            activities={activities}
+                            onNavigate={() => onTabChange?.('itinerary')}
+                        />
+                    </div>
+                    <div className="animate-slide-up" style={{ animationDelay: '600ms' }}>
+                        <WeatherWidget
+                            cityName={cities[0]?.name || trip.destination?.split(',')[0] || 'Destino'}
+                        />
+                    </div>
+                </div>
+
                 {/* Timeline + Animated Map Row (with Quem Vai + Coverage on right) */}
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                     <div className="lg:col-span-3 space-y-6">
                         {/* Timeline Row */}
-                        <MacroTimeline cities={cities} onCityClick={onCityClick} onAddCity={onAddCity} />
+                        <MacroTimeline
+                            cities={cities}
+                            onCityClick={onCityClick}
+                            onAddCity={onAddCity}
+                            onUpdateCity={onUpdateCity}
+                            onDeleteCity={onDeleteCity}
+                        />
                     </div>
 
                     {/* Right Side: Animated Map (1 col) */}
@@ -2093,10 +2075,11 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
                     </div>
                 </div>
 
+                {/* Top Cards Row: Next Step + Status + Countdown + Weather */}
                 {/* Third Row: Checklist on left + Luggage on right */}
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                     <div className="lg:col-span-3">
-                        <TripChecklist trip={trip} />
+                        <SmartChecklist />
                     </div>
                     <div className="lg:col-span-1">
                         <LuggageChecklist trip={trip} />
@@ -2149,7 +2132,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
                                     </div>
                                 ) : (
                                     <AnimatedItineraryMap
-                                        stops={realStops.length > 0 ? realStops : DEMO_STOPS}
+                                        stops={realStops}
                                         animationSpeed={5}
                                     />
                                 )}
@@ -2158,6 +2141,15 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
                     </div>
                 )
             }
+
+            {/* Activity Details Modal */}
+            <ActivityDetailsModal
+                isOpen={detailsModalOpen}
+                onClose={() => setDetailsModalOpen(false)}
+                title={selectedActivityForDetails?.title || ''}
+                location={selectedActivityForDetails?.location}
+                type={selectedActivityForDetails ? getActivityTypeLabel(selectedActivityForDetails.type) : ''}
+            />
         </div >
     );
 };

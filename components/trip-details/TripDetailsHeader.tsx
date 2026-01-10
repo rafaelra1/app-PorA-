@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Trip } from '../../types';
-import { Badge, Icon } from '../ui/Base';
+import { Icon } from '../ui/Base';
 import { calculateDaysRemaining, calculateDuration } from '../../lib/dateUtils';
 import { getFlagsForDestinations } from '../../lib/countryUtils';
+import CountdownBadge from '../ui/CountdownBadge';
+
+// =============================================================================
+// Types
+// =============================================================================
 
 interface TripDetailsHeaderProps {
     trip: Trip;
@@ -11,18 +16,133 @@ interface TripDetailsHeaderProps {
     onShare: () => void;
 }
 
+// =============================================================================
+// Status Badge Component
+// =============================================================================
+
+interface StatusBadgeProps {
+    status: 'planning' | 'confirmed' | 'completed';
+}
+
+const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
+    const config = {
+        planning: {
+            bg: 'bg-blue-500',
+            icon: 'edit_calendar',
+            label: 'Em Planejamento'
+        },
+        confirmed: {
+            bg: 'bg-emerald-500',
+            icon: 'check_circle',
+            label: 'Confirmado'
+        },
+        completed: {
+            bg: 'bg-gray-500',
+            icon: 'task_alt',
+            label: 'Concluída'
+        }
+    };
+
+    const { bg, icon, label } = config[status] || config.planning;
+
+    return (
+        <div className={`
+            inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+            ${bg} text-white font-bold text-xs uppercase tracking-wide
+            animate-in fade-in slide-in-from-left-2 duration-300
+        `}>
+            <span className="material-symbols-outlined text-sm">{icon}</span>
+            <span>{label}</span>
+        </div>
+    );
+};
+
+// =============================================================================
+// Participant Avatar Component with Tooltip
+// =============================================================================
+
+interface ParticipantAvatarProps {
+    participant: { name: string; avatar?: string; isOrganizer?: boolean };
+    index: number;
+}
+
+const ParticipantAvatar: React.FC<ParticipantAvatarProps> = ({ participant, index }) => {
+    const [showTooltip, setShowTooltip] = useState(false);
+
+    return (
+        <div
+            className="relative"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+        >
+            <img
+                src={participant.avatar || `https://ui-avatars.com/api/?name=${participant.name}&background=random`}
+                alt={participant.name}
+                className={`
+                    size-8 rounded-full border-2 bg-gray-200
+                    transition-all duration-200 cursor-pointer
+                    hover:scale-110 hover:z-10
+                    ${participant.isOrganizer ? 'border-amber-400 ring-2 ring-amber-400/30' : 'border-white'}
+                `}
+                style={{ zIndex: 10 - index }}
+            />
+
+            {/* Tooltip */}
+            {showTooltip && (
+                <div className="
+                    absolute -bottom-10 left-1/2 -translate-x-1/2
+                    bg-gray-900/95 text-white text-xs px-2.5 py-1.5 rounded-lg
+                    whitespace-nowrap z-50
+                    animate-in fade-in zoom-in-95 duration-150
+                    shadow-lg
+                ">
+                    <span>{participant.name}</span>
+                    {participant.isOrganizer && (
+                        <span className="ml-1 text-amber-400">★</span>
+                    )}
+                    {/* Arrow */}
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 
+                                    border-4 border-transparent border-b-gray-900/95" />
+                </div>
+            )}
+        </div>
+    );
+};
+
+// =============================================================================
+// Main Header Component
+// =============================================================================
+
 const TripDetailsHeader: React.FC<TripDetailsHeaderProps> = ({ trip, onBack, onEdit, onShare }) => {
+    const [scrollY, setScrollY] = useState(0);
     const daysRemaining = calculateDaysRemaining(trip.startDate);
     const duration = calculateDuration(trip.startDate, trip.endDate);
     const flags = getFlagsForDestinations(trip.destination);
 
+    // Parallax effect
+    useEffect(() => {
+        const handleScroll = () => {
+            setScrollY(window.scrollY);
+        };
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    // Limit parallax movement
+    const parallaxOffset = Math.min(scrollY * 0.3, 30);
+
     return (
         <div className="relative w-full h-[250px] shadow-xl z-50 rounded-3xl overflow-hidden animate-fade-in group">
-            {/* Background Image */}
+            {/* Background Image with Parallax */}
             <img
                 src={trip.coverImage}
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 alt={trip.title}
+                style={{
+                    transform: `translateY(${parallaxOffset}px)`,
+                    willChange: 'transform'
+                }}
             />
 
             {/* Gradient Overlay */}
@@ -47,7 +167,7 @@ const TripDetailsHeader: React.FC<TripDetailsHeaderProps> = ({ trip, onBack, onE
                         <Icon name="edit" className="size-4" />
                         Editar Viagem
                     </button>
-                    {/* Share Button (Optional, keeping consistent with design) */}
+                    {/* Share Button */}
                     <button
                         onClick={onShare}
                         className="flex items-center gap-2 px-4 py-2 bg-white/10 text-white hover:bg-white/20 backdrop-blur-md border border-white/20 rounded-xl font-bold transition-all shadow-sm active:scale-95 text-xs md:text-sm"
@@ -64,23 +184,21 @@ const TripDetailsHeader: React.FC<TripDetailsHeaderProps> = ({ trip, onBack, onE
 
                     {/* Badges Row */}
                     <div className="flex flex-wrap gap-3 items-center">
-                        <Badge color={trip.status === 'confirmed' ? 'bg-green-500 text-white' : trip.status === 'planning' ? 'bg-blue-500 text-white' : 'bg-gray-500 text-white'}>
-                            {trip.status === 'confirmed' ? 'CONFIRMADO' : trip.status === 'planning' ? 'EM PLANEJAMENTO' : 'CONCLUÍDA'}
-                        </Badge>
+                        {/* Status Badge - Improved */}
+                        <StatusBadge status={trip.status as 'planning' | 'confirmed' | 'completed'} />
 
-                        {daysRemaining > 0 && (
-                            <div className="flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-md rounded-lg border border-white/10">
-                                <span className="material-symbols-outlined text-white text-sm">flight_takeoff</span>
-                                <span className="text-xs font-bold text-white uppercase tracking-wide">
-                                    {daysRemaining} {daysRemaining === 1 ? 'Dia Restante' : 'Dias Restantes'}
-                                </span>
-                            </div>
+                        {/* Countdown Badge - New Component */}
+                        {daysRemaining >= -30 && (
+                            <CountdownBadge
+                                targetDate={trip.startDate}
+                                variant={daysRemaining <= 7 ? 'urgent' : 'default'}
+                            />
                         )}
                     </div>
 
-                    {/* Title and Destination */}
+                    {/* Title */}
                     <div>
-                        <h1 className="text-4xl md:text-6xl font-black text-white leading-tight mb-2 shadow-sm">
+                        <h1 className="text-4xl md:text-6xl font-black text-white leading-tight mb-2 drop-shadow-lg">
                             {trip.title}
                         </h1>
                     </div>
@@ -102,20 +220,18 @@ const TripDetailsHeader: React.FC<TripDetailsHeaderProps> = ({ trip, onBack, onE
                             </div>
                         )}
 
-                        {/* Participants */}
+                        {/* Participants - Improved with Tooltips */}
                         <div className="flex items-center gap-3">
                             <div className="flex -space-x-2">
                                 {trip.participants.slice(0, 4).map((p, i) => (
-                                    <img
+                                    <ParticipantAvatar
                                         key={i}
-                                        src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}`}
-                                        alt={p.name}
-                                        className="size-6 rounded-full border border-white bg-gray-200"
-                                        title={p.name}
+                                        participant={p}
+                                        index={i}
                                     />
                                 ))}
                                 {trip.participants.length > 4 && (
-                                    <div className="size-6 rounded-full border border-white bg-gray-800 text-white flex items-center justify-center text-[10px]">
+                                    <div className="size-8 rounded-full border-2 border-white bg-gray-800/80 backdrop-blur-sm text-white flex items-center justify-center text-xs font-bold">
                                         +{trip.participants.length - 4}
                                     </div>
                                 )}

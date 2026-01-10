@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
@@ -287,7 +288,7 @@ const AddCityModal: React.FC<AddCityModalProps> = ({
             isOpen={isOpen}
             onClose={handleClose}
             title="Adicionar Cidade"
-            size="md"
+            size="lg"
             footer={footer}
         >
             <form id="city-form" onSubmit={handleSubmit} className="space-y-6">

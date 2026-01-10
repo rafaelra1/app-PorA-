@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import * as React from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import {
   CalendarEvent,
   CalendarFilter,
@@ -68,14 +69,68 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
   });
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load events from localStorage on mount
-  useEffect(() => {
-    if (user) {
-      loadEvents();
-    }
-  }, [user]);
+  // Helper functions
+  const parseDate = useCallback((dateStr: string): Date => {
+    if (!dateStr) return new Date();
 
-  const loadEvents = () => {
+    // Handle DD/MM/YYYY
+    if (dateStr.includes('/')) {
+      const [day, month, year] = dateStr.split('/').map(Number);
+      return new Date(year, month - 1, day);
+    }
+
+    // Handle YYYY-MM-DD (treat as local time)
+    if (dateStr.includes('-')) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    }
+
+    return new Date(dateStr);
+  }, []);
+
+  const formatDate = useCallback((date: Date): string => {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }, []);
+
+  const calculateEndTime = useCallback((startTime: string, durationMinutes: number): string => {
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + durationMinutes;
+    const endHours = Math.floor(totalMinutes / 60) % 24;
+    const endMinutes = totalMinutes % 60;
+    return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+  }, []);
+
+  const mapActivityType = useCallback((activityType: string): CalendarEvent['type'] => {
+    const typeMap: Record<string, CalendarEvent['type']> = {
+      transport: 'activity',
+      accommodation: 'accommodation',
+      meal: 'meal',
+      food: 'restaurant',
+      sightseeing: 'sightseeing',
+      culture: 'culture',
+      nature: 'nature',
+      shopping: 'shopping',
+      nightlife: 'nightlife',
+    };
+    return typeMap[activityType] || 'activity';
+  }, []);
+
+  const getTransportLabel = useCallback((type: string): string => {
+    const labels: Record<string, string> = {
+      flight: 'Voo',
+      train: 'Trem',
+      bus: 'Ônibus',
+      car: 'Carro',
+      transfer: 'Transfer',
+      ferry: 'Balsa',
+    };
+    return labels[type] || 'Transporte';
+  }, []);
+
+  const loadEvents = useCallback(() => {
     try {
       setIsLoading(true);
       const stored = localStorage.getItem(`porai_calendar_events_${user?.id || 'guest'}`);
@@ -88,9 +143,16 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user?.id]);
 
-  const saveEvents = (updatedEvents: CalendarEvent[]) => {
+  // Load events from localStorage on mount
+  useEffect(() => {
+    if (user) {
+      loadEvents();
+    }
+  }, [user, loadEvents]);
+
+  const saveEvents = useCallback((updatedEvents: CalendarEvent[]) => {
     try {
       localStorage.setItem(
         `porai_calendar_events_${user?.id || 'guest'}`,
@@ -100,9 +162,9 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     } catch (error) {
       console.error('Error saving calendar events:', error);
     }
-  };
+  }, [user?.id]);
 
-  const addEvent = async (
+  const addEvent = useCallback(async (
     eventData: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<CalendarEvent> => {
     const now = new Date().toISOString();
@@ -113,26 +175,35 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
       updatedAt: now,
     };
 
-    const updatedEvents = [...events, newEvent];
-    saveEvents(updatedEvents);
+    setEvents(prev => {
+      const updated = [...prev, newEvent];
+      saveEvents(updated);
+      return updated;
+    });
     return newEvent;
-  };
+  }, [saveEvents]);
 
-  const updateEvent = async (id: string, updates: Partial<CalendarEvent>): Promise<void> => {
-    const updatedEvents = events.map(event =>
-      event.id === id
-        ? { ...event, ...updates, updatedAt: new Date().toISOString() }
-        : event
-    );
-    saveEvents(updatedEvents);
-  };
+  const updateEvent = useCallback(async (id: string, updates: Partial<CalendarEvent>): Promise<void> => {
+    setEvents(prev => {
+      const updated = prev.map(event =>
+        event.id === id
+          ? { ...event, ...updates, updatedAt: new Date().toISOString() }
+          : event
+      );
+      saveEvents(updated);
+      return updated;
+    });
+  }, [saveEvents]);
 
-  const deleteEvent = async (id: string): Promise<void> => {
-    const updatedEvents = events.filter(event => event.id !== id);
-    saveEvents(updatedEvents);
-  };
+  const deleteEvent = useCallback(async (id: string): Promise<void> => {
+    setEvents(prev => {
+      const updated = prev.filter(event => event.id !== id);
+      saveEvents(updated);
+      return updated;
+    });
+  }, [saveEvents]);
 
-  const moveEvent = async (
+  const moveEvent = useCallback(async (
     id: string,
     newDate: string,
     newStartTime?: string
@@ -146,46 +217,25 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     }
 
     await updateEvent(id, updates);
-  };
+  }, [updateEvent]);
 
-  const toggleEventComplete = async (id: string): Promise<void> => {
-    const event = events.find(e => e.id === id);
-    if (event) {
-      await updateEvent(id, { completed: !event.completed });
-    }
-  };
+  const toggleEventComplete = useCallback(async (id: string): Promise<void> => {
+    setEvents(prev => {
+      const event = prev.find(e => e.id === id);
+      if (event) {
+        const updated = prev.map(e => e.id === id ? { ...e, completed: !e.completed, updatedAt: new Date().toISOString() } : e);
+        saveEvents(updated);
+        return updated;
+      }
+      return prev;
+    });
+  }, [saveEvents]);
 
-  const setFilters = (newFilters: Partial<CalendarFilter>) => {
+  const setFilters = useCallback((newFilters: Partial<CalendarFilter>) => {
     setFiltersState(prev => ({ ...prev, ...newFilters }));
-  };
+  }, []);
 
-  const getEventsForDate = (date: Date): CalendarEvent[] => {
-    const dateStr = formatDate(date);
-
-    return events.filter(event => {
-      // Check if event falls on this date
-      const eventStartDate = parseDate(event.startDate);
-      const eventEndDate = event.endDate ? parseDate(event.endDate) : eventStartDate;
-
-      return date >= eventStartDate && date <= eventEndDate;
-    }).filter(applyFilters);
-  };
-
-  const getEventsForDateRange = (startDate: Date, endDate: Date): CalendarEvent[] => {
-    return events.filter(event => {
-      const eventStartDate = parseDate(event.startDate);
-      const eventEndDate = event.endDate ? parseDate(event.endDate) : eventStartDate;
-
-      // Event overlaps with the range
-      return (
-        (eventStartDate >= startDate && eventStartDate <= endDate) ||
-        (eventEndDate >= startDate && eventEndDate <= endDate) ||
-        (eventStartDate <= startDate && eventEndDate >= endDate)
-      );
-    }).filter(applyFilters);
-  };
-
-  const applyFilters = (event: CalendarEvent): boolean => {
+  const applyFilters = useCallback((event: CalendarEvent): boolean => {
     // Type filter
     if (filters.type && filters.type !== 'all' && event.type !== filters.type) {
       return false;
@@ -209,75 +259,107 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     }
 
     return true;
-  };
+  }, [filters]);
+
+  const getEventsForDate = useCallback((date: Date): CalendarEvent[] => {
+    const dateStr = formatDate(date);
+
+    return events.filter(event => {
+      // Check if event falls on this date
+      const eventStartDate = parseDate(event.startDate);
+      const eventEndDate = event.endDate ? parseDate(event.endDate) : eventStartDate;
+
+      return date >= eventStartDate && date <= eventEndDate;
+    }).filter(applyFilters);
+  }, [events, formatDate, parseDate, applyFilters]);
+
+  const getEventsForDateRange = useCallback((startDate: Date, endDate: Date): CalendarEvent[] => {
+    return events.filter(event => {
+      const eventStartDate = parseDate(event.startDate);
+      const eventEndDate = event.endDate ? parseDate(event.endDate) : eventStartDate;
+
+      // Event overlaps with the range
+      return (
+        (eventStartDate >= startDate && eventStartDate <= endDate) ||
+        (eventEndDate >= startDate && eventEndDate <= endDate) ||
+        (eventStartDate <= startDate && eventEndDate >= endDate)
+      );
+    }).filter(applyFilters);
+  }, [events, parseDate, applyFilters]);
 
   // Sync from trips - create events for trip start/end
-  const syncFromTrips = (trips: Trip[]) => {
-    const tripEvents: CalendarEvent[] = [];
-    const now = new Date().toISOString();
+  const syncFromTrips = useCallback((trips: Trip[]) => {
+    setEvents(prev => {
+      const tripEvents: CalendarEvent[] = [];
+      const now = new Date().toISOString();
 
-    trips.forEach(trip => {
-      // Check if events already exist for this trip
-      const existingTripEvents = events.filter(e => e.tripId === trip.id && e.type === 'trip');
+      trips.forEach(trip => {
+        // Check if events already exist for this trip
+        const existingTripEvents = prev.filter(e => e.tripId === trip.id && e.type === 'trip');
 
-      if (existingTripEvents.length === 0) {
-        // Departure event
-        tripEvents.push({
-          id: `trip_start_${trip.id}`,
-          title: `Embarque: ${trip.title || trip.destination}`,
-          description: `Início da viagem para ${trip.destination}`,
-          startDate: trip.startDate,
-          startTime: '08:00',
-          endTime: '10:00',
-          allDay: false,
-          type: 'trip',
-          tripId: trip.id,
-          color: '#3b82f6',
-          location: trip.destination,
-          completed: false,
-          createdAt: now,
-          updatedAt: now,
-        });
+        if (existingTripEvents.length === 0) {
+          // Departure event
+          tripEvents.push({
+            id: `trip_start_${trip.id}`,
+            title: `Embarque: ${trip.title || trip.destination}`,
+            description: `Início da viagem para ${trip.destination}`,
+            startDate: trip.startDate,
+            startTime: '08:00',
+            endTime: '10:00',
+            allDay: false,
+            type: 'trip',
+            tripId: trip.id,
+            color: '#3b82f6',
+            location: trip.destination,
+            completed: false,
+            createdAt: now,
+            updatedAt: now,
+          });
 
-        // Return event
-        tripEvents.push({
-          id: `trip_end_${trip.id}`,
-          title: `Retorno: ${trip.title || trip.destination}`,
-          description: `Fim da viagem em ${trip.destination}`,
-          startDate: trip.endDate,
-          startTime: '18:00',
-          endTime: '20:00',
-          allDay: false,
-          type: 'trip',
-          tripId: trip.id,
-          color: '#10b981',
-          location: trip.destination,
-          completed: false,
-          createdAt: now,
-          updatedAt: now,
-        });
+          // Return event
+          tripEvents.push({
+            id: `trip_end_${trip.id}`,
+            title: `Retorno: ${trip.title || trip.destination}`,
+            description: `Fim da viagem em ${trip.destination}`,
+            startDate: trip.endDate,
+            startTime: '18:00',
+            endTime: '20:00',
+            allDay: false,
+            type: 'trip',
+            tripId: trip.id,
+            color: '#10b981',
+            location: trip.destination,
+            completed: false,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      });
+
+      if (tripEvents.length > 0) {
+        const updated = [...prev, ...tripEvents];
+        saveEvents(updated);
+        return updated;
       }
+      return prev;
     });
-
-    if (tripEvents.length > 0) {
-      saveEvents([...events, ...tripEvents]);
-    }
-  };
+  }, [saveEvents]);
 
   // Sync from itinerary activities
-  const syncFromActivities = (activities: ItineraryActivity[], tripId: string) => {
-    const activityEvents: CalendarEvent[] = [];
-    const now = new Date().toISOString();
+  const syncFromActivities = useCallback((activities: ItineraryActivity[], tripId: string) => {
+    setEvents(prev => {
+      // We need to handle both new events and updates to existing ones
+      // First, filter out any existing events for this activity that might be outdated
+      let currentEvents = [...prev];
+      const now = new Date().toISOString();
+      let hasChanges = false;
 
-    activities.forEach(activity => {
-      // Check if event already exists
-      const existingEvent = events.find(e => e.activityId === activity.id);
-
-      if (!existingEvent) {
+      activities.forEach(activity => {
         const endTime = calculateEndTime(activity.time, activity.duration || 60);
+        const existingEventIndex = currentEvents.findIndex(e => e.activityId === activity.id);
 
-        activityEvents.push({
-          id: `activity_${activity.id}`,
+        const eventData: CalendarEvent = {
+          id: existingEventIndex >= 0 ? currentEvents[existingEventIndex].id : `activity_${activity.id}`,
           title: activity.title,
           description: activity.notes,
           startDate: activity.date,
@@ -290,104 +372,95 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
           location: activity.location,
           locationDetail: activity.locationDetail,
           completed: activity.completed,
-          createdAt: now,
+          createdAt: existingEventIndex >= 0 ? currentEvents[existingEventIndex].createdAt : now,
           updatedAt: now,
-        });
-      }
-    });
+        };
 
-    if (activityEvents.length > 0) {
-      saveEvents([...events, ...activityEvents]);
-    }
-  };
+        if (existingEventIndex >= 0) {
+          // Update existing event
+          const existing = currentEvents[existingEventIndex];
+          // Check if anything actually changed to avoid unnecessary saves
+          if (
+            existing.title !== eventData.title ||
+            existing.startTime !== eventData.startTime ||
+            existing.startDate !== eventData.startDate ||
+            existing.description !== eventData.description ||
+            existing.completed !== eventData.completed
+          ) {
+            currentEvents[existingEventIndex] = eventData;
+            hasChanges = true;
+          }
+        } else {
+          // Add new event
+          currentEvents.push(eventData);
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        saveEvents(currentEvents);
+        return currentEvents;
+      }
+      return prev;
+    });
+  }, [calculateEndTime, mapActivityType, saveEvents]);
 
   // Sync from transports
-  const syncFromTransports = (transports: Transport[], tripId: string) => {
-    const transportEvents: CalendarEvent[] = [];
-    const now = new Date().toISOString();
+  const syncFromTransports = useCallback((transports: Transport[], tripId: string) => {
+    setEvents(prev => {
+      let currentEvents = [...prev];
+      const now = new Date().toISOString();
+      let hasChanges = false;
 
-    transports.forEach(transport => {
-      // Check if event already exists
-      const existingEvent = events.find(e => e.transportId === transport.id);
+      transports.forEach(transport => {
+        const existingEventIndex = currentEvents.findIndex(e => e.transportId === transport.id);
 
-      if (!existingEvent) {
-        transportEvents.push({
-          id: `transport_${transport.id}`,
+        const eventData: CalendarEvent = {
+          id: existingEventIndex >= 0 ? currentEvents[existingEventIndex].id : `transport_${transport.id}`,
           title: `${getTransportLabel(transport.type)}: ${transport.operator} ${transport.reference}`,
           description: transport.route,
           startDate: transport.departureDate,
           startTime: transport.departureTime,
           endTime: transport.arrivalTime,
           allDay: false,
-          type: transport.type,
+          type: 'activity', // Map transport types to generic activity or specific if available in CalendarEventType
           tripId: tripId,
           transportId: transport.id,
           location: transport.departureLocation,
           locationDetail: `${transport.departureCity || transport.departureLocation} → ${transport.arrivalCity || transport.arrivalLocation}`,
-          completed: false,
-          createdAt: now,
+          completed: false, // Transports don't usually have a 'completed' state in the same way, but keeping consistency
+          createdAt: existingEventIndex >= 0 ? currentEvents[existingEventIndex].createdAt : now,
           updatedAt: now,
-        });
+        };
+
+        if (existingEventIndex >= 0) {
+          // Update existing
+          const existing = currentEvents[existingEventIndex];
+          if (
+            existing.title !== eventData.title ||
+            existing.startTime !== eventData.startTime ||
+            existing.startDate !== eventData.startDate ||
+            existing.description !== eventData.description
+          ) {
+            currentEvents[existingEventIndex] = eventData;
+            hasChanges = true;
+          }
+        } else {
+          // Add new
+          currentEvents.push(eventData);
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        saveEvents(currentEvents);
+        return currentEvents;
       }
+      return prev;
     });
+  }, [getTransportLabel, saveEvents]);
 
-    if (transportEvents.length > 0) {
-      saveEvents([...events, ...transportEvents]);
-    }
-  };
-
-  // Helper functions
-  const parseDate = (dateStr: string): Date => {
-    if (dateStr.includes('/')) {
-      const [day, month, year] = dateStr.split('/').map(Number);
-      return new Date(year, month - 1, day);
-    }
-    return new Date(dateStr);
-  };
-
-  const formatDate = (date: Date): string => {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
-
-  const calculateEndTime = (startTime: string, durationMinutes: number): string => {
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const totalMinutes = hours * 60 + minutes + durationMinutes;
-    const endHours = Math.floor(totalMinutes / 60) % 24;
-    const endMinutes = totalMinutes % 60;
-    return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
-  };
-
-  const mapActivityType = (activityType: string): CalendarEvent['type'] => {
-    const typeMap: Record<string, CalendarEvent['type']> = {
-      transport: 'activity',
-      accommodation: 'accommodation',
-      meal: 'meal',
-      food: 'restaurant',
-      sightseeing: 'sightseeing',
-      culture: 'culture',
-      nature: 'nature',
-      shopping: 'shopping',
-      nightlife: 'nightlife',
-    };
-    return typeMap[activityType] || 'activity';
-  };
-
-  const getTransportLabel = (type: string): string => {
-    const labels: Record<string, string> = {
-      flight: 'Voo',
-      train: 'Trem',
-      bus: 'Ônibus',
-      car: 'Carro',
-      transfer: 'Transfer',
-      ferry: 'Balsa',
-    };
-    return labels[type] || 'Transporte';
-  };
-
-  const value: CalendarContextValue = {
+  const value = useMemo(() => ({
     events,
     selectedDate,
     viewMode,
@@ -406,7 +479,26 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     syncFromActivities,
     syncFromTransports,
     isLoading,
-  };
+  }), [
+    events,
+    selectedDate,
+    viewMode,
+    filters,
+    addEvent,
+    updateEvent,
+    deleteEvent,
+    moveEvent,
+    toggleEventComplete,
+    setSelectedDate,
+    setViewMode,
+    setFilters,
+    getEventsForDate,
+    getEventsForDateRange,
+    syncFromTrips,
+    syncFromActivities,
+    syncFromTransports,
+    isLoading,
+  ]);
 
   return (
     <CalendarContext.Provider value={value}>

@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
 import { Select, SelectOption } from '../../ui/Select';
@@ -6,16 +7,21 @@ import { Button } from '../../ui/Base';
 import { HotelReservation } from '../../../types';
 import { getGeminiService } from '../../../services/geminiService';
 import { formatDate, formatToDisplayDate } from '../../../lib/dateUtils';
+import { validateHotelDates } from '../../../validators/documentValidators';
 
 // =============================================================================
 // Types & Interfaces
 // =============================================================================
+
+import { conflictDetector, ConflictResult } from '../../../services/conflictDetector';
+import { Transport } from '../../../types';
 
 interface AddAccommodationModalProps {
     isOpen: boolean;
     onClose: () => void;
     onAdd: (accommodation: Omit<HotelReservation, 'id'>) => void;
     initialData?: HotelReservation | null;
+    flights?: Transport[];
 }
 
 interface AccommodationFormData {
@@ -202,7 +208,8 @@ import { googlePlacesService } from '../../../services/googlePlacesService';
 // Main Component
 // =============================================================================
 
-const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, onClose, onAdd, initialData }) => {
+const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
+    const { isOpen, onClose, onAdd, initialData } = props;
     const [mode, setMode] = useState<InputMode>('manual');
     const [formData, setFormData] = useState<AccommodationFormData>(INITIAL_FORM_STATE);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -223,7 +230,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
                 checkOut: initialData.checkOut || '',
                 checkOutTime: initialData.checkOutTime || '11:00',
                 confirmation: initialData.confirmation || '',
-                status: initialData.status || 'pending',
+                status: (initialData.status === 'confirmed' || initialData.status === 'pending') ? initialData.status : 'pending',
             });
             setMode('manual');
             setError(null);
@@ -381,6 +388,9 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
         }
     }, [formData.checkIn, formData.checkOut, formData.nights, updateField]);
 
+    const [conflicts, setConflicts] = useState<ConflictResult[]>([]);
+    const [showConflictModal, setShowConflictModal] = useState(false);
+
     const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name || !formData.checkIn || !formData.checkOut) {
@@ -388,9 +398,28 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
             return;
         }
 
-        if (new Date(formData.checkOut) <= new Date(formData.checkIn)) {
+        if (!validateHotelDates(formData.checkIn, formData.checkOut)) {
             setError('A data de saída deve ser posterior à data de entrada.');
             return;
+        }
+
+        // Conflict Detection
+        if (!showConflictModal && props.flights) {
+            const tempHotel = {
+                ...formData,
+                id: 'temp',
+                status: 'confirmed' as const
+            };
+            const detectedConflicts = conflictDetector.checkAccommodationConflicts(
+                tempHotel as HotelReservation,
+                props.flights
+            );
+
+            if (detectedConflicts.length > 0) {
+                setConflicts(detectedConflicts);
+                setShowConflictModal(true);
+                return;
+            }
         }
 
         const formatDisplayDate = (dateStr: string) =>
@@ -413,12 +442,64 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
 
         resetForm();
         onClose();
-    }, [formData, onAdd, onClose, resetForm]);
+        setConflicts([]);
+        setShowConflictModal(false);
+    }, [formData, onAdd, onClose, resetForm, props.flights, showConflictModal]);
 
     const handleClose = useCallback(() => {
         resetForm();
         onClose();
+        setConflicts([]);
+        setShowConflictModal(false);
     }, [onClose, resetForm]);
+
+    // Conflict Modal Overlay
+    if (showConflictModal) {
+        return (
+            <Modal
+                isOpen={isOpen}
+                onClose={() => setShowConflictModal(false)}
+                title="Conflitos na Hospedagem"
+                size="md"
+                footer={
+                    <>
+                        <Button variant="outline" onClick={() => setShowConflictModal(false)}>
+                            Revisar Datas
+                        </Button>
+                        <Button onClick={handleSubmit} className="bg-amber-500 hover:bg-amber-600 border-amber-600">
+                            Confirmar Assim Mesmo
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-center">
+                        <span className="material-symbols-outlined text-3xl text-amber-500 mb-2">hotel_class</span>
+                        <h3 className="font-bold text-amber-700">Verifique as datas da estadia</h3>
+                        <p className="text-sm text-amber-600/80">Conflito com voos detectado.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                        {conflicts.map((c, i) => (
+                            <div key={i} className={`p-4 rounded-xl border flex gap-3 ${c.severity === 'error' ? 'bg-rose-50 border-rose-100' : 'bg-yellow-50 border-yellow-100'}`}>
+                                <span className={`material-symbols-outlined text-xl ${c.severity === 'error' ? 'text-rose-500' : 'text-yellow-600'}`}>
+                                    {c.severity === 'error' ? 'event_busy' : 'warning'}
+                                </span>
+                                <div>
+                                    <p className={`font-bold text-sm ${c.severity === 'error' ? 'text-rose-700' : 'text-yellow-700'}`}>
+                                        {c.message}
+                                    </p>
+                                    {c.suggestedFix && (
+                                        <p className="text-xs text-text-muted mt-1">💡 {c.suggestedFix}</p>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </Modal>
+        );
+    }
 
     const footer = (
         <>
@@ -436,7 +517,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
             isOpen={isOpen}
             onClose={handleClose}
             title="Adicionar Hospedagem"
-            size="sm"
+            size="lg"
             footer={footer}
         >
             {/* Mode Toggle */}
@@ -474,78 +555,90 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = ({ isOpen, o
                 </div>
 
                 {/* Address */}
-                <Input
-                    label="Endereço"
-                    value={formData.address}
-                    onChange={(e) => updateField('address', e.target.value)}
-                    placeholder="Ex: Rua Vittorio Fasano, 88"
-                    fullWidth
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                        <Input
+                            label="Endereço"
+                            value={formData.address}
+                            onChange={(e) => updateField('address', e.target.value)}
+                            placeholder="Ex: Rua Vittorio Fasano, 88"
+                            fullWidth
+                        />
+                    </div>
+                </div>
 
                 {/* Check-in / Check-out */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Input
-                            label="Check-in"
-                            type="date"
-                            value={formData.checkIn}
-                            onChange={(e) => updateField('checkIn', e.target.value)}
-                            required
-                            fullWidth
-                        />
-                        <Input
-                            type="time"
-                            value={formData.checkInTime}
-                            onChange={(e) => updateField('checkInTime', e.target.value)}
-                            fullWidth
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                            <Input
+                                label="Check-in"
+                                type="date"
+                                value={formData.checkIn}
+                                onChange={(e) => updateField('checkIn', e.target.value)}
+                                required
+                                fullWidth
+                            />
+                            <Input
+                                type="time"
+                                label="Horário"
+                                value={formData.checkInTime}
+                                onChange={(e) => updateField('checkInTime', e.target.value)}
+                                fullWidth
+                            />
+                        </div>
                     </div>
                     <div className="space-y-2">
-                        <Input
-                            label="Check-out"
-                            type="date"
-                            value={formData.checkOut}
-                            onChange={(e) => updateField('checkOut', e.target.value)}
-                            required
-                            fullWidth
-                        />
-                        <Input
-                            type="time"
-                            value={formData.checkOutTime}
-                            onChange={(e) => updateField('checkOutTime', e.target.value)}
-                            fullWidth
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                            <Input
+                                label="Check-out"
+                                type="date"
+                                value={formData.checkOut}
+                                onChange={(e) => updateField('checkOut', e.target.value)}
+                                required
+                                fullWidth
+                            />
+                            <Input
+                                type="time"
+                                label="Horário"
+                                value={formData.checkOutTime}
+                                onChange={(e) => updateField('checkOutTime', e.target.value)}
+                                fullWidth
+                            />
+                        </div>
                     </div>
                 </div>
 
-                {/* Nights */}
-                <div className="grid grid-cols-2 gap-4">
-                    <Input
-                        label="Noites"
-                        type="number"
-                        min="1"
-                        value={formData.nights.toString()}
-                        onChange={(e) => updateField('nights', parseInt(e.target.value) || 1)}
-                        fullWidth
-                    />
-                </div>
-
-                {/* Confirmation & Status */}
-                <div className="grid grid-cols-2 gap-4">
-                    <Input
-                        label="Código de Reserva"
-                        value={formData.confirmation}
-                        onChange={(e) => updateField('confirmation', e.target.value)}
-                        placeholder="Ex: HB-12345"
-                        fullWidth
-                    />
-                    <Select
-                        label="Status"
-                        value={formData.status}
-                        onChange={(e) => updateField('status', e.target.value as 'confirmed' | 'pending')}
-                        options={STATUS_OPTIONS}
-                        fullWidth
-                    />
+                {/* Details Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-1">
+                        <Input
+                            label="Noites"
+                            type="number"
+                            min="1"
+                            value={formData.nights.toString()}
+                            onChange={(e) => updateField('nights', parseInt(e.target.value) || 1)}
+                            fullWidth
+                        />
+                    </div>
+                    <div className="md:col-span-2">
+                        <Input
+                            label="Código de Reserva"
+                            value={formData.confirmation}
+                            onChange={(e) => updateField('confirmation', e.target.value)}
+                            placeholder="Ex: HB-12345"
+                            fullWidth
+                        />
+                    </div>
+                    <div className="md:col-span-1">
+                        <Select
+                            label="Status"
+                            value={formData.status}
+                            onChange={(e) => updateField('status', e.target.value as 'confirmed' | 'pending')}
+                            options={STATUS_OPTIONS}
+                            fullWidth
+                        />
+                    </div>
                 </div>
             </form>
         </Modal>
