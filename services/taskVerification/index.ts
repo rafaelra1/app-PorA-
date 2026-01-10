@@ -65,3 +65,21 @@ export { YellowFeverVaccineRule } from './rules/YellowFeverVaccineRule';
 export { HighAltitudeMedicationRule } from './rules/HighAltitudeMedicationRule';
 export { NotifyBankRule } from './rules/NotifyBankRule';
 export { OfflineMapsRule } from './rules/OfflineMapsRule';
+
+// =============================================================================
+// LLM Analysis Module (AI-powered contextual insights)
+// =============================================================================
+
+export {
+  LLMAnalysisService,
+  getLLMAnalysisService,
+} from './llm';
+
+export type {
+  LLMInsight,
+  LLMSuggestedTask,
+  LLMAnalysisResult,
+  AnalysisTrigger,
+  ConfidenceLevel,
+  InsightCategory,
+} from './llm';
