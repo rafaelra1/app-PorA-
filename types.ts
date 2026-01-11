@@ -974,6 +974,23 @@ export interface TripContext {
   interests?: string[];
 }
 
+export interface PlanningGap {
+  type: 'accommodation' | 'transport';
+  severity: 'critical' | 'warning';
+  description: string;
+  date?: string;
+}
+
+export interface EnhancedTripContext extends TripContext {
+  cities?: DetailedDestination[];
+  flights?: Transport[];
+  hotels?: HotelReservation[];
+  activities?: ItineraryActivity[];
+  existingTasks?: string[];
+  tripType?: string;
+  planningGaps?: PlanningGap[];
+}
+
 export interface ChecklistInsight {
   id: string;
   type: 'weather' | 'event' | 'logistics' | 'local_tip';

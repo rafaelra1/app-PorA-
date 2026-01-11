@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo, DocumentAnalysisResult, FieldWithConfidence, BatchAnalysisResult, DebugInfo, TripContext, ChecklistAnalysisResult, TripViabilityAnalysis, TravelPeriod } from '../types';
+import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo, DocumentAnalysisResult, FieldWithConfidence, BatchAnalysisResult, DebugInfo, TripContext, EnhancedTripContext, ChecklistAnalysisResult, TripViabilityAnalysis, TravelPeriod } from '../types';
 
 // =============================================================================
 // Types & Interfaces
@@ -693,7 +693,7 @@ IMPORTANTE:
 - Retorne APENAS o JSON, sem markdown`;
   },
 
-  analyzeChecklist: (context: TripContext) => {
+  analyzeChecklist: (context: EnhancedTripContext) => {
     // Calculate days until trip and trip duration
     const today = new Date();
     const startDate = new Date(context.startDate);
@@ -704,45 +704,68 @@ IMPORTANTE:
 
     // Extract traveler details
     const travelerSummary = context.travelers?.map((t, i) => {
-      if (typeof t === 'object' && t !== null) {
-        const details: string[] = [];
-        if ('name' in t) details.push(`Nome: ${t.name}`);
-        if ('ageGroup' in t) details.push(`Grupo: ${t.ageGroup}`);
-        if ('age' in t) details.push(`Idade: ${t.age}`);
-        if ('dietaryRestrictions' in t && Array.isArray(t.dietaryRestrictions) && t.dietaryRestrictions.length > 0) {
-          details.push(`Restrições Alimentares: ${t.dietaryRestrictions.join(', ')}`);
-        }
-        if ('mobilityRestrictions' in t && Array.isArray(t.mobilityRestrictions) && t.mobilityRestrictions.length > 0) {
-          details.push(`Mobilidade: ${t.mobilityRestrictions.join(', ')}`);
-        }
-        return `Viajante ${i + 1}: ${details.join(', ') || 'Sem detalhes'}`;
+      // ... existing traveler formatting logic ...
+      const details: string[] = [];
+      if ('name' in t) details.push(`Nome: ${t.name}`);
+      if ('ageGroup' in t) details.push(`Grupo: ${t.ageGroup}`);
+      if ('age' in t) details.push(`Idade: ${t.age}`);
+      if ('dietaryRestrictions' in t && Array.isArray(t.dietaryRestrictions) && t.dietaryRestrictions.length > 0) {
+        details.push(`Restrições: ${t.dietaryRestrictions.join(', ')}`);
       }
-      return `Viajante ${i + 1}: ${JSON.stringify(t)}`;
+      return `Viajante ${i + 1}: ${details.join(', ') || 'Sem detalhes'}`;
     }).join('\n') || 'Não especificado';
 
-    return `Você é um assistente de viagem experiente e meticuloso. Analise o contexto desta viagem e gere sugestões inteligentes de tarefas e insights.
+    // Extract detailed context
+    const flightSummary = context.flights?.map(f =>
+      `- Voo ${f.reference} (${f.operator}): ${f.departureLocation} -> ${f.arrivalLocation} em ${f.departureDate}`
+    ).join('\n') || 'Nenhum voo registrado';
+
+    const hotelSummary = context.hotels?.map(h =>
+      `- ${h.name} (${h.address || 'Endereço n/d'}) - ${h.checkIn} a ${h.checkOut}`
+    ).join('\n') || 'Nenhuma hospedagem registrada';
+
+    const activitySummary = context.activities?.map(a =>
+      `- ${a.date} ${a.time}: ${a.title} (${a.type})`
+    ).join('\n') || 'Nenhuma atividade planejada';
+
+    const citiesSummary = context.cities?.map(c => `${c.name} (${c.country})`).join(', ') || context.destination;
+
+    const gapAlerts = context.planningGaps?.map(gap =>
+      `⚠️ ALERTA DE PLANEJAMENTO (${gap.severity}): ${gap.description} (Data: ${gap.date || 'Geral'})`
+    ).join('\n') || '';
+
+    return `Você é um assistente de viagem experiente e meticuloso. Analise o contexto desta viagem DETALHADAMENTE e gere sugestões de tarefas e insights altamente personalizados.
 
 CONTEXTO DA VIAGEM:
-Destino: ${context.destination}
-Datas: ${context.startDate} a ${context.endDate}
-Mês da Viagem: ${travelMonth}
+Destino(s): ${citiesSummary}
+Datas: ${context.startDate} a ${context.endDate} (${travelMonth})
 Duração: ${tripDuration} dias
-Dias até a viagem: ${daysUntilTrip} dias
+Faltam: ${daysUntilTrip} dias para a viagem
+
+ALERTAS CRÍTICOS (FALTA DE RESERVAS):
+${gapAlerts || 'Nenhum gap crítico detectado pela análise automática.'}
+
+LOGÍSTICA CONFIRMADA:
+Voos:
+${flightSummary}
+
+Hospedagem:
+${hotelSummary}
+
+Atividades Planejadas:
+${activitySummary}
 
 PERFIL DOS VIAJANTES:
 ${travelerSummary}
 
 INTERESSES: ${context.interests?.join(', ') || 'Geral'}
 
-TAREFAS JÁ EXISTENTES (para evitar duplicatas):
-As seguintes tarefas já foram automaticamente geradas pelo sistema:
-- Verificar validade do passaporte
-- Contratar seguro viagem internacional
-- Verificar requisitos de visto
+TAREFAS JÁ EXISTENTES (Ignorar duplicatas):
+${context.existingTasks?.join('\n') || 'Nenhuma'}
 
-Gere um JSON com sugestões PERSONALIZADAS e insights úteis que COMPLEMENTEM o que já existe.
+Gere um JSON com sugestões PERSONALIZADAS e INSIGHTS úteis.
 
-Estrutura esperada (RETORNE APENAS JSON VÁLIDO):
+Estrutura esperada (JSON PURO):
 {
   "insights": [
     {
@@ -764,17 +787,18 @@ Estrutura esperada (RETORNE APENAS JSON VÁLIDO):
   ]
 }
 
-REGRAS OBRIGATÓRIAS:
-1. **Especificidade é CRÍTICA**: Cada sugestão DEVE mencionar algo específico do destino ${context.destination} ou do período ${travelMonth}.
-2. **Considere o clima**: ${travelMonth} em ${context.destination} - sugira itens de mala apropriados (ex: guarda-chuva para monções, roupas de frio para inverno).
-3. **Perfil dos viajantes**: Se houver crianças, idosos ou restrições, sugira tarefas específicas (remédios, comidas, acessibilidade).
-4. **Eventos locais**: Se souber de feriados ou eventos em ${context.destination} durante as datas, mencione como insight.
-5. **CATEGORIAS VÁLIDAS**: Use APENAS estas categorias para suggestedTasks: documentation, health, reservations, packing, financial, tech. NÃO use outras.
-6. **Anti-Alucinação**: NÃO invente informações. Se não souber algo específico sobre ${context.destination}, não inclua.
-7. **Evite óbvios**: NÃO sugira "Fazer mala", "Reservar hotel", "Comprar passagens" sem contexto específico.
-8. **Urgência**: Marque isUrgent=true APENAS se a viagem for em menos de 14 dias E a tarefa for crítica.
-9. **Insights relevantes**: Insights devem ser genuinamente úteis (ex: "Golden Week no Japão durante suas datas" ou "Época de chuvas na Tailândia").
-10. Retorne APENAS o JSON, sem markdown (não use \`\`\`json).`;
+REGRAS DE ANÁLISE ESPECIALIZADA:
+0. **PRIORIDADE MÁXIMA**: Se houver "ALERTAS CRÍTICOS" acima, gere IMEDIATAMENTE tarefas para resolvê-los (ex: "Reservar hotel para os dias X", "Comprar passagem aérea"). Marque como URGENTE.
+1. **Documentação & Vistos**: Verifique se os países (${citiesSummary}) exigem passaporte/visto para a nacionalidade (assuma Brasileiros se não especificado). Se faltar < 30 dias e não houver tarefa de visto, crie alerta URGENTE.
+2. **Saúde & Vacinas**: Se o destino exige vacina (ex: Febre Amarela para alguns países), verifique se está no checklist.
+3. **Clima & Bagagem**: Baseado no mês (${travelMonth}) e destino, sugira itens Específicos (ex: "Levar adaptador tipo G para UK", "Roupas térmicas para neve").
+4. **Logística**: Se houver troca de cidades ou voos complexos, sugira "Imprimir comprovantes" ou "Verificar transfer".
+5. **Atividades**: Se tiver atividades físicas (trilhas) ou jantares chiques, sugira roupas adequadas.
+6. **Anti-Alucinação**: Apenas sugira eventos/feriados se tiver certeza que ocorrem nestas datas específicas em ${citiesSummary}.
+7. **Não Repita**: Se a tarefa já existe na lista "TAREFAS JÁ EXISTENTES", NÃO sugira novamente.
+8. **Categorias Validas**: documentation, health, reservations, packing, financial, tech.
+
+Retorne APENAS o JSON válido.`;
   },
 
   alertDetails: (title: string, message: string, cities: string) => {

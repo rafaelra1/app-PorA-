@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { GeminiService } from '../services/geminiService';
-import { TripContext, ChecklistAnalysisResult, ChecklistTask, ChecklistInsight } from '../types';
+import { TripContext, EnhancedTripContext, ChecklistAnalysisResult, ChecklistTask, ChecklistInsight } from '../types';
 import { useLocalStorage } from './useLocalStorage';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -16,7 +16,7 @@ const isDebugMode = () => {
 interface UseLLMAnalysisReturn {
     isAnalyzing: boolean;
     analysisResult: ChecklistAnalysisResult | null;
-    analyzeChecklist: (context: TripContext, existingTaskTitles?: string[]) => Promise<void>;
+    analyzeChecklist: (context: EnhancedTripContext, existingTaskTitles?: string[]) => Promise<void>;
     acceptSuggestion: (suggestionId: string) => ChecklistTask | undefined;
     rejectSuggestion: (suggestionId: string) => void;
     clearAnalysis: () => void;
@@ -31,7 +31,7 @@ export const useLLMAnalysis = (tripId: string): UseLLMAnalysisReturn => {
         null
     );
 
-    const analyzeChecklist = useCallback(async (context: TripContext, existingTaskTitles: string[] = []) => {
+    const analyzeChecklist = useCallback(async (context: EnhancedTripContext, existingTaskTitles: string[] = []) => {
         // Prevent analysis if already running
         if (isAnalyzing) return;
 
@@ -41,7 +41,32 @@ export const useLLMAnalysis = (tripId: string): UseLLMAnalysisReturn => {
                 console.log('[Checklist AI] Starting analysis with context:', context);
             }
 
-            const result = await geminiService.analyzeChecklist(context);
+            // Retry logic with timeout
+            const fetchWithRetry = async (retries = 2, delay = 1000): Promise<ChecklistAnalysisResult> => {
+                try {
+                    // Create a timeout promise
+                    const timeoutPromise = new Promise<never>((_, reject) => {
+                        setTimeout(() => reject(new Error('Timeout: AI Analysis took too long')), 30000);
+                    });
+
+                    // Race between analysis and timeout
+                    const result = await Promise.race([
+                        geminiService.analyzeChecklist(context),
+                        timeoutPromise
+                    ]);
+
+                    return result as ChecklistAnalysisResult;
+                } catch (error) {
+                    if (retries > 0) {
+                        console.warn(`[Checklist AI] Analysis failed, retrying in ${delay}ms... (${retries} attempts left)`, error);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return fetchWithRetry(retries - 1, delay * 2);
+                    }
+                    throw error;
+                }
+            };
+
+            const result = await fetchWithRetry();
 
             if (isDebugMode()) {
                 console.log('[Checklist AI] Raw response from Gemini:', JSON.stringify(result, null, 2));
@@ -65,7 +90,7 @@ export const useLLMAnalysis = (tripId: string): UseLLMAnalysisReturn => {
             setAnalysisResult(result);
         } catch (error) {
             console.error('[Checklist AI] Failed to analyze checklist:', error);
-            // Optionally set error state here
+            // Fallback: could trigger local rules here if needed, or just show error toast in UI
         } finally {
             setIsAnalyzing(false);
         }

@@ -8,7 +8,7 @@ interface ChecklistContextType {
     tasks: Task[];
     isLoading: boolean;
     isSyncing: boolean;
-    addTask: (title: string, tripId: string, options?: { dueDate?: string; category?: TaskCategory; priority?: TaskPriorityLevel; description?: string }) => Promise<void>;
+    addTask: (title: string, tripId: string, options?: { dueDate?: string; category?: TaskCategory; priority?: TaskPriorityLevel; description?: string; ruleId?: string }) => Promise<void>;
     toggleTask: (taskId: string, isCompleted: boolean) => Promise<void>;
     updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
     deleteTask: (taskId: string) => Promise<void>;
@@ -93,7 +93,7 @@ export const ChecklistProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
     };
 
-    const addTask = useCallback(async (title: string, tripId: string, options?: { dueDate?: string; category?: TaskCategory; priority?: TaskPriorityLevel; description?: string }) => {
+    const addTask = useCallback(async (title: string, tripId: string, options?: { dueDate?: string; category?: TaskCategory; priority?: TaskPriorityLevel; description?: string; ruleId?: string }) => {
         if (!user) return;
 
         const newTask: Task = {
@@ -106,6 +106,7 @@ export const ChecklistProvider: React.FC<{ children: ReactNode }> = ({ children 
             is_urgent: options?.priority === 'blocking',
             category: options?.category,
             priority: options?.priority,
+            rule_id: options?.ruleId,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };
