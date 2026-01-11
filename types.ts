@@ -47,7 +47,7 @@ export interface UserPreferences {
 }
 
 // Tab types for TripDetails navigation
-export type SubTab = 'overview' | 'checklist' | 'itinerary' | 'map' | 'cities' | 'logistics' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories';
+export type SubTab = 'overview' | 'checklist' | 'itinerary' | 'map' | 'cities' | 'logistics' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories' | 'media';
 export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map';
 export type DocsFilter = 'Tudo' | 'Reservas' | 'Pessoais' | 'Outros';
 export type ReservationType = 'hotel' | 'flight' | 'car' | 'insurance' | 'activity' | 'train' | 'bus' | 'transfer' | 'ferry' | 'other';
@@ -77,6 +77,9 @@ export interface TripDocument {
   pickupLocation?: string;
   dropoffLocation?: string;
   model?: string;
+  // Reservation linking fields
+  linkedAccommodationId?: string; // Links to HotelReservation
+  linkedTransportId?: string; // Links to Transport
 }
 export type ExpenseCategory = 'alimentacao' | 'transporte' | 'hospedagem' | 'lazer' | 'compras' | 'outros';
 export type ExpenseFilter = 'todas' | 'entradas' | 'saidas';
@@ -835,6 +838,7 @@ export interface TravelPreferencesV2 {
 
 export type CalendarEventType =
   | 'trip'
+  | 'holiday' // Brazilian holidays
   | 'transport' // Added Generic transport
   | 'flight'
   | 'train'
@@ -989,5 +993,32 @@ export interface ChecklistTask {
 export interface ChecklistAnalysisResult {
   insights: ChecklistInsight[];
   suggestedTasks: ChecklistTask[];
+}
+
+// =============================================================================
+// Trip Viability Analysis Types (Imagine Trips Feature)
+// =============================================================================
+
+export type ViabilityLevel = 'recommended' | 'acceptable' | 'not_recommended';
+
+export interface TravelPeriod {
+  type: 'exact' | 'estimated';
+  startDate?: string;
+  endDate?: string;
+  month?: string;
+  year?: number;
+}
+
+export interface TripViabilityAnalysis {
+  viability: ViabilityLevel;
+  summary: string;
+  pros: string[];
+  cons: string[];
+  climate: {
+    description: string;
+    avgTemp: string;
+  };
+  events: string[];
+  tips: string[];
 }
 

@@ -22,6 +22,7 @@ import {
   ItineraryActivity
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useTrips } from '../contexts/TripContext';
 import { getGeminiService } from '../services/geminiService';
 
 // Existing Trip Details Components
@@ -63,6 +64,7 @@ import { useChecklist } from '../contexts/ChecklistContext';
 
 import { TaskChecklist } from '../components/trip-details/city-guide/TaskChecklist';
 import TripMapExplorer from '../components/trip-details/maps/TripMapExplorer';
+import MediaView from '../components/trip-details/media/MediaView';
 
 interface TripDetailsProps {
   trip: Trip;
@@ -72,6 +74,7 @@ interface TripDetailsProps {
 
 const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }) => {
   const { user } = useAuth();
+  const { updateTrip } = useTrips();
   // Inner Trip Details State (Tabs)
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('overview');
   const [activeCityTab, setActiveCityTab] = useState<CityTab>('info');
@@ -268,6 +271,35 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
     if (window.confirm('Tem certeza que deseja excluir esta memória?')) {
       setJournalEntries(prev => prev.filter(e => e.id !== id));
     }
+  };
+
+  // Video handlers
+  const handleAddVideo = async (url: string) => {
+    const videoId = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^#&?]*)/)?.[1];
+    if (!videoId) return;
+
+    const newVideo = {
+      id: `video-${Date.now()}`,
+      url: url,
+      title: 'Vídeo do YouTube',
+      thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+      addedAt: new Date().toISOString()
+    };
+
+    const updatedTrip = {
+      ...trip,
+      videos: [...(trip.videos || []), newVideo]
+    };
+
+    await updateTrip(updatedTrip);
+  };
+
+  const handleRemoveVideo = async (id: string) => {
+    const updatedTrip = {
+      ...trip,
+      videos: (trip.videos || []).filter(v => v.id !== id)
+    };
+    await updateTrip(updatedTrip);
   };
 
   // Handlers
@@ -798,16 +830,10 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         return (
           <OverviewTab
             trip={trip}
-            expenses={expenses}
             cities={cities}
             hotels={hotels}
             transports={transports}
             activities={itineraryActivities}
-            totalBudget={totalBudget}
-            onInvite={() => {
-              // TODO: Open invite modal or share functionality
-              alert('Convidar participantes - funcionalidade a ser implementada');
-            }}
             onCityClick={(city) => {
               // Navigate to city guide
               handleOpenCityDetail(city);
@@ -887,26 +913,18 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             onDeleteExpense={handleDeleteExpense}
           />
         );
+      case 'media':
+        return (
+          <MediaView
+            trip={trip}
+            onAddVideo={handleAddVideo}
+            onRemoveVideo={handleRemoveVideo}
+          />
+        );
       case 'memories':
         return <JournalView tripTitle={trip.title || trip.destination} tripStartDate={trip.startDate} onDeleteEntry={handleDeleteJournalEntry} />;
       default: return null;
     }
-  };
-
-  // Section titles mapping
-  const sectionTitles: Record<SubTab, string> = {
-    overview: 'Overview',
-    checklist: 'Checklist',
-    itinerary: 'Itinerário',
-    map: 'Mapa 3D',
-    accommodation: 'Hospedagem',
-    transport: 'Transportes',
-    docs: 'Documentos',
-    budget: 'Despesas',
-    journal: 'Diário',
-    memories: 'Memórias',
-    cities: 'Cidades',
-    logistics: 'Logística',
   };
 
   // Trip stats for sidebar badges
@@ -921,41 +939,30 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white animate-in fade-in slide-in-from-right-4 duration-500">
-      {/* Sidebar Fixa */}
+    <div className="flex flex-col h-screen overflow-hidden bg-white animate-in fade-in slide-in-from-right-4 duration-500">
+      {/* Header */}
+      <div className="shrink-0 p-6 md:p-8 pb-0 bg-white">
+        <TripDetailsHeader trip={trip} onBack={onBack} onEdit={onEdit} onShare={() => setIsShareModalOpen(true)} />
+      </div>
+
+      {/* Navegação Horizontal */}
       <TripSidebar
         activeTab={activeSubTab}
         onTabChange={setActiveSubTab}
         tripStats={tripStats}
-        onBack={onBack}
       />
 
       {/* Conteúdo Principal */}
-      <div className="flex-1 flex flex-col min-w-0">
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto relative scroll-smooth bg-white [&::-webkit-scrollbar]:hidden">
-          <div className="p-6 md:p-8 pb-0">
-            <TripDetailsHeader trip={trip} onBack={onBack} onEdit={onEdit} onShare={() => setIsShareModalOpen(true)} />
-          </div>
-
-          {/* Section Header */}
-          <div className="px-6 md:px-8 py-4">
-            <h2 className="text-2xl font-bold text-gray-900">
-              {sectionTitles[activeSubTab] || 'Overview'}
-            </h2>
-          </div>
-
-          {/* Content */}
-          <div
-            className="p-6 md:p-8 pb-32 space-y-8"
-            role="tabpanel"
-            id={`panel-${activeSubTab}`}
-            aria-labelledby={`tab-${activeSubTab}`}
-            tabIndex={0}
-          >
-            {renderTripDetailContent()}
-          </div>
+      <div className="flex-1 overflow-y-auto relative scroll-smooth bg-white [&::-webkit-scrollbar]:hidden">
+        {/* Content */}
+        <div
+          className="p-6 md:p-8 pt-4 pb-32 space-y-8"
+          role="tabpanel"
+          id={`panel-${activeSubTab}`}
+          aria-labelledby={`tab-${activeSubTab}`}
+          tabIndex={0}
+        >
+          {renderTripDetailContent()}
         </div>
       </div>
 
@@ -1066,12 +1073,14 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         isOpen={isAddAccommodationModalOpen}
         onClose={() => {
           setIsAddAccommodationModalOpen(false);
-          // setEditingAccommodation(null); // Variable not defined in scope, was commented out in my view but might exist.
+          setSelectedAccommodation(null);
           // setTargetCityId(null);
         }}
         onAdd={handleAddAccommodation}
-        initialData={null} // was editingAccommodation?
+        initialData={selectedAccommodation}
         flights={transports}
+        cities={cities.map(c => ({ id: c.id, name: c.name }))}
+        accommodations={hotels}
       />
 
       <Modal

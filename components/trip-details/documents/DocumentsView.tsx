@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { TripDocument, DocsFilter, DocumentType, Participant, DocumentStatus } from '../../../types';
+import { TripDocument, DocsFilter, DocumentType, Participant, HotelReservation, Transport } from '../../../types';
 import { Button } from '../../ui/Base';
 import { DOC_FILTERS } from '../../../constants';
 import DocumentCard from './DocumentCard';
@@ -13,11 +13,15 @@ import TravelerFilter from './TravelerFilter';
 interface DocumentsViewProps {
     documents?: TripDocument[];
     travelers?: Participant[];
+    accommodations?: HotelReservation[];
+    transports?: Transport[];
     docsFilter: DocsFilter;
     onFilterChange: (filter: DocsFilter) => void;
     onAddDocument?: () => void;
     onDocumentClick?: (doc: TripDocument) => void;
     onDeleteDocument?: (id: string) => void;
+    onNavigateToAccommodation?: (accommodationId: string) => void;
+    onNavigateToTransport?: (transportId: string) => void;
 }
 
 // =============================================================================
@@ -27,11 +31,15 @@ interface DocumentsViewProps {
 const DocumentsView: React.FC<DocumentsViewProps> = ({
     documents = [],
     travelers = [],
+    accommodations = [],
+    transports = [],
     docsFilter,
     onFilterChange,
     onAddDocument,
     onDocumentClick,
-    onDeleteDocument
+    onDeleteDocument,
+    onNavigateToAccommodation,
+    onNavigateToTransport
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'name' | 'type'>('date');
@@ -245,6 +253,13 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({
                                 onClick={() => onDocumentClick?.(doc)}
                                 onCopyReference={handleCopyReference}
                                 onDelete={() => onDeleteDocument?.(doc.id)}
+                                onNavigateToReservation={
+                                    doc.linkedAccommodationId
+                                        ? () => onNavigateToAccommodation?.(doc.linkedAccommodationId!)
+                                        : doc.linkedTransportId
+                                            ? () => onNavigateToTransport?.(doc.linkedTransportId!)
+                                            : undefined
+                                }
                             />
                         ))}
 
@@ -276,6 +291,13 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({
                                 onClick={() => onDocumentClick?.(doc)}
                                 onCopyReference={handleCopyReference}
                                 onDelete={() => onDeleteDocument?.(doc.id)}
+                                onNavigateToReservation={
+                                    doc.linkedAccommodationId
+                                        ? () => onNavigateToAccommodation?.(doc.linkedAccommodationId!)
+                                        : doc.linkedTransportId
+                                            ? () => onNavigateToTransport?.(doc.linkedTransportId!)
+                                            : undefined
+                                }
                             />
                         ))}
                     </div>

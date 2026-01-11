@@ -1,12 +1,13 @@
 import React from 'react';
-import { ChecklistInsight, SuggestedTask } from '../../../types';
+import { ChecklistInsight, ChecklistTask } from '../../../types';
 
 interface AIInsightsProps {
     insights: ChecklistInsight[];
-    suggestions: SuggestedTask[];
-    onAccept: (suggestion: SuggestedTask) => void;
+    suggestions: ChecklistTask[];
+    onAccept: (suggestion: ChecklistTask) => void;
     onReject: (id: string) => void;
-    onDismissInsight: (id: string) => void; // Optional: if we want to dismiss insights/alerts
+    onDismissInsight: (id: string) => void;
+    onAcceptAll?: () => void; // New: batch approval
 }
 
 export const AIInsights: React.FC<AIInsightsProps> = ({
@@ -14,15 +15,29 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
     suggestions,
     onAccept,
     onReject,
-    onDismissInsight
+    onDismissInsight,
+    onAcceptAll
 }) => {
     if (insights.length === 0 && suggestions.length === 0) return null;
+
+    const handleAcceptAll = () => {
+        if (onAcceptAll) {
+            onAcceptAll();
+        } else {
+            // Fallback: accept each suggestion individually
+            suggestions.forEach(s => onAccept(s));
+        }
+    };
 
     return (
         <div className="space-y-6 mb-8 animate-fade-in-up">
             {/* Insights Section */}
             {insights.length > 0 && (
                 <div className="grid gap-3">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="material-symbols-outlined text-emerald-500 text-lg">lightbulb</span>
+                        <h4 className="text-sm font-bold text-gray-800">Insights da IA</h4>
+                    </div>
                     {insights.map(insight => (
                         <div
                             key={insight.id}
@@ -63,11 +78,6 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
                                     {insight.description}
                                 </p>
                             </div>
-
-                            {/* Dismiss (optional) */}
-                            {/* <button onClick={() => onDismissInsight(insight.id)} className="text-gray-400 hover:text-gray-600">
-                                <span className="material-symbols-outlined text-sm">close</span>
-                            </button> */}
                         </div>
                     ))}
                 </div>
@@ -76,12 +86,23 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
             {/* Suggestions Section */}
             {suggestions.length > 0 && (
                 <div className="bg-gradient-to-br from-indigo-50/80 to-purple-50/50 border border-indigo-100 rounded-2xl p-5">
-                    <div className="flex items-center gap-2 mb-4">
-                        <span className="material-symbols-outlined text-indigo-500">auto_awesome</span>
-                        <h3 className="text-sm font-bold text-indigo-900">Sugestões da IA</h3>
-                        <span className="text-xs font-medium px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full">
-                            {suggestions.length} novas
-                        </span>
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-indigo-500">auto_awesome</span>
+                            <h3 className="text-sm font-bold text-indigo-900">Sugestões da IA</h3>
+                            <span className="text-xs font-medium px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full">
+                                {suggestions.length} novas
+                            </span>
+                        </div>
+                        {suggestions.length > 1 && (
+                            <button
+                                onClick={handleAcceptAll}
+                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                            >
+                                <span className="material-symbols-outlined text-sm">done_all</span>
+                                Adicionar Todas
+                            </button>
+                        )}
                     </div>
 
                     <div className="space-y-3">
@@ -91,7 +112,7 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="font-semibold text-gray-800 text-sm">{suggestion.title}</span>
                                         {suggestion.isUrgent && (
-                                            <span className="bg-orange-100 text-orange-600 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Urgent</span>
+                                            <span className="bg-orange-100 text-orange-600 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Urgente</span>
                                         )}
                                     </div>
                                     <p className="text-xs text-gray-500">{suggestion.reason}</p>

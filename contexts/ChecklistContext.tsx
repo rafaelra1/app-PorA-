@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Task, PendingAction, ChecklistActionType } from '../types/checklist';
+import { Task, PendingAction, ChecklistActionType, TaskCategory, TaskPriorityLevel } from '../types/checklist';
 import * as checklistCache from '../lib/checklistCache';
 import * as checklistService from '../services/checklistService';
 import { useAuth } from './AuthContext';
@@ -8,7 +8,7 @@ interface ChecklistContextType {
     tasks: Task[];
     isLoading: boolean;
     isSyncing: boolean;
-    addTask: (title: string, tripId: string, dueDate?: string) => Promise<void>;
+    addTask: (title: string, tripId: string, options?: { dueDate?: string; category?: TaskCategory; priority?: TaskPriorityLevel; description?: string }) => Promise<void>;
     toggleTask: (taskId: string, isCompleted: boolean) => Promise<void>;
     updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
     deleteTask: (taskId: string) => Promise<void>;
@@ -93,16 +93,19 @@ export const ChecklistProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
     };
 
-    const addTask = useCallback(async (title: string, tripId: string, dueDate?: string) => {
+    const addTask = useCallback(async (title: string, tripId: string, options?: { dueDate?: string; category?: TaskCategory; priority?: TaskPriorityLevel; description?: string }) => {
         if (!user) return;
 
         const newTask: Task = {
             id: crypto.randomUUID(),
             trip_id: tripId,
             title,
-            due_date: dueDate, // Should be ISO string or undefined
+            description: options?.description,
+            due_date: options?.dueDate,
             is_completed: false,
-            is_urgent: false,
+            is_urgent: options?.priority === 'blocking',
+            category: options?.category,
+            priority: options?.priority,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };

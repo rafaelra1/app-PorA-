@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo, DocumentAnalysisResult, FieldWithConfidence, BatchAnalysisResult, DebugInfo, TripContext, ChecklistAnalysisResult } from '../types';
+import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo, DocumentAnalysisResult, FieldWithConfidence, BatchAnalysisResult, DebugInfo, TripContext, ChecklistAnalysisResult, TripViabilityAnalysis, TravelPeriod } from '../types';
 
 // =============================================================================
 // Types & Interfaces
@@ -40,7 +40,12 @@ interface ImageData {
 // Constants
 // =============================================================================
 
-const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_DIRECT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const API_PROXY_URL = '/api/gemini';
+
+// Use proxy in production to protect API key
+const USE_PROXY = import.meta.env.PROD || import.meta.env.VITE_USE_API_PROXY === 'true';
+const API_BASE_URL = USE_PROXY ? API_PROXY_URL : GEMINI_DIRECT_URL;
 
 const MIME_TYPES = {
   JPEG: 'image/jpeg',
@@ -220,8 +225,9 @@ Se a instrução for "surpreenda-me" ou similar, troque uma atividade turística
       case 'flight':
         specificFields = `
         - airline (Nome da companhia aérea)
-        - flightNumber (Número do voo, ex: LA3040)
-        - pnr (Código de reserva/Localizador)
+        - flightNumber (Número do voo. IMPORTANTE: Deve ter código da cia + 3 ou 4 dígitos, ex: LA3040, G31234. Não confunda com horário)
+        - pnr (Código de Reserva / Localizador. Geralmente 6 caracteres alfanuméricos, ex: ABC123. NÃO confunda com E-Ticket)
+        - ticketNumber (Número do E-Ticket / Bilhete. Geralmente uma sequência longa de 13 dígitos, ex: 957-2345678901)
         - departureAirport (Código IATA da origem, ex: GRU)
         - arrivalAirport (Código IATA do destino, ex: JFK)
         - departureDate (Data de partida YYYY-MM-DD)
@@ -300,24 +306,31 @@ Se a instrução for "surpreenda-me" ou similar, troque uma atividade turística
     }
 
     return `Analise esta imagem de um documento do tipo "${type}".
-      Extraia os seguintes campos específicos:
+      Extraia os seguintes campos específicos para CADA item encontrado:
       ${specificFields}
+
+      IMPORTANTE: Se houver múltiplos itens (ex: vários voos em um itinerário), extraia TODOS eles.
 
       Retorne um JSON com a seguinte estrutura:
       {
         "type": "${type}",
-        "fields": {
-          "nomeDoCampo": { "value": "valor extraído", "confidence": 0.0-1.0 },
-          ...
-        },
-        "overallConfidence": 0.0-1.0
+        "items": [
+          {
+            "fields": {
+              "nomeDoCampo": { "value": "valor extraído", "confidence": 0.0-1.0 },
+              ...
+            },
+            "overallConfidence": 0.0-1.0
+          }
+        ]
       }
 
       Regras:
       1. Se um campo não for encontrado, NÃO o inclua ou retorne null no value.
       2. Para datas, use SEMPRE o formato YYYY-MM-DD.
       3. Confidence deve refletir sua certeza sobre a leitura (1.0 = certeza absoluta, 0.5 = incerto).
-      4. Se houver múltiplos itens (ex: 2 voos), analise o PRIMEIRO ou PRINCIPAL.
+      4. Se houver múltiplos itens (ex: 5 voos), inclua TODOS no array "items".
+      5. Se houver apenas 1 item, retorne um array com 1 elemento.
     `;
   },
 
@@ -681,16 +694,55 @@ IMPORTANTE:
   },
 
   analyzeChecklist: (context: TripContext) => {
-    return `Você é um assistente de viagem experiente. Analise o contexto desta viagem e gere sugestões inteligentes de tarefas e insights.
+    // Calculate days until trip and trip duration
+    const today = new Date();
+    const startDate = new Date(context.startDate);
+    const endDate = new Date(context.endDate);
+    const daysUntilTrip = Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const tripDuration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const travelMonth = startDate.toLocaleString('pt-BR', { month: 'long' });
+
+    // Extract traveler details
+    const travelerSummary = context.travelers?.map((t, i) => {
+      if (typeof t === 'object' && t !== null) {
+        const details: string[] = [];
+        if ('name' in t) details.push(`Nome: ${t.name}`);
+        if ('ageGroup' in t) details.push(`Grupo: ${t.ageGroup}`);
+        if ('age' in t) details.push(`Idade: ${t.age}`);
+        if ('dietaryRestrictions' in t && Array.isArray(t.dietaryRestrictions) && t.dietaryRestrictions.length > 0) {
+          details.push(`Restrições Alimentares: ${t.dietaryRestrictions.join(', ')}`);
+        }
+        if ('mobilityRestrictions' in t && Array.isArray(t.mobilityRestrictions) && t.mobilityRestrictions.length > 0) {
+          details.push(`Mobilidade: ${t.mobilityRestrictions.join(', ')}`);
+        }
+        return `Viajante ${i + 1}: ${details.join(', ') || 'Sem detalhes'}`;
+      }
+      return `Viajante ${i + 1}: ${JSON.stringify(t)}`;
+    }).join('\n') || 'Não especificado';
+
+    return `Você é um assistente de viagem experiente e meticuloso. Analise o contexto desta viagem e gere sugestões inteligentes de tarefas e insights.
 
 CONTEXTO DA VIAGEM:
 Destino: ${context.destination}
 Datas: ${context.startDate} a ${context.endDate}
-Viajantes: ${JSON.stringify(context.travelers)}
-Interesses: ${context.interests?.join(', ') || 'Geral'}
+Mês da Viagem: ${travelMonth}
+Duração: ${tripDuration} dias
+Dias até a viagem: ${daysUntilTrip} dias
 
-Gere um JSON com sugestões personalizadas e insights úteis.
-Estrutura esperada:
+PERFIL DOS VIAJANTES:
+${travelerSummary}
+
+INTERESSES: ${context.interests?.join(', ') || 'Geral'}
+
+TAREFAS JÁ EXISTENTES (para evitar duplicatas):
+As seguintes tarefas já foram automaticamente geradas pelo sistema:
+- Verificar validade do passaporte
+- Contratar seguro viagem internacional
+- Verificar requisitos de visto
+
+Gere um JSON com sugestões PERSONALIZADAS e insights úteis que COMPLEMENTEM o que já existe.
+
+Estrutura esperada (RETORNE APENAS JSON VÁLIDO):
 {
   "insights": [
     {
@@ -705,18 +757,24 @@ Estrutura esperada:
     {
       "id": "task-X",
       "title": "Título da tarefa",
-      "category": "preparation|packing|documents|health",
-      "reason": "Por que isso é necessário para esta viagem específica",
+      "category": "documentation|health|reservations|packing|financial|tech",
+      "reason": "Por que isso é específico para ESTA viagem",
       "isUrgent": boolean
     }
   ]
 }
 
-REGRAS:
-1. Seja específico para o destino e época do ano (ex: monções, feriados locais).
-2. Considere o perfil dos viajantes (ex: crianças, idosos).
-3. Evite tarefas óbvias e genéricas demais (ex: "Fazer mala") se não houver um motivo específico.
-4. Retorne APENAS o JSON.`;
+REGRAS OBRIGATÓRIAS:
+1. **Especificidade é CRÍTICA**: Cada sugestão DEVE mencionar algo específico do destino ${context.destination} ou do período ${travelMonth}.
+2. **Considere o clima**: ${travelMonth} em ${context.destination} - sugira itens de mala apropriados (ex: guarda-chuva para monções, roupas de frio para inverno).
+3. **Perfil dos viajantes**: Se houver crianças, idosos ou restrições, sugira tarefas específicas (remédios, comidas, acessibilidade).
+4. **Eventos locais**: Se souber de feriados ou eventos em ${context.destination} durante as datas, mencione como insight.
+5. **CATEGORIAS VÁLIDAS**: Use APENAS estas categorias para suggestedTasks: documentation, health, reservations, packing, financial, tech. NÃO use outras.
+6. **Anti-Alucinação**: NÃO invente informações. Se não souber algo específico sobre ${context.destination}, não inclua.
+7. **Evite óbvios**: NÃO sugira "Fazer mala", "Reservar hotel", "Comprar passagens" sem contexto específico.
+8. **Urgência**: Marque isUrgent=true APENAS se a viagem for em menos de 14 dias E a tarefa for crítica.
+9. **Insights relevantes**: Insights devem ser genuinamente úteis (ex: "Golden Week no Japão durante suas datas" ou "Época de chuvas na Tailândia").
+10. Retorne APENAS o JSON, sem markdown (não use \`\`\`json).`;
   },
 
   alertDetails: (title: string, message: string, cities: string) => {
@@ -825,12 +883,12 @@ Retorne APENAS um JSON:
 ]`,
   fillItineraryGaps: (destination: string, date: string, existingActivities: any[]) => `
   Você é um assistente de viagens. Sugira 3 atividades para preencher as lacunas no roteiro de viagem em ${destination} para o dia ${date}.
-  
+
   ATIVIDADES JÁ PLANEJADAS:
   ${JSON.stringify(existingActivities)}
-  
+
   Sugira atividades que complementem as já planejadas, considerando horários livres.
-  
+
   Retorne APENAS um JSON array de objetos:
   [
     {
@@ -842,6 +900,42 @@ Retorne APENAS um JSON:
     }
   ]
   `,
+
+  analyzeDestinationViability: (destination: string, period: string) => `
+Você é um consultor de viagens especializado em ajudar viajantes brasileiros.
+Analise a viabilidade de viajar para ${destination} durante ${period}.
+
+Considere os seguintes fatores:
+1. Clima e temperatura média no período
+2. Alta/baixa temporada turística
+3. Eventos, feriados e festivais relevantes
+4. Preços médios e lotação esperada
+5. Condições específicas do destino (monções, neve, calor extremo, etc.)
+
+Retorne APENAS um JSON com esta estrutura exata:
+{
+  "viability": "recommended" | "acceptable" | "not_recommended",
+  "summary": "Resumo em 2-3 frases sobre a viabilidade geral",
+  "pros": ["pro1", "pro2", "pro3"],
+  "cons": ["con1", "con2"],
+  "climate": {
+    "description": "Descrição do clima esperado no período",
+    "avgTemp": "Temperatura média (ex: 18°C - 25°C)"
+  },
+  "events": ["evento1", "evento2"],
+  "tips": ["dica1", "dica2", "dica3"]
+}
+
+REGRAS:
+- "viability" deve ser:
+  - "recommended": Época ideal ou muito boa para visitar
+  - "acceptable": Pode visitar, mas com ressalvas
+  - "not_recommended": Época problemática (monções, calor extremo, fechamentos)
+- Liste 2-4 prós e 1-3 contras realistas
+- Eventos devem ser específicos para o período (feriados, festivais)
+- Dicas devem ser práticas e específicas para o período
+- Responda em Português do Brasil
+`,
 };
 
 // =============================================================================
@@ -862,7 +956,7 @@ export class GeminiService {
   // -------------------------------------------------------------------------
 
   /**
-   * Make a request to the Gemini API
+   * Make a request to the Gemini API (supports both direct and proxy modes)
    */
   private async callGeminiAPI(
     prompt: string,
@@ -870,15 +964,32 @@ export class GeminiService {
     tools?: unknown[],
     responseMimeType?: string
   ): Promise<string> {
-    const url = `${this.baseUrl}?key=${this.apiKey}`;
-    const body = this.buildRequestBody(prompt, image, tools, responseMimeType);
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      let response: Response;
+
+      if (USE_PROXY) {
+        // Use server proxy (production mode - protects API key)
+        response = await fetch(this.baseUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            image,
+            tools,
+            responseMimeType
+          }),
+        });
+      } else {
+        // Direct API call (development mode)
+        const url = `${this.baseUrl}?key=${this.apiKey}`;
+        const body = this.buildRequestBody(prompt, image, tools, responseMimeType);
+
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -1643,23 +1754,26 @@ Create a new image that maintains the essence of the original but applies the re
       const mimeType = detectMimeType(base64Image);
       console.log(`Analyzing document with MIME type: ${mimeType}, data length: ${base64Data.length}`);
 
-      // Step 1: Classify Document
-      const classification = await this.classifyDocumentType(base64Data);
+      // Step 1: Classify Document (pass full data URL to preserve MIME type)
+      const classification = await this.classifyDocumentType(base64Image);
       console.log('Document Classified as:', classification);
 
       // Step 2: Extract Data using specialized prompt
       // If confidence is too low, treat as generic 'other' or the guessed type but with caution
       const effectiveType = classification.confidence > 0.4 ? classification.type : 'other';
 
-      const extractionResult = await this.extractDocumentData(base64Data, effectiveType);
+      // Step 3: Extract data (pass full data URL to preserve MIME type)
+      const extractionResults = await this.extractDocumentData(base64Image, effectiveType);
 
-      if (!extractionResult) return null;
+      if (!extractionResults || extractionResults.length === 0) return null;
 
-      // Add classification metadata
-      extractionResult.typeConfidence = classification.confidence;
+      // Add classification metadata to all results
+      extractionResults.forEach(result => {
+        result.typeConfidence = classification.confidence;
+      });
 
-      // Wrap in array for backward compatibility
-      return [extractionResult];
+      console.log(`Extracted ${extractionResults.length} items from document`);
+      return extractionResults;
     } catch (error) {
       console.error('Error analyzing document:', error);
       return null;
@@ -1770,8 +1884,9 @@ Create a new image that maintains the essence of the original but applies the re
 
   /**
    * Step 2: Extract data using specialized prompt
+   * Returns an array of results (can contain multiple items like multiple flights)
    */
-  async extractDocumentData(base64Image: string, type: string): Promise<DocumentAnalysisResult | null> {
+  async extractDocumentData(base64Image: string, type: string): Promise<DocumentAnalysisResult[] | null> {
     try {
       const mimeType = detectMimeType(base64Image);
       const base64Data = extractBase64Data(base64Image);
@@ -1782,23 +1897,39 @@ Create a new image that maintains the essence of the original but applies the re
       const rawData = parseJsonSafely<any>(text, null);
       if (!rawData) return null;
 
-      // Map raw fields to DocumentAnalysisResult structure
-      const f = rawData.fields || {};
-      const result: DocumentAnalysisResult = {
-        type: this.mapTypeToEnum(rawData.type || type),
-        fields: f,
-        overallConfidence: rawData.overallConfidence,
-        debugInfo: {
-          prompt: prompt,
-          rawResponse: text,
-          model: 'gemini-2.5-flash'
-        }
-      };
+      // Handle new array structure with "items"
+      const items = rawData.items || [];
 
-      // Populate legacy flat fields for compatibility
-      this.populateLegacyFields(result, f, type);
+      // Fallback: if no items array, try legacy single-item structure
+      if (items.length === 0 && rawData.fields) {
+        items.push({ fields: rawData.fields, overallConfidence: rawData.overallConfidence });
+      }
 
-      return result;
+      if (items.length === 0) {
+        console.warn('No items found in document extraction response');
+        return null;
+      }
+
+      const results: DocumentAnalysisResult[] = items.map((item: any, index: number) => {
+        const f = item.fields || {};
+        const result: DocumentAnalysisResult = {
+          type: this.mapTypeToEnum(rawData.type || type),
+          fields: f,
+          overallConfidence: item.overallConfidence,
+          debugInfo: index === 0 ? {
+            prompt: prompt,
+            rawResponse: text,
+            model: 'gemini-2.5-flash'
+          } : undefined
+        };
+
+        // Populate legacy flat fields for compatibility
+        this.populateLegacyFields(result, f, type);
+
+        return result;
+      });
+
+      return results;
     } catch (error) {
       console.error('Error extracting document data:', error);
       return null;
@@ -1825,7 +1956,10 @@ Create a new image that maintains the essence of the original but applies the re
       result.endDate = getValue('arrivalDate'); // Not standard but useful
       result.departureTime = getValue('departureTime');
       result.arrivalTime = getValue('arrivalTime');
-      result.reference = getValue('pnr') || getValue('flightNumber');
+      // Prioritize flightNumber for reference (matches UI label "Número do Voo")
+      // PNR should ideally go to confirmation, but legacy fields don't have it.
+      // We'll rely on MapResultToFormData using fields directly for PNR.
+      result.reference = getValue('flightNumber') || getValue('pnr');
       result.pickupLocation = getValue('departureAirport');
       result.dropoffLocation = getValue('arrivalAirport');
       result.details = `${getValue('class') || ''} ${getValue('seat') ? 'Seat: ' + getValue('seat') : ''}`.trim();
@@ -2085,6 +2219,56 @@ Create a new image that maintains the essence of the original but applies the re
       return result;
     } catch (error) {
       console.error('Error analyzing checklist:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Analyze the viability of traveling to a destination during a specific period
+   */
+  async analyzeDestinationViability(
+    destination: string,
+    period: TravelPeriod
+  ): Promise<TripViabilityAnalysis | null> {
+    try {
+      // Format period string for the prompt
+      let periodStr: string;
+      if (period.type === 'exact' && period.startDate && period.endDate) {
+        periodStr = `de ${period.startDate} a ${period.endDate}`;
+      } else if (period.type === 'estimated' && period.month && period.year) {
+        periodStr = `${period.month} de ${period.year}`;
+      } else {
+        periodStr = 'período não especificado';
+      }
+
+      console.log(`Analyzing destination viability: ${destination} - ${periodStr}`);
+
+      const prompt = PROMPTS.analyzeDestinationViability(destination, periodStr);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+
+      console.log('Gemini API response:', text?.substring(0, 200));
+
+      if (!text) {
+        console.error('Empty response from Gemini API');
+        return null;
+      }
+
+      const result = parseJsonSafely<TripViabilityAnalysis | null>(text, null);
+
+      if (!result) {
+        console.error('Failed to parse destination viability result. Raw response:', text);
+        return null;
+      }
+
+      // Validate required fields
+      if (!result.viability || !result.summary || !result.pros || !result.cons) {
+        console.error('Invalid response structure:', result);
+        return null;
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error analyzing destination viability:', error);
       return null;
     }
   }

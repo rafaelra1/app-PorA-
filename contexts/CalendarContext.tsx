@@ -9,6 +9,8 @@ import {
   Transport
 } from '../types';
 import { useAuth } from './AuthContext';
+import { BRAZILIAN_HOLIDAYS } from '../constants';
+import { supabase } from '../lib/supabase';
 
 interface CalendarContextValue {
   // State
@@ -37,6 +39,8 @@ interface CalendarContextValue {
   syncFromTrips: (trips: Trip[]) => void;
   syncFromActivities: (activities: ItineraryActivity[], tripId: string) => void;
   syncFromTransports: (transports: Transport[], tripId: string) => void;
+  syncHolidays: () => void;
+  syncActivitiesFromSupabase: (tripId: string) => Promise<void>;
 
   // Loading
   isLoading: boolean;
@@ -460,6 +464,90 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     });
   }, [getTransportLabel, saveEvents]);
 
+  // Sync holidays from BRAZILIAN_HOLIDAYS constant
+  const syncHolidays = useCallback(() => {
+    setEvents(prev => {
+      const now = new Date().toISOString();
+      const holidayEvents: CalendarEvent[] = [];
+      let hasNewHolidays = false;
+
+      BRAZILIAN_HOLIDAYS.forEach(holiday => {
+        const holidayId = `holiday_${holiday.date}`;
+        const existingHoliday = prev.find(e => e.id === holidayId);
+
+        if (!existingHoliday) {
+          hasNewHolidays = true;
+          holidayEvents.push({
+            id: holidayId,
+            title: holiday.name,
+            description: `Feriado ${holiday.type === 'nacional' ? 'Nacional' : 'Facultativo'}`,
+            startDate: holiday.date,
+            allDay: true,
+            type: 'holiday',
+            color: holiday.type === 'nacional' ? '#10b981' : '#f59e0b',
+            completed: false,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      });
+
+      if (hasNewHolidays) {
+        const updated = [...prev, ...holidayEvents];
+        saveEvents(updated);
+        return updated;
+      }
+      return prev;
+    });
+  }, [saveEvents]);
+
+  // Sync holidays on mount
+  useEffect(() => {
+    syncHolidays();
+  }, [syncHolidays]);
+
+  // Sync itinerary activities directly from Supabase
+  const syncActivitiesFromSupabase = useCallback(async (tripId: string) => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('itinerary_activities')
+        .select('*')
+        .eq('trip_id', tripId)
+        .order('date', { ascending: true })
+        .order('time', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching activities from Supabase:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        // Transform and sync to calendar
+        const activities: ItineraryActivity[] = data.map(item => ({
+          id: item.id,
+          day: item.day,
+          date: item.date,
+          time: item.time ? item.time.slice(0, 5) : '00:00',
+          title: item.title,
+          location: item.location,
+          locationDetail: item.location_detail,
+          type: item.type as any,
+          completed: item.completed,
+          notes: item.notes,
+          image: item.image,
+          price: item.price ? String(item.price) : undefined,
+          duration: item.duration || 60,
+        }));
+
+        syncFromActivities(activities, tripId);
+      }
+    } catch (err) {
+      console.error('Error syncing activities from Supabase:', err);
+    }
+  }, [user, syncFromActivities]);
+
   const value = useMemo(() => ({
     events,
     selectedDate,
@@ -478,6 +566,8 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     syncFromTrips,
     syncFromActivities,
     syncFromTransports,
+    syncHolidays,
+    syncActivitiesFromSupabase,
     isLoading,
   }), [
     events,
@@ -497,6 +587,8 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     syncFromTrips,
     syncFromActivities,
     syncFromTransports,
+    syncHolidays,
+    syncActivitiesFromSupabase,
     isLoading,
   ]);
 

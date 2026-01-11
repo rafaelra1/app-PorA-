@@ -2,7 +2,7 @@ import { parseISO, addMinutes, subMinutes, isBefore, isAfter, differenceInMinute
 import { Transport, HotelReservation } from '../types';
 
 export interface ConflictResult {
-    type: 'overlap' | 'impossible_connection' | 'missing_transport' | 'checkout_after_flight' | 'checkin_before_flight' | 'location_mismatch';
+    type: 'overlap' | 'impossible_connection' | 'missing_transport' | 'checkout_after_flight' | 'checkin_before_flight' | 'location_mismatch' | 'accommodation_overlap';
     severity: 'warning' | 'error';
     message: string;
     suggestedFix?: string;
@@ -57,18 +57,48 @@ export class ConflictDetector {
 
             // 2. Impossible Connection (Tight connection)
             // Logic: If one arrives shortly before the other departs at the SAME location (or generic connection)
-            const bufferMinutesInternation = 120;
+            const bufferMinutesInternational = 120;
             const bufferMinutesDomestic = 60;
+
+            // Determine if connection is international (different countries or explicitly international)
+            const isInternationalConnection = (t1: Transport, t2: Transport): boolean => {
+                // Check if either transport is marked as international
+                if (t1.type === 'flight' && t2.type === 'flight') {
+                    // Heuristic: If departure and arrival cities are different countries
+                    // Simple check: if cities don't share common country indicators
+                    const t1Arrival = (t1.arrivalCity || '').toLowerCase();
+                    const t2Departure = (t2.departureCity || '').toLowerCase();
+
+                    // Check for international airport codes (3-letter IATA codes suggest international)
+                    const hasInternationalCode = (city: string) => {
+                        const internationalIndicators = ['international', 'intl', 'airport'];
+                        return internationalIndicators.some(ind => city.includes(ind));
+                    };
+
+                    // If connecting flight departs from different city than arrival, likely international
+                    if (t1Arrival && t2Departure && t1Arrival !== t2Departure) {
+                        return true;
+                    }
+
+                    if (hasInternationalCode(t1Arrival) || hasInternationalCode(t2Departure)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
 
             // Case A: Existing arrives -> New departs (Connection)
             if (isBefore(exT.end, newT.start)) {
                 const diff = differenceInMinutes(newT.start, exT.end);
-                if (diff < bufferMinutesDomestic && diff >= 0) {
+                const isInternational = isInternationalConnection(existing, newTransport);
+                const requiredBuffer = isInternational ? bufferMinutesInternational : bufferMinutesDomestic;
+
+                if (diff < requiredBuffer && diff >= 0) {
                     conflicts.push({
                         type: 'impossible_connection',
                         severity: 'warning',
-                        message: `Conexão muito curta (${diff} min) após ${existing.type}.`,
-                        suggestedFix: `Recomendado pelo menos ${bufferMinutesDomestic}min para conexões.`
+                        message: `Conexão ${isInternational ? 'internacional ' : ''}muito curta (${diff} min) após ${existing.type}.`,
+                        suggestedFix: `Recomendado pelo menos ${requiredBuffer}min para conexões ${isInternational ? 'internacionais' : 'domésticas'}.`
                     });
                 }
             }
@@ -76,14 +106,51 @@ export class ConflictDetector {
             // Case B: New arrives -> Existing departs (Connection)
             if (isBefore(newT.end, exT.start)) {
                 const diff = differenceInMinutes(exT.start, newT.end);
-                if (diff < bufferMinutesDomestic && diff >= 0) {
+                const isInternational = isInternationalConnection(newTransport, existing);
+                const requiredBuffer = isInternational ? bufferMinutesInternational : bufferMinutesDomestic;
+
+                if (diff < requiredBuffer && diff >= 0) {
                     conflicts.push({
                         type: 'impossible_connection',
                         severity: 'warning',
-                        message: `Chegada muito próxima da partida de ${existing.type} (${diff} min).`,
-                        suggestedFix: `Recomendado pelo menos ${bufferMinutesDomestic}min para conexões.`
+                        message: `Chegada ${isInternational ? 'internacional ' : ''}muito próxima da partida de ${existing.type} (${diff} min).`,
+                        suggestedFix: `Recomendado pelo menos ${requiredBuffer}min para conexões ${isInternational ? 'internacionais' : 'domésticas'}.`
                     });
                 }
+            }
+        }
+
+        return conflicts;
+    }
+
+    // Detects overlaps between accommodation reservations
+    checkAccommodationOverlap(
+        newAccommodation: HotelReservation,
+        existingAccommodations: HotelReservation[]
+    ): ConflictResult[] {
+        const conflicts: ConflictResult[] = [];
+
+        const newCheckIn = parseISO(newAccommodation.checkIn);
+        const newCheckOut = parseISO(newAccommodation.checkOut);
+
+        if (!isValid(newCheckIn) || !isValid(newCheckOut)) return [];
+
+        for (const existing of existingAccommodations) {
+            if (existing.id === newAccommodation.id) continue;
+
+            const exCheckIn = parseISO(existing.checkIn);
+            const exCheckOut = parseISO(existing.checkOut);
+
+            if (!isValid(exCheckIn) || !isValid(exCheckOut)) continue;
+
+            // Check for date overlap: new starts before existing ends AND new ends after existing starts
+            if (isBefore(newCheckIn, exCheckOut) && isAfter(newCheckOut, exCheckIn)) {
+                conflicts.push({
+                    type: 'accommodation_overlap',
+                    severity: 'warning',
+                    message: `Sobreposicao de datas com "${existing.name}" (${existing.checkIn} - ${existing.checkOut}).`,
+                    suggestedFix: 'Verifique se as datas das hospedagens estao corretas.'
+                });
             }
         }
 

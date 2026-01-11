@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useChecklist } from '../../contexts/ChecklistContext';
 import { useTrips } from '../../contexts/TripContext';
-import { Task, TaskCategory } from '../../types/checklist';
+import { Task, TaskCategory, TaskPriorityLevel } from '../../types/checklist';
+import { TripContext, ChecklistTask } from '../../types';
 import { EmptyState } from '../ui/EmptyState';
+import { useLLMAnalysis } from '../../hooks/useLLMAnalysis';
+import { AIInsights } from './city-guide/AIInsights';
 
 // Category metadata
 const CATEGORY_CONFIG: Record<TaskCategory, { icon: string; label: string; color: string }> = {
@@ -38,6 +41,82 @@ const SmartChecklist: React.FC<SmartChecklistProps> = ({ className = '' }) => {
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [isAddingTask, setIsAddingTask] = useState(false);
     const [expandedCategories, setExpandedCategories] = useState<Set<TaskCategory>>(new Set(['documentation', 'health']));
+    const [showAnalysis, setShowAnalysis] = useState(false);
+
+    // AI Analysis hook
+    const {
+        isAnalyzing,
+        analysisResult,
+        analyzeChecklist,
+        acceptSuggestion,
+        rejectSuggestion,
+        clearAnalysis
+    } = useLLMAnalysis(selectedTrip?.id || '');
+
+    // Helper: Map ChecklistTask category to Task category
+    const mapCategory = (cat: ChecklistTask['category']): TaskCategory => {
+        switch (cat) {
+            case 'documents': return 'documentation';
+            case 'preparation': return 'other';
+            default: return cat as TaskCategory;
+        }
+    };
+
+    // Handle running AI analysis
+    const handleRunAnalysis = async () => {
+        if (!selectedTrip) return;
+
+        const context: TripContext = {
+            destination: selectedTrip.detailedDestinations?.map(d => d.name).join(', ') || selectedTrip.destination,
+            startDate: selectedTrip.startDate,
+            endDate: selectedTrip.endDate,
+            travelers: selectedTrip.participants || [],
+        };
+
+        const existingTitles = tasks.map(t => t.title);
+        setShowAnalysis(true);
+        await analyzeChecklist(context, existingTitles);
+    };
+
+    // Handle accepting a suggestion
+    const handleAcceptSuggestion = async (suggestion: ChecklistTask) => {
+        if (!selectedTrip) return;
+
+        const accepted = acceptSuggestion(suggestion.id);
+        if (accepted) {
+            const priority: TaskPriorityLevel = accepted.isUrgent ? 'blocking' : 'recommended';
+            await addTask(accepted.title, selectedTrip.id, {
+                category: mapCategory(accepted.category),
+                priority,
+                description: accepted.reason,
+            });
+        }
+    };
+
+    // Handle rejecting a suggestion
+    const handleRejectSuggestion = (id: string) => {
+        rejectSuggestion(id);
+    };
+
+    // Handle accepting all suggestions
+    const handleAcceptAll = async () => {
+        if (!selectedTrip || !analysisResult) return;
+
+        for (const suggestion of analysisResult.suggestedTasks) {
+            const priority: TaskPriorityLevel = suggestion.isUrgent ? 'blocking' : 'recommended';
+            await addTask(suggestion.title, selectedTrip.id, {
+                category: mapCategory(suggestion.category),
+                priority,
+                description: suggestion.reason,
+            });
+        }
+        clearAnalysis();
+    };
+
+    // Handle dismissing an insight (optional, no-op for now)
+    const handleDismissInsight = (_id: string) => {
+        // Could be extended to track dismissed insights
+    };
 
     // Refresh tasks when trip changes
     useEffect(() => {
@@ -129,9 +208,24 @@ const SmartChecklist: React.FC<SmartChecklistProps> = ({ className = '' }) => {
             <div className="px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center justify-between mb-3">
                     <h3 className="text-base font-bold text-text-main">Checklist Inteligente</h3>
-                    <span className="text-xs font-medium text-text-muted">
-                        {summary.completed}/{summary.total} concluídas
-                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleRunAnalysis}
+                            disabled={isAnalyzing || !selectedTrip}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 ${isAnalyzing
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600'
+                                }`}
+                        >
+                            <span className={`material-symbols-outlined text-base ${isAnalyzing ? 'animate-spin' : ''}`}>
+                                {isAnalyzing ? 'progress_activity' : 'auto_awesome'}
+                            </span>
+                            {isAnalyzing ? 'Analisando...' : 'Analisar com IA'}
+                        </button>
+                        <span className="text-xs font-medium text-text-muted">
+                            {summary.completed}/{summary.total} concluídas
+                        </span>
+                    </div>
                 </div>
 
                 {/* Progress Bar */}
@@ -156,6 +250,36 @@ const SmartChecklist: React.FC<SmartChecklistProps> = ({ className = '' }) => {
                     </div>
                 )}
             </div>
+
+            {/* AI Insights Section */}
+            {(showAnalysis || analysisResult) && (
+                <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-br from-indigo-50/30 to-purple-50/20">
+                    {isAnalyzing ? (
+                        <div className="flex items-center justify-center gap-3 py-6">
+                            <span className="material-symbols-outlined text-2xl text-indigo-500 animate-spin">progress_activity</span>
+                            <div>
+                                <p className="text-sm font-medium text-indigo-700">Analisando sua viagem...</p>
+                                <p className="text-xs text-indigo-500">Gerando insights e sugestões personalizadas</p>
+                            </div>
+                        </div>
+                    ) : analysisResult && (analysisResult.insights.length > 0 || analysisResult.suggestedTasks.length > 0) ? (
+                        <AIInsights
+                            insights={analysisResult.insights}
+                            suggestions={analysisResult.suggestedTasks}
+                            onAccept={handleAcceptSuggestion}
+                            onReject={handleRejectSuggestion}
+                            onDismissInsight={handleDismissInsight}
+                            onAcceptAll={handleAcceptAll}
+                        />
+                    ) : showAnalysis && (
+                        <div className="text-center py-4">
+                            <span className="material-symbols-outlined text-3xl text-gray-400 mb-2">check_circle</span>
+                            <p className="text-sm text-gray-600">Sua viagem já está bem preparada!</p>
+                            <p className="text-xs text-gray-400">Nenhuma sugestão adicional no momento.</p>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Task List by Category */}
             <div className="divide-y divide-gray-50">

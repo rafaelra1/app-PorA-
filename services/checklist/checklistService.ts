@@ -67,7 +67,7 @@ export async function generateTasksForTrip(trip: Trip, userNationality: string =
  */
 export async function loadTasksFromDB(tripId: string): Promise<ChecklistTask[]> {
     const { data, error } = await supabase
-        .from('trip_checklist_items')
+        .from('checklist_tasks')
         .select('*')
         .eq('trip_id', tripId)
         .order('priority', { ascending: false })
@@ -113,7 +113,7 @@ export async function saveTaskCompletion(
     }
 
     const { error } = await supabase
-        .from('trip_checklist_items')
+        .from('checklist_tasks')
         .update(updates)
         .eq('id', taskId)
         .eq('trip_id', tripId);
@@ -134,7 +134,7 @@ export async function addManualTask(
     priority: ChecklistTask['priority'] = 'recommended'
 ): Promise<ChecklistTask> {
     const { data, error } = await supabase
-        .from('trip_checklist_items')
+        .from('checklist_tasks')
         .insert({
             trip_id: tripId,
             rule_id: null, // Manual task
@@ -188,7 +188,7 @@ export async function syncTasksWithDB(tripId: string, generatedTasks: ChecklistT
     }
 
     const { error } = await supabase
-        .from('trip_checklist_items')
+        .from('checklist_tasks')
         .insert(
             tasksToInsert.map(task => ({
                 trip_id: task.tripId,

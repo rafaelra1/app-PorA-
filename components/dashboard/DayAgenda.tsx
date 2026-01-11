@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { BRAZILIAN_HOLIDAYS } from '../../constants';
 
 // ========== TYPES ==========
 export interface AgendaEvent {
@@ -114,6 +115,46 @@ const CompactAgendaCard: React.FC<{ event: AgendaEvent }> = ({ event }) => {
     );
 };
 
+// ========== HOLIDAY BANNER ==========
+interface HolidayBannerProps {
+    holiday: { name: string; type: string };
+}
+
+const HolidayBanner: React.FC<HolidayBannerProps> = ({ holiday }) => {
+    const isNacional = holiday.type === 'nacional';
+
+    return (
+        <div className={`rounded-xl p-4 mb-4 border ${
+            isNacional
+                ? 'bg-gradient-to-r from-emerald-50 to-emerald-100 border-emerald-200'
+                : 'bg-gradient-to-r from-amber-50 to-amber-100 border-amber-200'
+        }`}>
+            <div className="flex items-center gap-3">
+                <div className={`size-12 rounded-xl flex items-center justify-center ${
+                    isNacional ? 'bg-emerald-200 text-emerald-700' : 'bg-amber-200 text-amber-700'
+                }`}>
+                    <span className="material-symbols-outlined text-2xl">celebration</span>
+                </div>
+                <div className="flex-1">
+                    <h4 className={`font-bold text-base ${
+                        isNacional ? 'text-emerald-800' : 'text-amber-800'
+                    }`}>
+                        {holiday.name}
+                    </h4>
+                    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full mt-1 ${
+                        isNacional
+                            ? 'bg-emerald-200 text-emerald-700'
+                            : 'bg-amber-200 text-amber-700'
+                    }`}>
+                        <span className="material-symbols-outlined text-xs">event</span>
+                        Feriado {isNacional ? 'Nacional' : 'Facultativo'}
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ========== MAIN COMPONENT ==========
 const DayAgenda: React.FC<DayAgendaProps> = ({ date, onClose, events = [] }) => {
     const formatDate = (d: Date) => {
@@ -124,18 +165,34 @@ const DayAgenda: React.FC<DayAgendaProps> = ({ date, onClose, events = [] }) => 
         });
     };
 
+    // Check if the selected date is a holiday
+    const holiday = BRAZILIAN_HOLIDAYS.find(h => {
+        const [hYear, hMonth, hDay] = h.date.split('-').map(Number);
+        return hDay === date.getDate() && hMonth === (date.getMonth() + 1) && hYear === date.getFullYear();
+    });
+
+    const totalItems = events.length + (holiday ? 1 : 0);
+
     return (
         <div className="bg-white rounded-2xl p-5 shadow-soft animate-in fade-in slide-in-from-top-4 duration-500 relative overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-3">
-                    <div className="size-10 rounded-full bg-primary-light flex items-center justify-center text-primary-dark">
-                        <span className="material-symbols-outlined">calendar_today</span>
+                    <div className={`size-10 rounded-full flex items-center justify-center ${
+                        holiday
+                            ? holiday.type === 'nacional'
+                                ? 'bg-emerald-100 text-emerald-600'
+                                : 'bg-amber-100 text-amber-600'
+                            : 'bg-primary-light text-primary-dark'
+                    }`}>
+                        <span className="material-symbols-outlined">
+                            {holiday ? 'celebration' : 'calendar_today'}
+                        </span>
                     </div>
                     <div>
                         <h3 className="font-bold text-text-main text-lg capitalize">{formatDate(date)}</h3>
                         <p className="text-text-muted text-sm">
-                            {events.length} {events.length === 1 ? 'evento agendado' : 'eventos agendados'}
+                            {totalItems} {totalItems === 1 ? 'evento agendado' : 'eventos agendados'}
                         </p>
                     </div>
                 </div>
@@ -149,7 +206,10 @@ const DayAgenda: React.FC<DayAgendaProps> = ({ date, onClose, events = [] }) => 
 
             {/* Event List */}
             <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 hide-scrollbar">
-                {events.length === 0 ? (
+                {/* Holiday Banner (if applicable) */}
+                {holiday && <HolidayBanner holiday={holiday} />}
+
+                {events.length === 0 && !holiday ? (
                     <div className="text-center py-8 text-text-muted">
                         <span className="material-symbols-outlined text-4xl mb-2 block opacity-50">event_busy</span>
                         <p className="text-sm">Nenhum evento para este dia.</p>

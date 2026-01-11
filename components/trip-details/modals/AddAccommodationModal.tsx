@@ -16,12 +16,19 @@ import { validateHotelDates } from '../../../validators/documentValidators';
 import { conflictDetector, ConflictResult } from '../../../services/conflictDetector';
 import { Transport } from '../../../types';
 
+interface CityOption {
+    id: string;
+    name: string;
+}
+
 interface AddAccommodationModalProps {
     isOpen: boolean;
     onClose: () => void;
     onAdd: (accommodation: Omit<HotelReservation, 'id'>) => void;
     initialData?: HotelReservation | null;
     flights?: Transport[];
+    cities?: CityOption[];
+    accommodations?: HotelReservation[];
 }
 
 interface AccommodationFormData {
@@ -37,6 +44,8 @@ interface AccommodationFormData {
     checkOutTime: string;
     confirmation: string;
     status: 'confirmed' | 'pending';
+    type: 'hotel' | 'home';
+    cityId: string;
 }
 
 type InputMode = 'manual' | 'ai';
@@ -63,6 +72,8 @@ const INITIAL_FORM_STATE: AccommodationFormData = {
     checkOutTime: '11:00',
     confirmation: '',
     status: 'confirmed',
+    type: 'hotel',
+    cityId: '',
 };
 
 const FALLBACK_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&q=80&w=400';
@@ -209,7 +220,7 @@ import { googlePlacesService } from '../../../services/googlePlacesService';
 // =============================================================================
 
 const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
-    const { isOpen, onClose, onAdd, initialData } = props;
+    const { isOpen, onClose, onAdd, initialData, cities = [], accommodations = [] } = props;
     const [mode, setMode] = useState<InputMode>('manual');
     const [formData, setFormData] = useState<AccommodationFormData>(INITIAL_FORM_STATE);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -231,6 +242,8 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                 checkOutTime: initialData.checkOutTime || '11:00',
                 confirmation: initialData.confirmation || '',
                 status: (initialData.status === 'confirmed' || initialData.status === 'pending') ? initialData.status : 'pending',
+                type: initialData.type || 'hotel',
+                cityId: initialData.cityId || '',
             });
             setMode('manual');
             setError(null);
@@ -404,16 +417,31 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
         }
 
         // Conflict Detection
-        if (!showConflictModal && props.flights) {
+        if (!showConflictModal) {
             const tempHotel = {
                 ...formData,
-                id: 'temp',
+                id: initialData?.id || 'temp',
                 status: 'confirmed' as const
             };
-            const detectedConflicts = conflictDetector.checkAccommodationConflicts(
-                tempHotel as HotelReservation,
-                props.flights
-            );
+
+            let detectedConflicts: ConflictResult[] = [];
+
+            // Check conflicts with flights
+            if (props.flights) {
+                detectedConflicts = conflictDetector.checkAccommodationConflicts(
+                    tempHotel as HotelReservation,
+                    props.flights
+                );
+            }
+
+            // Check overlap with other accommodations
+            if (accommodations.length > 0) {
+                const overlapConflicts = conflictDetector.checkAccommodationOverlap(
+                    tempHotel as HotelReservation,
+                    accommodations
+                );
+                detectedConflicts = [...detectedConflicts, ...overlapConflicts];
+            }
 
             if (detectedConflicts.length > 0) {
                 setConflicts(detectedConflicts);
@@ -436,15 +464,17 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
             checkInTime: `a partir de ${formData.checkInTime}`,
             checkOut: formatToDisplayDate(formData.checkOut),
             checkOutTime: `até ${formData.checkOutTime}`,
-            confirmation: formData.confirmation || `RES-${Math.random().toString(36).substr(2, 8).toUpperCase()}`,
-            status: formData.status
+            confirmation: formData.confirmation || `RES-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+            status: formData.status,
+            type: formData.type,
+            cityId: formData.cityId || undefined,
         });
 
         resetForm();
         onClose();
         setConflicts([]);
         setShowConflictModal(false);
-    }, [formData, onAdd, onClose, resetForm, props.flights, showConflictModal]);
+    }, [formData, onAdd, onClose, resetForm, props.flights, accommodations, showConflictModal, initialData?.id]);
 
     const handleClose = useCallback(() => {
         resetForm();
@@ -476,7 +506,11 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                     <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-center">
                         <span className="material-symbols-outlined text-3xl text-amber-500 mb-2">hotel_class</span>
                         <h3 className="font-bold text-amber-700">Verifique as datas da estadia</h3>
-                        <p className="text-sm text-amber-600/80">Conflito com voos detectado.</p>
+                        <p className="text-sm text-amber-600/80">
+                            {conflicts.some(c => c.type === 'accommodation_overlap')
+                                ? 'Conflito com outras hospedagens detectado.'
+                                : 'Conflito com voos detectado.'}
+                        </p>
                     </div>
 
                     <div className="space-y-2">
@@ -539,19 +573,77 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
             )}
 
             <form id="accommodation-form" onSubmit={handleSubmit} className="space-y-5">
+                {/* Type Toggle (Hotel / Home) */}
+                <div>
+                    <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">
+                        Tipo de Acomodação
+                    </label>
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => updateField('type', 'hotel')}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                                formData.type === 'hotel'
+                                    ? 'border-primary bg-primary/5 text-primary'
+                                    : 'border-gray-200 text-text-muted hover:border-gray-300'
+                            }`}
+                        >
+                            <span className="material-symbols-outlined">hotel</span>
+                            Hotel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => updateField('type', 'home')}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                                formData.type === 'home'
+                                    ? 'border-primary bg-primary/5 text-primary'
+                                    : 'border-gray-200 text-text-muted hover:border-gray-300'
+                            }`}
+                        >
+                            <span className="material-symbols-outlined">home</span>
+                            Casa / Apartamento
+                        </button>
+                    </div>
+                </div>
+
                 {/* Hotel Name */}
                 <div>
                     <Input
-                        label="Nome do Hotel"
+                        label={formData.type === 'hotel' ? 'Nome do Hotel' : 'Nome da Propriedade'}
                         value={formData.name}
                         onChange={(e) => updateField('name', e.target.value)}
-                        placeholder="Ex: Hotel Fasano"
+                        placeholder={formData.type === 'hotel' ? 'Ex: Hotel Fasano' : 'Ex: Apartamento Centro'}
                         required
                         fullWidth
                         rightIcon={isAnalyzing ? (
                             <span className="material-symbols-outlined text-primary animate-spin">sync</span>
                         ) : undefined}
                     />
+                </div>
+
+                {/* City Selection & Stars */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* City Dropdown */}
+                    <div>
+                        <Select
+                            label="Cidade"
+                            value={formData.cityId}
+                            onChange={(e) => updateField('cityId', e.target.value)}
+                            options={[
+                                { value: '', label: 'Selecione uma cidade' },
+                                ...cities.map(city => ({ value: city.id, label: city.name }))
+                            ]}
+                            fullWidth
+                        />
+                    </div>
+
+                    {/* Stars (Classification) */}
+                    <div>
+                        <HotelClassInput
+                            value={formData.stars}
+                            onChange={(value) => updateField('stars', value)}
+                        />
+                    </div>
                 </div>
 
                 {/* Address */}

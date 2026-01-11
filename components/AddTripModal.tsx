@@ -241,48 +241,49 @@ const AddTripModal: React.FC<AddTripModalProps> = ({ isOpen, onClose, onAdd, onU
     }
 
     const cityName = description.split(',')[0].trim();
-    const service = new google.maps.places.PlacesService(document.createElement('div'));
 
-    service.getDetails(
-      { placeId, fields: ['name', 'address_components', 'photos'] },
-      (place, status) => {
-        let country = '';
-        let photoUrl: string | undefined;
+    // Use V1 REST API instead of legacy JS API to avoid 403 errors
+    const { getPlaceDetailsFull } = await import('../services/googlePlacesService');
+    const placeData = await getPlaceDetailsFull(placeId);
 
-        if (status === google.maps.places.PlacesServiceStatus.OK && place) {
-          place.address_components?.forEach(comp => {
-            if (comp.types.includes('country')) {
-              country = comp.long_name;
-            }
-          });
+    let country = '';
+    let photoUrl: string | undefined;
 
-          if (place.photos && place.photos.length > 0) {
-            photoUrl = place.photos[0].getUrl({ maxWidth: 1600 });
-          }
+    if (placeData) {
+      // Extract country from addressComponents
+      placeData.addressComponents?.forEach((comp: any) => {
+        if (comp.types?.includes('country')) {
+          country = comp.longText || '';
         }
+      });
 
-        if (!country) {
-          const parts = description.split(',');
-          country = parts.length > 1 ? parts[parts.length - 1].trim() : '';
-        }
-
-        const newDest: DetailedDestination = {
-          id: Math.random().toString(36).substr(2, 9),
-          name: cityName,
-          country: country,
-          placeId: placeId,
-          image: photoUrl,
-        };
-
-        const newList = [...formData.detailedDestinations, newDest];
-        setFormValue('detailedDestinations', newList);
-        setFormValue('destination', newList.map(d => d.name).join(', '));
-
-        if (newList.length === 1 && photoUrl) {
-          setFormValue('coverImage', photoUrl);
-        }
+      // Build photo URL using V1 API format
+      if (placeData.photos && placeData.photos.length > 0) {
+        const apiKey = import.meta.env.VITE_GOOGLE_PLACES_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        photoUrl = `https://places.googleapis.com/v1/${placeData.photos[0].name}/media?maxHeightPx=1600&maxWidthPx=1600&key=${apiKey}`;
       }
-    );
+    }
+
+    if (!country) {
+      const parts = description.split(',');
+      country = parts.length > 1 ? parts[parts.length - 1].trim() : '';
+    }
+
+    const newDest: DetailedDestination = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: cityName,
+      country: country,
+      placeId: placeId,
+      image: photoUrl,
+    };
+
+    const newList = [...formData.detailedDestinations, newDest];
+    setFormValue('detailedDestinations', newList);
+    setFormValue('destination', newList.map(d => d.name).join(', '));
+
+    if (newList.length === 1 && photoUrl) {
+      setFormValue('coverImage', photoUrl);
+    }
   };
 
   const handleRemoveDestination = (id: string) => {

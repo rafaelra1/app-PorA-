@@ -61,31 +61,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ nextTrip, onViewTrip }) =
             </div>
 
             {/* Widget Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                {/* Holidays Widget */}
-                <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-10 h-10 bg-[#d0cfe1]/20 text-[#231212] rounded-xl flex items-center justify-center">
-                            <Icon name="celebration" className="text-xl" filled />
-                        </div>
-                        <span className="font-bold text-gray-900 text-lg">Próximos Feriados</span>
-                    </div>
-
-                    <div className="flex items-center gap-4 p-4 bg-[#f8f9fa] rounded-2xl border border-gray-50">
-                        <div className="bg-white p-3 rounded-xl text-center min-w-[64px] shadow-sm border border-gray-100">
-                            <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Dez</span>
-                            <span className="block text-2xl font-black text-[#231212]">24</span>
-                        </div>
-                        <div>
-                            <p className="font-bold text-gray-900 text-base">Natal</p>
-                            <div className="flex items-center gap-1.5 mt-1">
-                                <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                                <span className="text-xs text-gray-500 font-medium">Feriado Nacional</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                 {/* New Trip Widget */}
                 <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col items-center text-center justify-center group relative overflow-hidden">

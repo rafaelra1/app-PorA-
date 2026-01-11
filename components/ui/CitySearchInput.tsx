@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import usePlacesAutocomplete from 'use-places-autocomplete';
+import { getPlaceDetailsFull } from '../../services/googlePlacesService';
 
 export interface CitySearchResult {
     name: string;
@@ -68,45 +69,53 @@ export const CitySearchInput: React.FC<CitySearchInputProps> = ({
         clearSuggestions();
         setDropdownStyles(null);
 
-        const service = new google.maps.places.PlacesService(document.createElement('div'));
+        try {
+            // Use REST API V1 via service to avoid 403 on photos
+            const place = await getPlaceDetailsFull(placeId);
 
-        service.getDetails(
-            { placeId, fields: ['name', 'formatted_address', 'address_components', 'photos', 'geometry'] },
-            (place, status) => {
-                if (status === google.maps.places.PlacesServiceStatus.OK && place) {
-                    // Extract country
-                    let country = '';
-                    place.address_components?.forEach(comp => {
+            if (place) {
+                // Extract country
+                let country = '';
+                // API V1 returns addressComponents as { longText: string, types: string[] }[]
+                // or similar structure depending on version? 
+                // Checks V1 docs: "addressComponents": [ { "longText": "...", "shortText": "...", "types": [...] } ]
+                if (place.addressComponents) {
+                    place.addressComponents.forEach((comp: any) => {
                         if (comp.types.includes('country')) {
-                            country = comp.long_name;
+                            country = comp.longText;
                         }
                     });
-
-                    // Extract photo
-                    let photoUrl: string | undefined;
-                    if (place.photos && place.photos.length > 0) {
-                        photoUrl = place.photos[0].getUrl({ maxWidth: 1600 });
-                    }
-
-                    // Extract name
-                    const name = place.name || description.split(',')[0];
-
-                    const result: CitySearchResult = {
-                        name,
-                        country: country || 'Desconhecido',
-                        image: photoUrl,
-                        formattedAddress: `${name}, ${country || 'Desconhecido'}`
-                    };
-
-                    onSelect(result);
-
-                    // Call external onChange if provided to update the controlled input value
-                    if (externalOnChange) {
-                        externalOnChange(description);
-                    }
                 }
+
+                // Extract photo
+                let photoUrl: string | undefined;
+                if (place.photos && place.photos.length > 0) {
+                    // Construct V1 photo URL manually
+                    const apiKey = import.meta.env.VITE_GOOGLE_PLACES_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+                    photoUrl = `https://places.googleapis.com/v1/${place.photos[0].name}/media?maxHeightPx=1600&maxWidthPx=1600&key=${apiKey}`;
+                }
+
+                // Extract name
+                const name = place.displayName?.text || description.split(',')[0];
+
+                const result: CitySearchResult = {
+                    name,
+                    country: country || 'Desconhecido',
+                    image: photoUrl,
+                    formattedAddress: `${name}, ${country || 'Desconhecido'}`
+                };
+
+                onSelect(result);
+
+                if (externalOnChange) {
+                    externalOnChange(description);
+                }
+            } else {
+                console.error("Failed to fetch details for place:", placeId);
             }
-        );
+        } catch (error) {
+            console.error("Error in CitySearchInput select:", error);
+        }
     }, [setValue, clearSuggestions, onSelect, externalOnChange]);
 
     return (

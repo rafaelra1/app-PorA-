@@ -4,7 +4,7 @@ import { Trip, Participant, DetailedDestination } from '../../types';
 import { Button, Card, Icon } from '../ui/Base';
 import { Input } from '../ui/Input';
 import DatePicker from '../ui/DatePicker';
-import PlaceSearchInput from '../ui/PlaceSearchInput';
+import { PlaceSearchInput } from '../ui/PlaceSearchInput';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -148,15 +148,23 @@ const TripWizard: React.FC<TripWizardProps> = ({ isOpen, onClose, onComplete }) 
                                 <div className="space-y-6">
                                     <p className="text-text-muted text-sm font-medium">Para onde você quer ir? Você pode adicionar múltiplas cidades.</p>
                                     <PlaceSearchInput
-                                        onSelect={(desc, id, details) => {
-                                            const cityName = desc.split(',')[0].trim();
-                                            if (!destinations.find(d => d.placeId === id)) {
+                                        onSelect={async (result) => {
+                                            const cityName = result.name.split(',')[0].trim();
+                                            if (!destinations.find(d => d.placeId === result.placeId)) {
+                                                // Fetch photo using V1 API
+                                                const { getPlaceDetailsFull } = await import('../../services/googlePlacesService');
+                                                const placeData = await getPlaceDetailsFull(result.placeId);
+                                                let photoUrl: string | undefined;
+                                                if (placeData?.photos?.[0]?.name) {
+                                                    const apiKey = import.meta.env.VITE_GOOGLE_PLACES_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+                                                    photoUrl = `https://places.googleapis.com/v1/${placeData.photos[0].name}/media?maxHeightPx=1600&maxWidthPx=1600&key=${apiKey}`;
+                                                }
                                                 setDestinations([...destinations, {
-                                                    id: id,
+                                                    id: result.placeId,
                                                     name: cityName,
-                                                    placeId: id,
-                                                    country: desc.split(',').pop()?.trim() || '',
-                                                    image: details?.photos?.[0]?.getUrl()
+                                                    placeId: result.placeId,
+                                                    country: result.description.split(',').pop()?.trim() || '',
+                                                    image: photoUrl
                                                 }]);
                                             }
                                         }}

@@ -10,6 +10,7 @@ import WeekView from '../components/calendar/WeekView';
 import FilterPanel from '../components/calendar/FilterPanel';
 import ExportModal from '../components/calendar/ExportModal';
 import EventDetailsModal from '../components/calendar/EventDetailsModal';
+import HolidayBadge from '../components/calendar/HolidayBadge';
 
 interface CalendarViewProps {
   trips: Trip[];
@@ -27,6 +28,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
     syncFromTrips,
     syncFromActivities,
     syncFromTransports,
+    syncActivitiesFromSupabase,
     events
   } = useCalendar();
 
@@ -54,22 +56,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
     // First sync basic trip events (start/end)
     syncFromTrips(trips);
 
-    // Then load details (activities/transports) from local storage for each trip
-    // This ensures the calendar view has the latest itinerary data even if accessed directly
-    const loadItineraryData = () => {
-      trips.forEach(trip => {
-        if (typeof window !== 'undefined') {
-          try {
-            // Load itinerary activities
-            const storedActivities = window.localStorage.getItem(`porai_trip_${trip.id}_itinerary_activities`);
-            if (storedActivities) {
-              const parsed = JSON.parse(storedActivities);
-              if (Array.isArray(parsed)) {
-                syncFromActivities(parsed, trip.id);
-              }
-            }
+    // Then load activities from Supabase and transports from local storage
+    const loadItineraryData = async () => {
+      for (const trip of trips) {
+        try {
+          // Load itinerary activities from Supabase (new source of truth)
+          await syncActivitiesFromSupabase(trip.id);
 
-            // Load transports
+          // Load transports from localStorage (TransportContext may also use Supabase in future)
+          if (typeof window !== 'undefined') {
             const storedTransports = window.localStorage.getItem(`porai_trip_${trip.id}_transports`);
             if (storedTransports) {
               const parsed = JSON.parse(storedTransports);
@@ -77,15 +72,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
                 syncFromTransports(parsed, trip.id);
               }
             }
-          } catch (e) {
-            console.error(`Error syncing data for trip ${trip.id} to calendar`, e);
           }
+        } catch (e) {
+          console.error(`Error syncing data for trip ${trip.id} to calendar`, e);
         }
-      });
+      }
     };
 
     loadItineraryData();
-  }, [trips]);
+  }, [trips, syncActivitiesFromSupabase]);
 
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate();
@@ -307,11 +302,24 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
             {days.map((day, idx) => {
               const dayEvents = day ? getEventsForDate(day) : [];
 
+              // Check for holiday
+              const holiday = day ? BRAZILIAN_HOLIDAYS.find(h => {
+                const [hY, hM, hD] = h.date.split('-').map(Number);
+                return hD === day.getDate() && hM === (day.getMonth() + 1) && hY === day.getFullYear();
+              }) : null;
+
               return (
                 <div
                   key={idx}
                   onClick={() => day && handleDayClick(day)}
-                  className={`bg-white min-h-[120px] p-2 flex flex-col gap-1 transition-colors hover:bg-gray-50/50 cursor-pointer ${!day ? 'bg-gray-50/30' : ''}`}
+                  className={`min-h-[120px] p-2 flex flex-col gap-1 transition-colors hover:bg-gray-50/50 cursor-pointer ${!day
+                    ? 'bg-gray-50/30'
+                    : holiday
+                      ? holiday.type === 'nacional'
+                        ? 'bg-emerald-50/70'
+                        : 'bg-amber-50/70'
+                      : 'bg-white'
+                    }`}
                 >
                   {day && (
                     <>
@@ -323,22 +331,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
                           }`}>
                           {day.getDate()}
                         </span>
-                        {(() => {
-                          const holiday = BRAZILIAN_HOLIDAYS.find(h => {
-                            const [hY, hM, hD] = h.date.split('-').map(Number);
-                            return hD === day.getDate() && hM === (day.getMonth() + 1) && hY === day.getFullYear();
-                          });
-                          if (holiday) {
-                            return (
-                              <div
-                                className={`size-2 rounded-full ${holiday.type === 'nacional' ? 'bg-green-500' : 'bg-yellow-500'}`}
-                                title={holiday.name}
-                              ></div>
-                            );
-                          }
-                          return null;
-                        })()}
                       </div>
+
+                      {/* Holiday Badge */}
+                      {holiday && (
+                        <HolidayBadge holiday={holiday} size="md" showName />
+                      )}
 
                       <div className="flex flex-col gap-1 mt-1">
                         {/* Show trips */}

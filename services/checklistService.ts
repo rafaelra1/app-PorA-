@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { Task, PendingAction, TaskCategory, TaskPriorityLevel } from '../types/checklist';
 import * as checklistCache from '../lib/checklistCache';
-import { Trip } from '../types';
+import { Trip, HotelReservation, Transport } from '../types';
 
 // =============================================================================
 // Smart Checklist Rules
@@ -134,13 +134,158 @@ const ACTIVE_RULES: ChecklistRule[] = [
     new SchengenInsuranceRule()
 ];
 
+// =============================================================================
+// Reservation-Based Task Generation (Check-in, Checkout, Boarding)
+// =============================================================================
+
+interface ReservationTasksContext {
+    tripId: string;
+    accommodations: HotelReservation[];
+    transports: Transport[];
+}
+
+/**
+ * Generate tasks based on reservations (hotels and transports)
+ */
+export const generateReservationTasks = (context: ReservationTasksContext): Task[] => {
+    const tasks: Task[] = [];
+
+    // Generate hotel check-in/checkout tasks
+    for (const hotel of context.accommodations) {
+        // Check-in reminder
+        if (hotel.checkIn) {
+            const checkInDate = parseCheckInDate(hotel.checkIn);
+            if (checkInDate) {
+                tasks.push({
+                    id: crypto.randomUUID(),
+                    trip_id: context.tripId,
+                    title: `Check-in: ${hotel.name}`,
+                    category: 'reservations',
+                    priority: 'important',
+                    rule_id: `hotel-checkin-${hotel.id}`,
+                    is_completed: false,
+                    is_urgent: false,
+                    due_date: checkInDate.toISOString().split('T')[0],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
+            }
+        }
+
+        // Check-out reminder
+        if (hotel.checkOut) {
+            const checkOutDate = parseCheckInDate(hotel.checkOut);
+            if (checkOutDate) {
+                tasks.push({
+                    id: crypto.randomUUID(),
+                    trip_id: context.tripId,
+                    title: `Check-out: ${hotel.name}`,
+                    category: 'reservations',
+                    priority: 'important',
+                    rule_id: `hotel-checkout-${hotel.id}`,
+                    is_completed: false,
+                    is_urgent: false,
+                    due_date: checkOutDate.toISOString().split('T')[0],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
+            }
+        }
+    }
+
+    // Generate transport boarding tasks
+    for (const transport of context.transports) {
+        if (transport.departureDate) {
+            const departureDate = new Date(transport.departureDate);
+            if (!isNaN(departureDate.getTime())) {
+                const transportLabel = transport.type === 'flight' ? 'Embarque voo' :
+                    transport.type === 'train' ? 'Embarque trem' :
+                        transport.type === 'bus' ? 'Embarque onibus' : 'Transporte';
+
+                const reference = transport.reference || transport.operator || '';
+
+                tasks.push({
+                    id: crypto.randomUUID(),
+                    trip_id: context.tripId,
+                    title: `${transportLabel}: ${reference}`,
+                    category: 'reservations',
+                    priority: 'blocking',
+                    rule_id: `transport-boarding-${transport.id}`,
+                    is_completed: false,
+                    is_urgent: true,
+                    due_date: departureDate.toISOString().split('T')[0],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
+            }
+        }
+    }
+
+    return tasks;
+};
+
+/**
+ * Helper to parse check-in date (handles "DD/MM/YYYY" or "YYYY-MM-DD")
+ */
+function parseCheckInDate(dateStr: string): Date | null {
+    if (!dateStr) return null;
+
+    // Try DD/MM/YYYY format
+    if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+            const [day, month, year] = parts;
+            const date = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+            if (!isNaN(date.getTime())) return date;
+        }
+    }
+
+    // Try ISO format
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) return date;
+
+    return null;
+}
+
+/**
+ * Parse date string that can be in DD/MM/YYYY or ISO format
+ */
+const parseDateString = (dateStr: string): Date | null => {
+    if (!dateStr) return null;
+
+    // Try DD/MM/YYYY format first
+    if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+            const [day, month, year] = parts;
+            const date = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+            if (!isNaN(date.getTime())) return date;
+        }
+    }
+
+    // Try ISO/standard format
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) return date;
+
+    return null;
+};
+
 /**
  * Generate smart tasks based on trip data
  */
 export const generateSmartTasks = async (trip: Trip, userNationality: string = 'BR'): Promise<Task[]> => {
     const destinations = trip.detailedDestinations || [];
-    const departureDate = new Date(trip.startDate);
-    const returnDate = new Date(trip.endDate);
+    const departureDate = parseDateString(trip.startDate);
+    const returnDate = parseDateString(trip.endDate);
+
+    // Validate dates - return empty array if dates are invalid
+    if (!departureDate || !returnDate) {
+        console.warn('generateSmartTasks: Invalid trip dates, skipping task generation', {
+            startDate: trip.startDate,
+            endDate: trip.endDate
+        });
+        return [];
+    }
 
     const context: RuleContext = {
         trip,
@@ -156,6 +301,11 @@ export const generateSmartTasks = async (trip: Trip, userNationality: string = '
         if (rule.applies(context)) {
             const tasks = rule.generate(context);
             for (const task of tasks) {
+                // Validate dueDate before converting to ISO string
+                const dueDateStr = task.dueDate && !isNaN(task.dueDate.getTime())
+                    ? task.dueDate.toISOString().split('T')[0]
+                    : undefined;
+
                 generatedTasks.push({
                     id: crypto.randomUUID(),
                     trip_id: trip.id,
@@ -165,7 +315,7 @@ export const generateSmartTasks = async (trip: Trip, userNationality: string = '
                     rule_id: task.ruleId,
                     is_completed: false,
                     is_urgent: task.priority === 'blocking',
-                    due_date: task.dueDate?.toISOString().split('T')[0],
+                    due_date: dueDateStr,
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 });
@@ -195,7 +345,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
 
     if (tasksToInsert.length > 0) {
         const { error: insertError } = await supabase
-            .from('trip_checklist_items')
+            .from('checklist_tasks')
             .insert(tasksToInsert.map(task => ({
                 id: task.id,
                 trip_id: task.trip_id,
@@ -204,7 +354,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
                 priority: task.priority,
                 rule_id: task.rule_id,
                 is_completed: task.is_completed,
-                due_date: task.due_date,
+                // Note: due_date is stored locally but not synced to DB (column doesn't exist in Supabase)
                 created_at: task.created_at,
                 updated_at: task.updated_at
             })));
@@ -224,7 +374,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
     if (tasksToRemove.length > 0) {
         const idsToRemove = tasksToRemove.map(t => t.id);
         const { error: deleteError } = await supabase
-            .from('checklist_tasks')
+            .from('trip_checklist_items')
             .delete()
             .in('id', idsToRemove);
 
@@ -238,7 +388,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
 // Fetch tasks from Supabase and update local cache
 export const fetchRemoteTasks = async (tripId: string): Promise<Task[]> => {
     const { data, error } = await supabase
-        .from('trip_checklist_items')
+        .from('checklist_tasks')
         .select('*')
         .eq('trip_id', tripId);
 
@@ -276,9 +426,10 @@ const processAction = async (action: PendingAction): Promise<void> => {
 
     switch (type) {
         case 'ADD': {
-            const { title, is_urgent, ...rest } = payload as any;
+            // Exclude fields that don't exist in DB schema
+            const { title, is_urgent, due_date, ...rest } = payload as any;
             const { error: addError } = await supabase
-                .from('trip_checklist_items')
+                .from('checklist_tasks')
                 .insert({
                     ...rest,
                     text: title || rest.text // Map title to text column
@@ -288,12 +439,13 @@ const processAction = async (action: PendingAction): Promise<void> => {
         }
 
         case 'UPDATE': {
-            const { id, title, is_urgent, ...updates } = payload as any;
+            // Exclude fields that don't exist in DB schema
+            const { id, title, is_urgent, due_date, ...updates } = payload as any;
             const dbUpdates: any = { ...updates };
             if (title) dbUpdates.text = title; // Map title to text column
 
             const { error: updateError } = await supabase
-                .from('trip_checklist_items')
+                .from('checklist_tasks')
                 .update(dbUpdates)
                 .eq('id', id);
             if (updateError) throw updateError;
@@ -302,7 +454,7 @@ const processAction = async (action: PendingAction): Promise<void> => {
 
         case 'DELETE':
             const { error: deleteError } = await supabase
-                .from('trip_checklist_items')
+                .from('checklist_tasks')
                 .delete()
                 .eq('id', payload.id);
             if (deleteError) throw deleteError;

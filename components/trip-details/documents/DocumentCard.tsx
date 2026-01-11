@@ -13,6 +13,7 @@ interface DocumentCardProps {
     onClick?: () => void;
     onCopyReference?: (ref: string) => void;
     onDelete?: () => void;
+    onNavigateToReservation?: () => void;
 }
 
 // =============================================================================
@@ -134,7 +135,8 @@ const DocumentCardComponent: React.FC<DocumentCardProps> = ({
     viewMode = 'grid',
     onClick,
     onCopyReference,
-    onDelete
+    onDelete,
+    onNavigateToReservation
 }) => {
     const typeConfig = TYPE_CONFIG[document.type] || TYPE_CONFIG.other;
     const statusConfig = STATUS_CONFIG[document.status] || STATUS_CONFIG.confirmed;
@@ -264,6 +266,17 @@ const DocumentCardComponent: React.FC<DocumentCardProps> = ({
                                 title="Adicionar ao Google Wallet"
                             >
                                 <span className="material-symbols-outlined text-sm">wallet</span>
+                            </button>
+                        )}
+
+                        {/* Navigate to linked reservation */}
+                        {(document.linkedAccommodationId || document.linkedTransportId) && onNavigateToReservation && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onNavigateToReservation(); }}
+                                className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                title="Ver reserva vinculada"
+                            >
+                                <span className="material-symbols-outlined text-sm">link</span>
                             </button>
                         )}
 

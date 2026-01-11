@@ -2,10 +2,9 @@ import * as React from 'react';
 import { PageContainer, PageHeader, Card } from '../components/ui/Base';
 import { useRef, useState, useEffect, useMemo } from 'react';
 import DayAgenda from '../components/dashboard/DayAgenda';
-import NextTransportWidget from '../components/dashboard/NextTransportWidget';
 import CheckInWidget from '../components/dashboard/CheckInWidget';
-import DocumentsWidget from '../components/dashboard/DocumentsWidget';
-import { Trip, ItineraryActivity, Transport, HotelReservation, TripDocument } from '../types';
+import ImagineTripsWidget from '../components/dashboard/ImagineTripsWidget';
+import { Trip, ItineraryActivity, Transport, HotelReservation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useCalendar } from '../contexts/CalendarContext';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -22,7 +21,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEditTrip, onDeleteTrip, trips, onNavigate }) => {
   const { user } = useAuth();
-  const { syncFromTrips, syncFromActivities, syncFromTransports, getEventsForDate } = useCalendar();
+  const { syncFromTrips, syncFromActivities, syncFromTransports, syncActivitiesFromSupabase, getEventsForDate } = useCalendar();
   const { unreadCount } = useNotifications();
   const nextTrip = trips.find(t => t.status === 'confirmed') || trips[0];
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -32,32 +31,49 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
   const [allActivities, setAllActivities] = useState<ItineraryActivity[]>([]);
   const [allTransports, setAllTransports] = useState<Transport[]>([]);
   const [allHotels, setAllHotels] = useState<HotelReservation[]>([]);
-  const [allDocuments, setAllDocuments] = useState<TripDocument[]>([]);
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+  const [hoveredHolidayDay, setHoveredHolidayDay] = useState<number | null>(null);
 
-  // Load activities, transports, hotels, and documents from localStorage and sync with CalendarContext
+  // Load activities, transports, and hotels from Supabase/localStorage and sync with CalendarContext
   useEffect(() => {
-    const loadData = () => {
+    const loadData = async () => {
       const collectedActivities: ItineraryActivity[] = [];
       const collectedTransports: Transport[] = [];
       const collectedHotels: HotelReservation[] = [];
-      const collectedDocuments: TripDocument[] = [];
 
-      trips.forEach(trip => {
-        if (typeof window !== 'undefined') {
-          try {
-            // Load itinerary activities
-            const storedActivities = window.localStorage.getItem(`porai_trip_${trip.id}_itinerary_activities`);
-            if (storedActivities) {
-              const parsed = JSON.parse(storedActivities);
-              if (Array.isArray(parsed)) {
-                collectedActivities.push(...parsed);
-                // Sync activities with calendar
-                syncFromActivities(parsed, trip.id);
-              }
-            }
+      for (const trip of trips) {
+        try {
+          // Load itinerary activities from Supabase (new source of truth)
+          await syncActivitiesFromSupabase(trip.id);
 
-            // Load transports
+          // Also fetch activities for local display
+          const { supabase } = await import('../lib/supabase');
+          const { data: activitiesData } = await supabase
+            .from('itinerary_activities')
+            .select('*')
+            .eq('trip_id', trip.id);
+
+          if (activitiesData && Array.isArray(activitiesData)) {
+            const mappedActivities: ItineraryActivity[] = activitiesData.map(item => ({
+              id: item.id,
+              day: item.day,
+              date: item.date,
+              time: item.time ? item.time.slice(0, 5) : '00:00',
+              title: item.title,
+              location: item.location,
+              locationDetail: item.location_detail,
+              type: item.type as any,
+              completed: item.completed,
+              notes: item.notes,
+              image: item.image,
+              price: item.price ? String(item.price) : undefined,
+              duration: item.duration || 60,
+            }));
+            collectedActivities.push(...mappedActivities);
+          }
+
+          // Load transports from localStorage (TransportContext may also use Supabase in future)
+          if (typeof window !== 'undefined') {
             const storedTransports = window.localStorage.getItem(`porai_trip_${trip.id}_transports`);
             if (storedTransports) {
               const parsed = JSON.parse(storedTransports);
@@ -76,25 +92,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
                 collectedHotels.push(...parsed);
               }
             }
-
-            // Load documents
-            const storedDocuments = window.localStorage.getItem(`porai_trip_${trip.id}_documents`);
-            if (storedDocuments) {
-              const parsed = JSON.parse(storedDocuments);
-              if (Array.isArray(parsed)) {
-                collectedDocuments.push(...parsed);
-              }
-            }
-          } catch (e) {
-            console.error(`Error loading data for trip ${trip.id}`, e);
           }
+        } catch (e) {
+          console.error(`Error loading data for trip ${trip.id}`, e);
         }
-      });
+      }
 
       setAllActivities(collectedActivities);
       setAllTransports(collectedTransports);
       setAllHotels(collectedHotels);
-      setAllDocuments(collectedDocuments);
     };
 
     // Sync trips with calendar
@@ -105,7 +111,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
     // Listen for storage events to update real-time
     window.addEventListener('storage', loadData);
     return () => window.removeEventListener('storage', loadData);
-  }, [trips, syncFromTrips, syncFromActivities, syncFromTransports]);
+  }, [trips, syncFromTrips, syncActivitiesFromSupabase, syncFromTransports]);
 
   // Stats calculations - memoized for performance
   const totalTrips = trips.length;
@@ -399,7 +405,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
                   </span>
                   <div>
                     <h2 className="text-xl md:text-2xl font-bold mb-1">Próxima Viagem:</h2>
-                    <h3 className="text-3xl md:text-4xl font-black tracking-tight">{nextTrip.destination}</h3>
+                    <h3 className="text-3xl md:text-4xl font-black tracking-tight">{nextTrip.title || nextTrip.destination}</h3>
                     <p className="text-white/70 text-sm mt-2 flex items-center gap-2">
                       {nextTrip.startDate}
                     </p>
@@ -442,80 +448,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
             {/* Check-in Reminders (only shows if any pending) */}
             <CheckInWidget transports={allTransports} hotels={allHotels} />
 
-            {/* Next Transports */}
-            <NextTransportWidget transports={allTransports} />
-
-            {/* Documents Summary */}
-            <DocumentsWidget documents={allDocuments} />
-            {/* Próximos Feriados */}
-            <div className="bg-white rounded-2xl p-5 shadow-soft">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="material-symbols-outlined text-lg text-primary-dark">celebration</span>
-                <h3 className="font-bold text-text-main">Próximos Feriados</h3>
-              </div>
-              <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
-                {BRAZILIAN_HOLIDAYS
-                  .filter(h => new Date(h.date) >= new Date())
-                  .slice(0, 5)
-                  .map((holiday, index) => {
-                    const dateParts = holiday.date.split('-');
-                    const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-                    const monthName = months[parseInt(dateParts[1]) - 1];
-                    const day = dateParts[2];
-
-                    return (
-                      <div key={index} className="flex items-center gap-3 bg-background-light rounded-xl p-3 min-w-[180px] shrink-0">
-                        <div className="flex flex-col items-center text-center min-w-[36px]">
-                          <span className="text-[10px] font-bold text-text-muted uppercase">{monthName}</span>
-                          <span className="text-lg font-bold text-text-main">{day}</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-text-main text-sm truncate">{holiday.name}</p>
-                          <p className="text-xs text-text-muted capitalize">{holiday.type}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {/* Ações Rápidas */}
-            <div className="bg-white rounded-2xl p-5 shadow-soft">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="material-symbols-outlined text-lg text-primary-dark">bolt</span>
-                <h3 className="font-bold text-text-main">Ações Rápidas</h3>
-              </div>
-              <div className="grid grid-cols-4 gap-3">
-                <button
-                  onClick={onOpenAddModal}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-background-light hover:bg-secondary-light hover:shadow-md transition-all group"
-                >
-                  <span className="material-symbols-outlined text-2xl text-text-muted group-hover:text-blue-500 group-hover:scale-110 transition-all">add_location</span>
-                  <span className="text-xs font-bold text-text-main">Nova Reserva</span>
-                </button>
-                <button
-                  onClick={() => onNavigate?.('documents')}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-background-light hover:bg-green-50 hover:shadow-md transition-all group"
-                >
-                  <span className="material-symbols-outlined text-2xl text-text-muted group-hover:text-green-500 group-hover:scale-110 transition-all">folder_open</span>
-                  <span className="text-xs font-bold text-text-main">Biblioteca</span>
-                </button>
-                <button
-                  onClick={() => onNavigate?.('ai')}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-background-light hover:bg-primary-light hover:shadow-md transition-all group"
-                >
-                  <span className="material-symbols-outlined text-2xl text-text-muted group-hover:text-primary-dark group-hover:scale-110 transition-all">smart_toy</span>
-                  <span className="text-xs font-bold text-text-main">Guia de IA</span>
-                </button>
-                <button
-                  onClick={() => onNavigate?.('settings')}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-background-light hover:bg-amber-50 hover:shadow-md transition-all group"
-                >
-                  <span className="material-symbols-outlined text-2xl text-text-muted group-hover:text-yellow-600 group-hover:scale-110 transition-all">settings</span>
-                  <span className="text-xs font-bold text-text-main">Configurações</span>
-                </button>
-              </div>
-            </div>
+            {/* Imaginar Viagens com IA */}
+            <ImagineTripsWidget onCreateTrip={() => onOpenAddModal()} />
 
             {/* Minhas Viagens */}
             <div className="bg-white rounded-2xl p-5 shadow-soft">
@@ -632,26 +566,54 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
                     return checkDate >= start && checkDate <= end;
                   });
 
+                  // Determine background and border colors based on holiday
+                  const holidayBg = holiday
+                    ? holiday.type === 'nacional'
+                      ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-200'
+                      : 'bg-amber-50 ring-1 ring-inset ring-amber-200'
+                    : '';
+
                   return (
-                    <span
+                    <div
                       key={day}
                       onClick={() => setSelectedDate(currentDate)}
-                      title={`${activeTrip ? activeTrip.destination : ''} ${holiday ? '• ' + holiday.name : ''}`}
-                      className={`py-1.5 rounded-full text-sm font-medium cursor-pointer transition-all relative
+                      onMouseEnter={() => holiday && setHoveredHolidayDay(day)}
+                      onMouseLeave={() => setHoveredHolidayDay(null)}
+                      className={`relative py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-all
                         ${isToday
                           ? 'bg-primary-dark text-white shadow-md hover:brightness-110'
                           : selectedDate?.getDate() === day && selectedDate?.getMonth() === currentMonth.getMonth()
                             ? 'bg-secondary text-text-main font-bold ring-2 ring-primary-dark'
-                            : activeTrip
+                            : activeTrip && !holiday
                               ? 'bg-green-100 text-green-700 font-bold hover:bg-green-200'
-                              : 'hover:bg-background-light text-text-main hover:font-bold'
+                              : holiday
+                                ? `${holidayBg} hover:brightness-95`
+                                : 'hover:bg-background-light text-text-main hover:font-bold'
                         }`}
                     >
-                      {day}
-                      {holiday && !isToday && (
-                        <span className={`absolute -bottom-1 left-1/2 -translate-x-1/2 size-1 rounded-full ${holiday.type === 'nacional' ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
+                      <span className="block text-center">{day}</span>
+
+                      {/* Holiday Popover */}
+                      {holiday && hoveredHolidayDay === day && (
+                        <div className={`absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 p-2 rounded-lg shadow-lg border whitespace-nowrap animate-in fade-in zoom-in-95 duration-200 ${holiday.type === 'nacional'
+                          ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                          : 'bg-amber-100 text-amber-700 border-amber-200'
+                          }`}>
+                          <div className="flex items-center gap-2 text-[10px]">
+                            <span className="material-symbols-outlined text-xs">celebration</span>
+                            <div>
+                              <p className="font-bold">{holiday.name}</p>
+                              <p className="opacity-75 capitalize">Feriado {holiday.type}</p>
+                            </div>
+                          </div>
+                          {/* Arrow */}
+                          <div className={`absolute -top-1.5 left-1/2 -translate-x-1/2 size-3 rotate-45 border-l border-t ${holiday.type === 'nacional'
+                            ? 'bg-emerald-100 border-emerald-200'
+                            : 'bg-amber-100 border-amber-200'
+                            }`} />
+                        </div>
                       )}
-                    </span>
+                    </div>
                   );
                 })}
               </div>

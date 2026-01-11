@@ -89,13 +89,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleDeleteTrip = async (id: string) => {
-    const trip = trips.find(t => t.id === id);
-    const confirmMessage = trip
-      ? `Tem certeza que deseja excluir a viagem "${trip.title}"?`
-      : 'Tem certeza que deseja excluir esta viagem?';
-
-    if (!window.confirm(confirmMessage)) return;
-
+    // Confirmation is handled by UI overlays in Travels.tsx and other components
     try {
       await deleteTrip(id);
     } catch (e) {

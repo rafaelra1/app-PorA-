@@ -28,10 +28,23 @@ const Settings: React.FC = () => {
         shareData: true
     });
 
-    const [aiSettings, setAiSettings] = useState({
-        autoAnalyze: true,
-        threshold: 14
+    const [aiSettings, setAiSettings] = useState(() => {
+        // Load from localStorage if available
+        const saved = localStorage.getItem('ai_settings');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch {
+                return { autoAnalyze: true, threshold: 14 };
+            }
+        }
+        return { autoAnalyze: true, threshold: 14 };
     });
+
+    // Persist AI settings to localStorage
+    useEffect(() => {
+        localStorage.setItem('ai_settings', JSON.stringify(aiSettings));
+    }, [aiSettings]);
 
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);

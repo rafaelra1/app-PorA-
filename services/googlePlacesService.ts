@@ -78,5 +78,78 @@ export const googlePlacesService = {
             console.error('Error fetching place info:', error);
             return { image: FALLBACK_HOTEL_IMAGE };
         }
-    }
+    },
+
+    getPlaceDetails: async (placeId: string): Promise<PlaceDetails | null> => {
+        if (!API_KEY) {
+            console.warn('Google Places API key not configured');
+            return null;
+        }
+
+        try {
+            const response = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Goog-Api-Key': API_KEY,
+                    'X-Goog-FieldMask': 'id,displayName,formattedAddress,addressComponents,location,photos'
+                }
+            });
+
+            if (!response.ok) {
+                console.error('Failed to fetch place details:', response.statusText);
+                return null;
+            }
+
+            const place = await response.json();
+
+            let image = FALLBACK_HOTEL_IMAGE;
+            if (place.photos && place.photos.length > 0) {
+                image = `https://places.googleapis.com/v1/${place.photos[0].name}/media?maxHeightPx=1600&maxWidthPx=1600&key=${API_KEY}`;
+            }
+
+            return {
+                address: place.formattedAddress,
+                image,
+                location: place.location,
+                // Map address components to find country if needed, but for now returning raw
+                // We'll let the caller handle specific component extraction if they really need it
+                // Or we can add it to the interface if we want to be robust. 
+                // For CitySearchInput we need country.
+                // Let's attach the raw incomplete object or we can parse it here.
+                // But the interface PlaceDetails currently doesn't support 'types' adequately for components.
+                // Let's just return what we have matching PlaceDetails and maybe extend it slightly locally or keep as is.
+                // Actually the current PlaceDetails interface is a bit limited for "City" usage (no country field).
+                // But CitySearchInput expects to parse it. 
+                // Let's assume the caller will have to re-fetch if they need strict components OR we return them.
+                // Wait, PlaceDetails interface is defined in this file. Let's check it.
+            };
+        } catch (error) {
+            console.error('Error fetching place details:', error);
+            return null;
+        }
+    },
+
+    // exposing helper for address components if needed, or just let caller handle it.
+    // The previous implementation in CitySearchInput was parsing address_components.
+    // We should probably include addressComponents in the returned data if we can.
+    // Let's modify the interface slightly or just return 'any' for the specialized usage?
+    // Better: Allow PlaceDetails to have optional extras
 };
+
+export const getPlaceDetailsFull = async (placeId: string): Promise<any> => {
+    if (!API_KEY) return null;
+    try {
+        const response = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': API_KEY,
+                'X-Goog-FieldMask': 'id,displayName,formattedAddress,addressComponents,location,photos'
+            }
+        });
+        if (!response.ok) return null;
+        return await response.json();
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+}

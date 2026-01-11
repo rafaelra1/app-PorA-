@@ -42,7 +42,7 @@ const LocalEventsWidget: React.FC<LocalEventsWidgetProps> = ({ cityName, dates }
             case 'festival': return 'celebration';
             case 'music': return 'music_note';
             case 'art': return 'palette';
-            case 'holiday': return 'star'; // or event_available
+            case 'holiday': return 'celebration';
             default: return 'event';
         }
     };
@@ -52,10 +52,17 @@ const LocalEventsWidget: React.FC<LocalEventsWidgetProps> = ({ cityName, dates }
             case 'festival': return 'text-amber-500 bg-amber-50';
             case 'music': return 'text-purple-500 bg-purple-50';
             case 'art': return 'text-pink-500 bg-pink-50';
-            case 'holiday': return 'text-red-500 bg-red-50';
+            case 'holiday': return 'text-emerald-600 bg-emerald-50';
             default: return 'text-blue-500 bg-blue-50';
         }
     };
+
+    // Sort events to show holidays first
+    const sortedEvents = events ? [...events].sort((a, b) => {
+        if (a.type === 'holiday' && b.type !== 'holiday') return -1;
+        if (a.type !== 'holiday' && b.type === 'holiday') return 1;
+        return 0;
+    }) : null;
 
     if (!events && !isLoading && !error) {
         return (
@@ -115,21 +122,42 @@ const LocalEventsWidget: React.FC<LocalEventsWidgetProps> = ({ cityName, dates }
             </div>
 
             <div className="space-y-3">
-                {events?.map((event, index) => {
+                {sortedEvents?.map((event, index) => {
                     const style = getColor(event.type);
+                    const isHoliday = event.type === 'holiday';
+
                     return (
-                        <div key={index} className="flex gap-3 group">
-                            <div className={`mt-1 size-10 rounded-xl flex items-center justify-center shrink-0 ${style}`}>
-                                <span className="material-symbols-outlined text-xl">{getIcon(event.type)}</span>
+                        <div
+                            key={index}
+                            className={`flex gap-3 group ${
+                                isHoliday
+                                    ? 'p-3 rounded-xl bg-gradient-to-r from-emerald-50 to-emerald-100/50 border-2 border-emerald-200'
+                                    : ''
+                            }`}
+                        >
+                            <div className={`mt-1 ${isHoliday ? 'size-12' : 'size-10'} rounded-xl flex items-center justify-center shrink-0 ${
+                                isHoliday ? 'bg-emerald-200 text-emerald-700' : style
+                            }`}>
+                                <span className={`material-symbols-outlined ${isHoliday ? 'text-2xl' : 'text-xl'}`}>
+                                    {getIcon(event.type)}
+                                </span>
                             </div>
-                            <div>
-                                <h5 className="font-bold text-sm text-text-main group-hover:text-primary transition-colors">
+                            <div className="flex-1">
+                                <h5 className={`font-bold text-text-main group-hover:text-primary transition-colors ${
+                                    isHoliday ? 'text-base text-emerald-800' : 'text-sm'
+                                }`}>
                                     {event.title}
                                 </h5>
-                                <p className="text-[10px] font-bold text-text-muted uppercase tracking-wide mb-0.5">
-                                    {event.date} • {event.type === 'other' ? 'Evento' : event.type}
+                                <p className={`font-bold uppercase tracking-wide mb-0.5 ${
+                                    isHoliday
+                                        ? 'text-xs text-emerald-600'
+                                        : 'text-[10px] text-text-muted'
+                                }`}>
+                                    {event.date} • {isHoliday ? 'Feriado' : event.type === 'other' ? 'Evento' : event.type}
                                 </p>
-                                <p className="text-xs text-text-muted leading-relaxed">
+                                <p className={`leading-relaxed ${
+                                    isHoliday ? 'text-sm text-emerald-700' : 'text-xs text-text-muted'
+                                }`}>
                                     {event.description}
                                 </p>
                             </div>

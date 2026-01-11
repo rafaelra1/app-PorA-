@@ -1,42 +1,13 @@
 import * as React from 'react';
-import { useMemo, useState, useEffect } from 'react';
-import { Trip, Expense, City, HotelReservation, Transport, TaskItem, LuggageItem, ItineraryActivity } from '../../../types';
+import { useMemo, useEffect } from 'react';
+import { Trip, City, HotelReservation, Transport, TaskItem, LuggageItem, ItineraryActivity } from '../../../types';
 import { Card, Button, Skeleton, SkeletonText } from '../../ui/Base';
-import AnimatedItineraryMap, { ItineraryStop } from '../itinerary/AnimatedItineraryMap';
-import TravelCoverage from '../dashboard/TravelCoverage';
 import { getGeminiService } from '../../../services/geminiService';
 import { useTrips } from '../../../contexts/TripContext';
 import { EmptyState } from '../../ui/EmptyState';
-import { YouTubeVideo } from '../../../types';
-import { VideoGallery } from './VideoGallery';
 import useImageGeneration from '../../../hooks/useImageGeneration';
-import ActivityDetailsModal from '../modals/ActivityDetailsModal';
 import SmartChecklist from '../SmartChecklist';
-import {
-    CountdownWidget,
-    BudgetWidget,
-    CitiesWidget,
-    TransportsWidget,
-    TimelineWidget,
-    WeatherWidget
-} from './widgets';
-
-// Helper for activity labels
-const getActivityTypeLabel = (type: string) => {
-    const config: Record<string, string> = {
-        transport: 'Transporte',
-        accommodation: 'Acomodação',
-        meal: 'Refeição',
-        food: 'Gastronomia',
-        sightseeing: 'Passeio',
-        culture: 'Cultura',
-        nature: 'Natureza',
-        shopping: 'Compras',
-        nightlife: 'Vida Noturna',
-        other: 'Outro',
-    };
-    return config[type] || 'Atividade';
-};
+import { TimelineWidget } from './widgets';
 
 // =============================================================================
 // Types & Interfaces
@@ -44,13 +15,10 @@ const getActivityTypeLabel = (type: string) => {
 
 interface OverviewTabProps {
     trip: Trip;
-    expenses: Expense[];
     cities: City[];
     hotels: HotelReservation[];
     transports: Transport[];
     activities?: ItineraryActivity[];
-    totalBudget: number;
-    onInvite?: () => void;
     onCityClick?: (city: City) => void;
     onAddCity?: () => void;
     onUpdateCity?: (updatedCity: City) => void;
@@ -162,185 +130,24 @@ const StatusWidget: React.FC<WidgetProps> = ({ icon, iconBg, label, value, subte
 // =============================================================================
 // Sub-Components: Main Column
 // =============================================================================
-interface MacroTimelineProps {
-    cities: City[];
-    onCityClick?: (city: City) => void;
-    onAddCity?: () => void;
-    onUpdateCity?: (updatedCity: City) => void;
-    onTabChange?: (tab: any) => void;
-}
-
-const NextStepCard: React.FC<{
-    transports: Transport[];
-    hotels: HotelReservation[];
-    activities?: ItineraryActivity[];
-    onTabChange?: (tab: any) => void;
-    onViewDetails?: (activity: ItineraryActivity) => void;
-}> = ({ transports, hotels, activities = [], onTabChange, onViewDetails }) => {
-    // Find the next upcoming event
-    const nextFlight = transports.find(t => t.type === 'flight');
-    const nextHotel = hotels[0];
-
-    // Find next activity (that is not completed)
-    const nextActivity = activities.filter(a => !a.completed).sort((a, b) => {
-        // Sort by date then time
-        if (a.date !== b.date) return a.date.localeCompare(b.date);
-        return a.time.localeCompare(b.time);
-    })[0];
-
-    const events: { type: 'flight' | 'hotel' | 'activity', data: any, dateStr: string, timeStr?: string }[] = [];
-
-    if (nextFlight) events.push({ type: 'flight', data: nextFlight, dateStr: nextFlight.departureDate, timeStr: nextFlight.departureTime });
-    if (nextHotel) events.push({ type: 'hotel', data: nextHotel, dateStr: nextHotel.checkIn, timeStr: nextHotel.checkInTime });
-    if (nextActivity) events.push({ type: 'activity', data: nextActivity, dateStr: nextActivity.date, timeStr: nextActivity.time });
-
-    // Sort all events by date
-    events.sort((a, b) => {
-        if (a.dateStr !== b.dateStr) return a.dateStr.localeCompare(b.dateStr);
-        return (a.timeStr || '').localeCompare(b.timeStr || '');
-    });
-
-    const priorityEvent = events[0];
-
-    const handleViewItinerary = () => {
-        if (onTabChange) {
-            onTabChange('itinerary');
-        }
-    };
-
-    // Default state if nothing found
-    if (!priorityEvent) {
-        return (
-            <div className="bg-white rounded-3xl p-5 border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-                <div className="absolute top-0 right-0 p-4 opacity-10">
-                    <span className="material-symbols-outlined text-6xl text-gray-400">explore</span>
-                </div>
-                <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
-                            <span className="material-symbols-outlined text-gray-500">explore</span> Sem Atividades
-                        </h3>
-                    </div>
-                    <p className="font-bold text-sm text-text-main mb-1">Comece a planejar</p>
-                    <p className="text-xs text-text-muted line-clamp-2">Adicione voos, hotéis ou atividades para ver seu próximo passo aqui.</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Determine content based on event type
-    let title = '';
-    let subtext = '';
-    let icon = '';
-    let mainActionText = '';
-    let topActionText = '';
-    let onMainAction = () => { };
-    let onTopAction = () => { };
-
-    if (priorityEvent.type === 'activity') {
-        const act = priorityEvent.data as ItineraryActivity;
-        title = act.title;
-        subtext = `${new Date(act.date).toLocaleDateString('pt-BR')} às ${act.time} - ${act.location || 'Local a definir'}`;
-        icon = act.type === 'food' ? 'restaurant' : act.type === 'sightseeing' ? 'attractions' : 'event';
-
-        // USER REQUEST: Swap "Confirmed" (Badge) with "Ver Roteiro" (Action)
-        // Top right action: Ver Roteiro
-        topActionText = 'Ver Roteiro';
-        onTopAction = handleViewItinerary;
-
-        // Main action (bottom): "Ver Detalhes" opens the modal
-        mainActionText = 'Ver Detalhes';
-        onMainAction = () => {
-            if (onViewDetails) {
-                onViewDetails(act);
-            } else {
-                handleViewItinerary();
-            }
-        };
-
-    } else if (priorityEvent.type === 'flight') {
-        const flight = priorityEvent.data as Transport;
-        title = `Voo ${flight.reference || ''}`;
-        subtext = `${flight.departureDate} às ${flight.departureTime?.slice(0, 5)} - ${flight.departureLocation} → ${flight.arrivalLocation}`;
-        icon = 'flight';
-        topActionText = 'Viajando';
-        mainActionText = 'Ver Passagens';
-        onMainAction = () => {
-            if (onTabChange) onTabChange('transport');
-        };
-    } else {
-        const hotel = priorityEvent.data as HotelReservation;
-        title = hotel.name;
-        subtext = `Check-in: ${hotel.checkIn} às ${hotel.checkInTime}`;
-        icon = 'hotel';
-        topActionText = 'Hospedagem';
-        mainActionText = 'Ver Reserva';
-        onMainAction = () => {
-            if (onTabChange) onTabChange('accommodation'); // Navigate to accommodation
-        };
-    }
-
-    return (
-        <div className="bg-indigo-50 rounded-3xl p-5 border border-indigo-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all cursor-pointer" onClick={onMainAction}>
-            {/* Decorator */}
-            <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-1/4 -translate-y-1/4">
-                <span className="material-symbols-outlined text-[100px] text-indigo-600">{icon}</span>
-            </div>
-
-            <div className="relative z-10">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
-                        <span className="material-symbols-outlined text-indigo-500">{icon}</span> Próxima Atividade
-                    </h3>
-
-                    {/* Top Right Action / Badge */}
-                    {topActionText && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onTopAction();
-                            }}
-                            className={`text-[10px] font-bold px-3 py-1 rounded-full shadow-sm transition-colors ${topActionText === 'Ver Roteiro'
-                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'
-                                : 'bg-white text-indigo-600 cursor-default'
-                                }`}
-                        >
-                            {topActionText}
-                        </button>
-                    )}
-                </div>
-
-                <div className="mb-4">
-                    <h4 className="font-bold text-lg text-text-main mb-1 line-clamp-1">{title}</h4>
-                    <p className="text-xs text-text-muted line-clamp-2">{subtext}</p>
-                </div>
-
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onMainAction();
-                    }}
-                    className="w-full py-2 bg-white rounded-xl text-xs font-bold text-indigo-600 hover:bg-indigo-100 transition-colors shadow-sm"
-                >
-                    {mainActionText}
-                </button>
-            </div>
-        </div>
-    );
-};
-
 
 interface MacroTimelineProps {
     cities: City[];
+    hotels?: HotelReservation[];
     onCityClick?: (city: City) => void;
     onAddCity?: () => void;
     onUpdateCity?: (city: City) => void;
     onDeleteCity?: (city: City) => void;
 }
 
-const MacroTimeline: React.FC<MacroTimelineProps> = ({ cities, onCityClick, onAddCity, onUpdateCity, onDeleteCity }) => {
+const MacroTimeline: React.FC<MacroTimelineProps> = ({ cities, hotels = [], onCityClick, onAddCity, onUpdateCity, onDeleteCity }) => {
     const scrollContainerRef = React.useRef<HTMLDivElement>(null);
     const { generateImage, isGenerating, isUploading } = useImageGeneration();
+
+    // Get hotels for a specific city
+    const getHotelsForCity = (city: City): HotelReservation[] => {
+        return hotels.filter(h => h.cityId === city.id);
+    };
     const [generatingCityId, setGeneratingCityId] = React.useState<string | null>(null);
 
     // Sort cities by arrival date
@@ -513,6 +320,15 @@ const MacroTimeline: React.FC<MacroTimelineProps> = ({ cities, onCityClick, onAd
                                                 <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
                                                 <span>{city.nights} noites</span>
                                             </div>
+                                            {/* Hotel info for this city */}
+                                            {getHotelsForCity(city).length > 0 && (
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <span className="material-symbols-outlined text-[10px] text-amber-300">hotel</span>
+                                                    <span className="truncate max-w-[120px]">
+                                                        {getHotelsForCity(city)[0].name}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -1356,527 +1172,11 @@ const PendingTasksList: React.FC = () => {
     );
 };
 
-const ParticipantsList: React.FC<{ participants?: any[]; onInvite?: () => void }> = ({ participants = [], onInvite }) => {
-    const [showInviteModal, setShowInviteModal] = React.useState(false);
-    const [inviteEmail, setInviteEmail] = React.useState('');
-    const [inviteMessage, setInviteMessage] = React.useState('');
-    const [isSending, setIsSending] = React.useState(false);
-    const [linkCopied, setLinkCopied] = React.useState(false);
-
-    // Define colors for avatars
-    const avatarColors = [
-        'bg-blue-100 text-blue-600',
-        'bg-purple-100 text-purple-600',
-        'bg-amber-100 text-amber-600',
-        'bg-green-100 text-green-600',
-        'bg-pink-100 text-pink-600',
-    ];
-
-    const handleSendInvite = () => {
-        if (!inviteEmail.trim()) return;
-
-        setIsSending(true);
-
-        // Simulate sending invite
-        setTimeout(() => {
-            setIsSending(false);
-            setInviteEmail('');
-            setInviteMessage('');
-            setShowInviteModal(false);
-            // Show success feedback
-            alert(`Convite enviado para ${inviteEmail}!`);
-        }, 1000);
-    };
-
-    const handleCopyLink = () => {
-        const inviteLink = `https://porai.app/trip/invite/${Date.now()}`;
-        navigator.clipboard.writeText(inviteLink);
-        setLinkCopied(true);
-        setTimeout(() => setLinkCopied(false), 2000);
-    };
-
-    return (
-        <>
-            <Card className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                    <span className="inline-block px-3 py-1.5 text-xs font-bold text-text-main bg-primary/30 rounded-full">
-                        Quem Vai
-                    </span>
-                    <button className="text-xs text-primary font-semibold hover:underline">
-                        Ver todos
-                    </button>
-                </div>
-                <div className="space-y-3">
-                    {participants.length > 0 ? (
-                        participants.slice(0, 5).map((p, i) => (
-                            <div key={i} className="flex items-center gap-3 group cursor-pointer">
-                                <div className={`size-9 rounded-full ${avatarColors[i % avatarColors.length]} flex items-center justify-center text-sm font-bold shrink-0`}>
-                                    {p.avatar ? (
-                                        <img src={p.avatar} alt={p.name} className="w-full h-full rounded-full object-cover" />
-                                    ) : (
-                                        p.initials || p.name?.charAt(0)
-                                    )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-text-main truncate group-hover:text-primary transition-colors">
-                                        {p.name}
-                                    </p>
-                                    <p className="text-[10px] text-text-muted flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-[10px]">star</span>
-                                        {p.role || 'Viajante'}
-                                    </p>
-                                </div>
-                                <div className="shrink-0">
-                                    <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-full">
-                                        {p.trips || 1} viagem
-                                    </span>
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <div className="text-center py-4">
-                            <div className="size-12 mx-auto mb-2 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
-                                <span className="material-symbols-outlined text-2xl">person_add</span>
-                            </div>
-                            <p className="text-sm text-text-muted">Nenhum participante ainda</p>
-                        </div>
-                    )}
-                </div>
-                <button
-                    onClick={() => setShowInviteModal(true)}
-                    className="w-full mt-4 py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm font-semibold text-text-muted hover:border-primary hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
-                >
-                    <span className="material-symbols-outlined text-lg">person_add</span>
-                    Convidar
-                </button>
-            </Card>
-
-            {/* Invite Modal */}
-            {showInviteModal && (
-                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-                        {/* Modal Header */}
-                        <div className="p-5 border-b border-gray-100">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                                        <span className="material-symbols-outlined">person_add</span>
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-lg text-text-main">Convidar Participantes</h3>
-                                        <p className="text-xs text-text-muted">Adicione amigos à sua viagem</p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setShowInviteModal(false)}
-                                    className="size-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-text-muted transition-colors"
-                                >
-                                    <span className="material-symbols-outlined">close</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Modal Body */}
-                        <div className="p-5 space-y-4">
-                            {/* Email Input */}
-                            <div>
-                                <label className="block text-sm font-semibold text-text-main mb-2">
-                                    Email do convidado
-                                </label>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 relative">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-lg">mail</span>
-                                        <input
-                                            type="email"
-                                            value={inviteEmail}
-                                            onChange={(e) => setInviteEmail(e.target.value)}
-                                            placeholder="email@exemplo.com"
-                                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Message Input (Optional) */}
-                            <div>
-                                <label className="block text-sm font-semibold text-text-main mb-2">
-                                    Mensagem personalizada <span className="text-text-muted font-normal">(opcional)</span>
-                                </label>
-                                <textarea
-                                    value={inviteMessage}
-                                    onChange={(e) => setInviteMessage(e.target.value)}
-                                    placeholder="Adicione uma mensagem para o convite..."
-                                    rows={3}
-                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all resize-none"
-                                />
-                            </div>
-
-                            {/* Divider */}
-                            <div className="flex items-center gap-3">
-                                <div className="flex-1 h-px bg-gray-200" />
-                                <span className="text-xs text-text-muted">ou</span>
-                                <div className="flex-1 h-px bg-gray-200" />
-                            </div>
-
-                            {/* Copy Link */}
-                            <div className="bg-gray-50 rounded-xl p-4">
-                                <p className="text-sm font-semibold text-text-main mb-2">Compartilhar link de convite</p>
-                                <button
-                                    onClick={handleCopyLink}
-                                    className={`w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all ${linkCopied
-                                        ? 'bg-emerald-500 text-white'
-                                        : 'bg-white border border-gray-200 text-text-main hover:border-primary hover:text-primary'
-                                        }`}
-                                >
-                                    <span className="material-symbols-outlined text-lg">
-                                        {linkCopied ? 'check' : 'link'}
-                                    </span>
-                                    {linkCopied ? 'Link copiado!' : 'Copiar link de convite'}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Modal Footer */}
-                        <div className="p-5 border-t border-gray-100 bg-gray-50/50 flex gap-3">
-                            <button
-                                onClick={() => setShowInviteModal(false)}
-                                className="flex-1 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-text-main hover:bg-gray-50 transition-colors"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={handleSendInvite}
-                                disabled={!inviteEmail.trim() || isSending}
-                                className="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                            >
-                                {isSending ? (
-                                    <>
-                                        <div className="size-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        Enviando...
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="material-symbols-outlined text-lg">send</span>
-                                        Enviar Convite
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
-    );
-};
-
 // =============================================================================
 // Main Component
 // =============================================================================
 
-const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotels, transports, activities, totalBudget, onInvite, onCityClick, onAddCity, onUpdateCity, onDeleteCity, onTabChange, isLoading }) => {
-    const [showAnimatedMap, setShowAnimatedMap] = useState(false);
-    const [realStops, setRealStops] = useState<ItineraryStop[]>([]);
-    const [isLoadingStops, setIsLoadingStops] = useState(false);
-    const { updateTrip } = useTrips();
-
-    // Details Modal State
-    const [detailsModalOpen, setDetailsModalOpen] = useState(false);
-    const [selectedActivityForDetails, setSelectedActivityForDetails] = useState<ItineraryActivity | null>(null);
-
-    const openDetailsModal = (activity: ItineraryActivity) => {
-        setSelectedActivityForDetails(activity);
-        setDetailsModalOpen(true);
-    };
-
-    const getYouTubeID = (url: string) => {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
-    };
-
-    const handleAddVideo = async (url: string) => {
-        const videoId = getYouTubeID(url);
-        if (!videoId) return;
-
-        const newVideo: YouTubeVideo = {
-            id: `video-${Date.now()}`,
-            url: url,
-            title: 'Vídeo do YouTube',
-            thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-            addedAt: new Date().toISOString()
-        };
-
-        const updatedTrip = {
-            ...trip,
-            videos: [...(trip.videos || []), newVideo]
-        };
-
-        await updateTrip(updatedTrip);
-    };
-
-    const handleRemoveVideo = async (id: string) => {
-        const updatedTrip = {
-            ...trip,
-            videos: (trip.videos || []).filter(v => v.id !== id)
-        };
-        await updateTrip(updatedTrip);
-    };
-
-    const totalSpent = useMemo(() =>
-        expenses.filter(e => e.type === 'saida').reduce((sum, e) => sum + e.amount, 0),
-        [expenses]
-    );
-
-    // Fallback coordinates for common cities to ensure demo works smoothly without API calls
-    const CITY_COORDINATES_DB: Record<string, [number, number]> = {
-        'São Paulo': [-23.5505, -46.6333],
-        'Rio de Janeiro': [-22.9068, -43.1729],
-        'London': [51.5074, -0.1278],
-        'Londres': [51.5074, -0.1278],
-        'Paris': [48.8566, 2.3522],
-        'Tokyo': [35.6762, 139.6503],
-        'Tóquio': [35.6762, 139.6503],
-        'Kyoto': [35.0116, 135.7681],
-        'Quioto': [35.0116, 135.7681],
-        'Osaka': [34.6937, 135.5023],
-        'New York': [40.7128, -74.0060],
-        'Nova York': [40.7128, -74.0060],
-        'Rome': [41.9028, 12.4964],
-        'Roma': [41.9028, 12.4964],
-        'Barcelona': [41.3851, 2.1734],
-        'Madrid': [40.4168, -3.7038],
-        'Lisbon': [38.7223, -9.1393],
-        'Lisboa': [38.7223, -9.1393],
-        'Amsterdam': [52.3676, 4.9041],
-        'Berlin': [52.5200, 13.4050],
-        'Berlim': [52.5200, 13.4050],
-        'Athens': [37.9838, 23.7275],
-        'Atenas': [37.9838, 23.7275],
-        'Dubai': [25.2048, 55.2708],
-        'Singapore': [1.3521, 103.8198],
-        'Singapura': [1.3521, 103.8198],
-        'Bangkok': [13.7563, 100.5018],
-        'Sydney': [-33.8688, 151.2093],
-        'Cairo': [30.0444, 31.2357],
-        'Buenos Aires': [-34.6037, -58.3816],
-        'Santiago': [-33.4489, -70.6693],
-        'Lima': [-12.0464, -77.0428],
-        'Cape Town': [-33.9249, 18.4241],
-        'Cidade do Cabo': [-33.9249, 18.4241]
-    };
-
-    // Helper to determine transport mode between two cities
-    const getTransportMode = (fromCity: City, toCity: City): 'plane' | 'train' | 'car' | 'bus' | 'ferry' => {
-        // 1. Check if there's a specific transport record connecting these
-        const connectingTransport = transports.find(t => {
-            const fromCheck = t.departureCity?.toLowerCase().includes(fromCity.name.toLowerCase()) ||
-                t.departureLocation.toLowerCase().includes(fromCity.name.toLowerCase());
-            const toCheck = t.arrivalCity?.toLowerCase().includes(toCity.name.toLowerCase()) ||
-                t.arrivalLocation.toLowerCase().includes(toCity.name.toLowerCase());
-            return fromCheck && toCheck;
-        });
-
-        if (connectingTransport) {
-            switch (connectingTransport.type) {
-                case 'flight': return 'plane';
-                case 'train': return 'train';
-                case 'car':
-                case 'transfer': return 'car';
-                case 'bus': return 'bus';
-                case 'ferry': return 'ferry';
-                default: return 'plane';
-            }
-        }
-
-        // 2. Fallback heuristic based on distance (simplified) or name
-        // For now, we default to 'plane' for most international trips unless cities are known close pairs
-        // This could be enhanced with real distance calculation if coordinates are available immediately
-
-        return 'plane';
-    };
-
-    // Generate real stops when modal opens
-    // Generate real stops when modal opens
-    useEffect(() => {
-        if (showAnimatedMap && cities.length > 0) {
-            const generateStops = async () => {
-                setIsLoadingStops(true);
-                const finalStops: ItineraryStop[] = [];
-
-                // Helper to get coordinates
-                const getCoords = async (locationName: string): Promise<[number, number]> => {
-                    const cleanName = locationName.split('(')[0].trim().replace('Intl.', '').replace('International', '').trim();
-
-                    // Direct DB match
-                    if (CITY_COORDINATES_DB[cleanName]) return CITY_COORDINATES_DB[cleanName];
-                    if (CITY_COORDINATES_DB[locationName]) return CITY_COORDINATES_DB[locationName];
-
-                    // Fallback map for specific airports/codes often used
-                    const AIRPORT_DB: Record<string, [number, number]> = {
-                        'Guarulhos': [-23.4356, -46.4731],
-                        'GRU': [-23.4356, -46.4731],
-                        'Congonhas': [-23.6273, -46.6566],
-                        'Galeão': [-22.8089, -43.2436],
-                        'Santos Dumont': [-22.9105, -43.1631],
-                        'Brasilia': [-15.8697, -47.9172],
-                        'Heathrow': [51.4700, -0.4543],
-                        'Gatwick': [51.1537, -0.1821],
-                        'JFK': [40.6413, -73.7781],
-                        'Charles de Gaulle': [49.0097, 2.5479],
-                        'Orly': [48.7262, 2.3652],
-                        'Dubai': [25.2532, 55.3657],
-                        'Johannesburg': [-26.1367, 28.2411],
-                        'Johannesburgo': [-26.1367, 28.2411],
-                        'O.R. Tambo': [-26.1367, 28.2411],
-                        'Cape Town': [-33.9389, 18.6056],
-                    };
-
-                    for (const key in AIRPORT_DB) {
-                        if (cleanName.includes(key) || locationName.includes(key)) return AIRPORT_DB[key];
-                    }
-
-                    // Try Google Places
-                    try {
-                        const { googlePlacesService } = await import('../../../services/googlePlacesService');
-                        const place = await googlePlacesService.searchPlace(cleanName);
-                        if (place.location) {
-                            return [place.location.latitude, place.location.longitude];
-                        }
-                    } catch (e) {
-                        console.error(`Failed to geocode ${locationName}`, e);
-                    }
-
-                    return [0, 0];
-                };
-
-                // Helper to normalize names for comparison
-                const normalize = (s: string) => s.toLowerCase().trim();
-                const isSameLocation = (loc1: string, loc2: string) => {
-                    // Check if one contains the other (e.g. "São Paulo" and "São Paulo (GRU)")
-                    const n1 = normalize(loc1);
-                    const n2 = normalize(loc2);
-                    return n1.includes(n2) || n2.includes(n1) || (n1.includes('são paulo') && n2.includes('guarulhos')) || (n2.includes('são paulo') && n1.includes('guarulhos'));
-                };
-
-                // START BUILDING THE PATH
-                // 1. Add First City
-                const firstCity = cities[0];
-                const firstCoords = await getCoords(firstCity.name);
-
-                finalStops.push({
-                    id: firstCity.id,
-                    title: firstCity.name,
-                    location: firstCity.country,
-                    coordinates: firstCoords,
-                    transportMode: 'car', // Initial state
-                    day: 1
-                });
-
-                // Iterate through segments between main cities
-                for (let i = 0; i < cities.length - 1; i++) {
-                    const startCity = cities[i];
-                    const endCity = cities[i + 1];
-
-                    // Logic: Find a chain of transports from Start -> ... -> End
-                    let currentLocationName = startCity.name;
-                    let foundPath = false;
-                    let segmentStops: ItineraryStop[] = [];
-
-                    // We try to find up to 3 connecting legs max to avoid infinite loops
-                    for (let leg = 0; leg < 3; leg++) {
-                        // Find transport departing from currentLocation
-                        // We filter for transport that is somewhat related to this trip leg
-                        // Heuristic: matching departure name OR date proximity if distinct names failed? 
-                        // For safety, let's stick to name matching + transport list is usually small
-
-                        const transport = transports.find(t => isSameLocation(t.departureLocation, currentLocationName) || isSameLocation(t.departureCity || '', currentLocationName));
-
-                        if (transport) {
-                            // Determine mode
-                            let outputMode: 'plane' | 'train' | 'car' | 'bus' | 'ferry' = 'plane';
-                            if (transport.type === 'flight') outputMode = 'plane';
-                            else if (transport.type === 'train') outputMode = 'train';
-                            else if (transport.type === 'bus') outputMode = 'bus';
-                            else if (transport.type === 'ferry') outputMode = 'ferry';
-                            else outputMode = 'car';
-
-                            // The previous stop (which is the start of this transport) gets this mode assigned as its "outgoing" mode
-                            if (segmentStops.length > 0) {
-                                segmentStops[segmentStops.length - 1].transportMode = outputMode;
-                            } else {
-                                // Provide mode to the last committed stop (the start city)
-                                finalStops[finalStops.length - 1].transportMode = outputMode;
-                            }
-
-                            // Is the arrival the destination city?
-                            if (isSameLocation(transport.arrivalLocation, endCity.name) || isSameLocation(transport.arrivalCity || '', endCity.name)) {
-                                // Direct hit or final leg found
-                                foundPath = true;
-                                break; // We will add the End City at the outer loop
-                            } else {
-                                // Intermediate stop! (e.g. GRU)
-                                // Only add if it's not basically the same city we just left (redundancy check)
-                                if (!isSameLocation(transport.arrivalLocation, currentLocationName)) {
-                                    const coords = await getCoords(transport.arrivalLocation);
-                                    segmentStops.push({
-                                        id: `stop-${transport.id}`,
-                                        title: transport.arrivalLocation.split('(')[0], // "São Paulo "
-                                        location: 'Conexão',
-                                        coordinates: coords,
-                                        transportMode: 'plane', // Temporary, will be updated if there is a next leg
-                                        day: i + 1
-                                    });
-                                    currentLocationName = transport.arrivalLocation;
-                                } else {
-                                    // Verify if we moved at all? If yes, break to avoid loop
-                                    break;
-                                }
-                            }
-                        } else {
-                            // No transport found from this location.
-                            // If we are at the start city, checking distance heuristic
-                            if (segmentStops.length === 0) {
-                                const distMode = getTransportMode(startCity, endCity);
-                                finalStops[finalStops.length - 1].transportMode = distMode;
-                            }
-                            break;
-                        }
-                    }
-
-                    // Add any intermediate stops found
-                    finalStops.push(...segmentStops);
-
-                    // Add End City
-                    const endCoords = await getCoords(endCity.name);
-                    finalStops.push({
-                        id: endCity.id,
-                        title: endCity.name,
-                        location: endCity.country,
-                        coordinates: endCoords,
-                        transportMode: 'car', // Default for arrival
-                        day: i + 2
-                    });
-                }
-
-                // Filter out invalid coords
-                const validStops = finalStops.filter(s => s.coordinates[0] !== 0 || s.coordinates[1] !== 0);
-
-                // Remove adjacent duplicates (if start city same as first transport start)
-                const uniqueStops = validStops.filter((stop, idx) => {
-                    if (idx === 0) return true;
-                    const prev = validStops[idx - 1];
-                    const dist = Math.sqrt(Math.pow(stop.coordinates[0] - prev.coordinates[0], 2) + Math.pow(stop.coordinates[1] - prev.coordinates[1], 2));
-                    return dist > 0.001; // Filter out identical locations
-                });
-
-                setRealStops(uniqueStops.length > 0 ? uniqueStops : []);
-                setIsLoadingStops(false);
-            };
-
-            generateStops();
-        }
-    }, [showAnimatedMap, cities, transports]);
-
+const OverviewTab: React.FC<OverviewTabProps> = ({ trip, cities, hotels, transports, activities, onCityClick, onAddCity, onUpdateCity, onDeleteCity, onTabChange, isLoading }) => {
     if (isLoading) {
         return (
             <div className="space-y-6 animate-in fade-in duration-300">
@@ -1971,185 +1271,45 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ trip, expenses, cities, hotel
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
-            {/* NEW HEADER SECTION */}
-            <div className="space-y-6">
-                {/* Top Row: Next Step */}
-                <div className="grid grid-cols-1">
-                    <NextStepCard transports={transports} hotels={hotels} activities={activities} onTabChange={onTabChange} onViewDetails={openDetailsModal} />
+            {/* Section 1: Próximos Eventos (1/3) + Linha do Tempo (2/3) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '100ms' }}>
+                {/* Próximos Eventos - 1/3 da largura */}
+                <div className="lg:col-span-1">
+                    <TimelineWidget
+                        transports={transports}
+                        hotels={hotels}
+                        activities={activities}
+                        onNavigate={() => onTabChange?.('itinerary')}
+                    />
                 </div>
 
-                {/* NEW: Dashboard Widgets Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="animate-slide-up" style={{ animationDelay: '100ms' }}>
-                        <CountdownWidget
-                            startDate={trip.startDate}
-                            onNavigate={() => onTabChange?.('itinerary')}
-                        />
-                    </div>
-                    <div className="animate-slide-up" style={{ animationDelay: '200ms' }}>
-                        <BudgetWidget
-                            spent={expenses.reduce((sum, e) => sum + e.amount, 0)}
-                            total={totalBudget}
-                            onNavigate={() => onTabChange?.('budget')}
-                        />
-                    </div>
-                    <div className="animate-slide-up" style={{ animationDelay: '300ms' }}>
-                        <CitiesWidget
-                            cities={cities}
-                            onCityClick={onCityClick}
-                            onNavigate={() => onTabChange?.('cities')}
-                        />
-                    </div>
-                    <div className="animate-slide-up" style={{ animationDelay: '400ms' }}>
-                        <TransportsWidget
-                            transports={transports}
-                            onNavigate={() => onTabChange?.('logistics')}
-                        />
-                    </div>
-                </div>
-
-                {/* Row 2: Timeline + Weather (2 columns each) */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="animate-slide-up" style={{ animationDelay: '500ms' }}>
-                        <TimelineWidget
-                            transports={transports}
-                            hotels={hotels}
-                            activities={activities}
-                            onNavigate={() => onTabChange?.('itinerary')}
-                        />
-                    </div>
-                    <div className="animate-slide-up" style={{ animationDelay: '600ms' }}>
-                        <WeatherWidget
-                            cityName={cities[0]?.name || trip.destination?.split(',')[0] || 'Destino'}
-                        />
-                    </div>
-                </div>
-
-                {/* Timeline + Animated Map Row (with Quem Vai + Coverage on right) */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    <div className="lg:col-span-3 space-y-6">
-                        {/* Timeline Row */}
-                        <MacroTimeline
-                            cities={cities}
-                            onCityClick={onCityClick}
-                            onAddCity={onAddCity}
-                            onUpdateCity={onUpdateCity}
-                            onDeleteCity={onDeleteCity}
-                        />
-                    </div>
-
-                    {/* Right Side: Animated Map (1 col) */}
-                    <div className="lg:col-span-1">
-                        <Card className="p-5 h-full flex flex-col justify-center items-center cursor-pointer group hover:shadow-lg transition-all" onClick={() => setShowAnimatedMap(true)}>
-                            <div className="size-14 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-3 group-hover:scale-110 group-hover:bg-primary group-hover:text-white transition-all">
-                                <span className="material-symbols-outlined text-3xl">play_circle</span>
-                            </div>
-                            <h4 className="font-bold text-sm text-text-main text-center mb-1">Roteiro Animado</h4>
-                            <p className="text-xs text-text-muted text-center">Visualize sua jornada</p>
-                        </Card>
-                    </div>
-                </div>
-
-                {/* Second Row: Alerts on left + Quem Vai + Coverage on right */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    {/* Left Side: City Alerts (3 cols) */}
-                    <div className="lg:col-span-3">
-                        <CityAlertsBox cities={cities} tripStartDate={trip.startDate} />
-                    </div>
-
-                    {/* Right Side: Quem Vai + Coverage Status (1 col) */}
-                    <div className="lg:col-span-1 space-y-4">
-                        <ParticipantsList participants={trip.participants} onInvite={onInvite} />
-
-                        {/* Coverage Status */}
-                        <Card className="p-5">
-                            <span className="inline-block px-3 py-1.5 mb-4 text-xs font-bold text-text-main bg-primary/30 rounded-full">
-                                Status da Cobertura
-                            </span>
-                            <TravelCoverage
-                                trip={trip}
-                                hotels={hotels}
-                                transports={transports}
-                            />
-                        </Card>
-                    </div>
-                </div>
-
-                {/* Top Cards Row: Next Step + Status + Countdown + Weather */}
-                {/* Third Row: Checklist on left + Luggage on right */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    <div className="lg:col-span-3">
-                        <SmartChecklist />
-                    </div>
-                    <div className="lg:col-span-1">
-                        <LuggageChecklist trip={trip} />
-                    </div>
+                {/* Linha do Tempo das Cidades - 2/3 da largura */}
+                <div className="lg:col-span-2">
+                    <MacroTimeline
+                        cities={cities}
+                        hotels={hotels}
+                        onCityClick={onCityClick}
+                        onAddCity={onAddCity}
+                        onUpdateCity={onUpdateCity}
+                        onDeleteCity={onDeleteCity}
+                    />
                 </div>
             </div>
 
-            {/* Fourth Row: Trip Highlights (Full Width) */}
-            {/* Fourth Row: Video Gallery (Full Width) replace Trip Highlights */}
-            <VideoGallery
-                videos={trip.videos || []}
-                onAddVideo={handleAddVideo}
-                onRemoveVideo={handleRemoveVideo}
-            />
+            {/* Section 2: Alertas e Avisos (Full Width - Horizontal Layout) */}
+            <div className="animate-slide-up" style={{ animationDelay: '200ms' }}>
+                <CityAlertsBox cities={cities} tripStartDate={trip.startDate} />
+            </div>
 
-            {/* Animated Map Modal */}
-            {
-                showAnimatedMap && (
-                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-                        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
-                            {/* Header */}
-                            <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
-                                <div className="flex items-center gap-3">
-                                    <div className="size-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white">
-                                        <span className="material-symbols-outlined">route</span>
-                                    </div>
-                                    <div>
-                                        <h2 className="font-bold text-lg text-text-main dark:text-white">Animação do Roteiro</h2>
-                                        <p className="text-sm text-text-muted dark:text-gray-400">
-                                            {isLoadingStops ? 'Gerando rota...' : 'Acompanhe sua viagem no mapa'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setShowAnimatedMap(false)}
-                                    className="size-10 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center text-text-muted transition-colors"
-                                >
-                                    <span className="material-symbols-outlined">close</span>
-                                </button>
-                            </div>
-
-                            {/* Map */}
-                            <div className="flex-1 p-4 relative">
-                                {isLoadingStops ? (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <div className="size-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                                            <p className="text-sm font-semibold text-text-muted">Calculando rota...</p>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <AnimatedItineraryMap
-                                        stops={realStops}
-                                        animationSpeed={5}
-                                    />
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* Activity Details Modal */}
-            <ActivityDetailsModal
-                isOpen={detailsModalOpen}
-                onClose={() => setDetailsModalOpen(false)}
-                title={selectedActivityForDetails?.title || ''}
-                location={selectedActivityForDetails?.location}
-                type={selectedActivityForDetails ? getActivityTypeLabel(selectedActivityForDetails.type) : ''}
-            />
+            {/* Section 3: Checklists (2 colunas iguais) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-slide-up" style={{ animationDelay: '300ms' }}>
+                <div className="h-full">
+                    <SmartChecklist />
+                </div>
+                <div className="h-full">
+                    <LuggageChecklist trip={trip} />
+                </div>
+            </div>
         </div >
     );
 };

@@ -161,6 +161,25 @@ const mapResultToFormData = (result: DocumentAnalysisResult): Partial<TransportF
 
     if (result.model) updates.vehicle = result.model;
 
+    // Specific mapping for Flight PNR and Ticket Number -> Confirmation
+    if (result.type === 'flight' && result.fields) {
+        const pnr = result.fields['pnr']?.value;
+        const ticket = result.fields['ticketNumber']?.value;
+        const ref = result.fields['flightNumber']?.value;
+
+        // Prioritize explicit flightNumber for reference if found
+        if (ref) updates.reference = String(ref);
+
+        if (pnr) {
+            updates.confirmation = String(pnr);
+            if (ticket) {
+                updates.confirmation += ` / Tkt: ${ticket}`;
+            }
+        } else if (ticket) {
+            updates.confirmation = String(ticket);
+        }
+    }
+
     // Extract confidences
     const type = result.type || 'other';
     const confidences: Record<string, number> = {};
@@ -416,6 +435,39 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
             setMode('manual');
         }
     }, [isOpen, initialData]);
+
+    // Auto-calculate duration when departure/arrival date/time change
+    React.useEffect(() => {
+        if (formData.departureDate && formData.departureTime && formData.arrivalDate && formData.arrivalTime) {
+            try {
+                const departureDateTime = new Date(`${formData.departureDate}T${formData.departureTime}`);
+                const arrivalDateTime = new Date(`${formData.arrivalDate}T${formData.arrivalTime}`);
+
+                if (!isNaN(departureDateTime.getTime()) && !isNaN(arrivalDateTime.getTime()) && arrivalDateTime > departureDateTime) {
+                    const diffMs = arrivalDateTime.getTime() - departureDateTime.getTime();
+                    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+                    const hours = Math.floor(diffMinutes / 60);
+                    const minutes = diffMinutes % 60;
+
+                    let durationStr = '';
+                    if (hours > 0) {
+                        durationStr = `${hours}h`;
+                        if (minutes > 0) {
+                            durationStr += ` ${minutes}min`;
+                        }
+                    } else {
+                        durationStr = `${minutes}min`;
+                    }
+
+                    if (formData.duration !== durationStr) {
+                        setFormData(prev => ({ ...prev, duration: durationStr }));
+                    }
+                }
+            } catch (e) {
+                // Invalid date format, skip calculation
+            }
+        }
+    }, [formData.departureDate, formData.departureTime, formData.arrivalDate, formData.arrivalTime, formData.duration]);
 
     const updateField = useCallback(<K extends keyof TransportFormData>(
         field: K,
@@ -809,6 +861,16 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
                         isFlight={formData.type === 'flight'}
                     />
                 </div>
+
+                {/* Duration Display */}
+                {formData.duration && (
+                    <div className="flex items-center justify-center gap-2 py-2 px-4 bg-primary/5 border border-primary/20 rounded-xl">
+                        <span className="material-symbols-outlined text-primary text-lg">schedule</span>
+                        <span className="text-sm font-bold text-primary">
+                            Duração: {formData.duration}
+                        </span>
+                    </div>
+                )}
 
                 {/* Additional Info */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
