@@ -19,10 +19,15 @@ import {
   ExpenseFilter,
   Transport,
   TransportType,
-  ItineraryActivity
+  ItineraryActivity,
+  Transaction,
+  TripParticipant,
+  Participant
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useTrips } from '../contexts/TripContext';
+import { fetchExpenses, createExpense, deleteExpense } from '../services/expenseService';
+import { fetchJournalEntries, createJournalEntry, deleteJournalEntry } from '../services/journalService';
 import { getGeminiService } from '../services/geminiService';
 
 // Existing Trip Details Components
@@ -130,7 +135,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             // Preserve or initialize these fields
             headline: existing?.headline || `Explore as maravilhas de ${dest.name}`,
             image: existing?.image || dest.image || `https://source.unsplash.com/800x600/?${encodeURIComponent(dest.name + ' city')}`,
-            editorialContent: existing?.editorialContent,
+            editorialContent: dest.editorialContent || existing?.editorialContent,
           };
         });
 
@@ -215,8 +220,22 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   const [newJournalLocation, setNewJournalLocation] = useState('');
 
   // Expenses state
-  const [expenses, setExpenses] = useLocalStorage<Expense[]>(`porai_trip_${trip.id}_expenses`, []);
+  // Expenses state
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  // Transactions currently remain local or need separate service (Assuming explicit focus on Expenses for now per plan, keeping transactions local to avoid breaking if table not ready, or should I migrate both? Plan said 'Expenses'. Let's stick to Expenses first but typically they go together if 'BudgetView' uses them. Actually, BudgetView uses separate props. I will migrate Expenses. Transactions might fail if I remove useLocalStorage but don't provide replacement. I'll keep transactions as useLocalStorage for now as it wasn't explicitly in the plan schema).
+  // Wait, the plan was generic "Expenses Persistence".
+  // The 'expenses' table I created seems to mirror the 'Expense' type.
+  // 'Transactions' are for shared expenses.
+  // I will focus on 'expenses' (individual) per the prompt 'Existem outras funcionalidades... only locally?'.
+  // I'll keep transactions as is but replace expenses.
+  const [transactions, setTransactions] = useLocalStorage<Transaction[]>(`porai_trip_${trip.id}_transactions`, []);
   const [totalBudget] = useState(5000);
+
+  useEffect(() => {
+    if (trip.id) {
+      fetchExpenses(trip.id).then(setExpenses).catch(console.error);
+    }
+  }, [trip.id]);
 
   // Transport state (Context)
   const {
@@ -263,11 +282,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
     }
   };
 
-  const handleDeleteExpense = (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir esta despesa?')) {
-      setExpenses(prev => prev.filter(e => e.id !== id));
-    }
-  };
+
 
   const handleDeleteJournalEntry = (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta memória?')) {
@@ -495,7 +510,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
     }
   };
 
-  const handleUpdateEditorialContent = (content: string) => {
+  const handleUpdateEditorialContent = async (content: string) => {
     if (!selectedCity) return;
 
     // Update selected city immediately
@@ -503,6 +518,24 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
 
     // Update cities list (which persists to localStorage)
     setCities(prev => prev.map(c => c.id === selectedCity.id ? { ...c, editorialContent: content } : c));
+
+    // Persist to Backend (Trip.detailedDestinations)
+    if (trip.detailedDestinations) {
+      const updatedDestinations = trip.detailedDestinations.map(dest => {
+        if (dest.id === selectedCity.id) {
+          return { ...dest, editorialContent: content };
+        }
+        return dest;
+      });
+
+      const updatedTrip = { ...trip, detailedDestinations: updatedDestinations };
+
+      try {
+        await updateTrip(updatedTrip);
+      } catch (error) {
+        console.error("Failed to save city editorial content:", error);
+      }
+    }
   };
   const handleGenerateEditorial = async () => { };
 
@@ -671,12 +704,36 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
 
 
 
-  const handleAddExpense = (newExpense: Omit<Expense, 'id'>) => {
-    const expenseWithId: Expense = {
-      ...newExpense,
-      id: `e-${Math.random().toString(36).substr(2, 9)}`,
+  const handleAddExpense = async (newExpense: Omit<Expense, 'id'>) => {
+    try {
+      const created = await createExpense({
+        ...newExpense,
+        tripId: trip.id
+      });
+      setExpenses(prev => [created, ...prev]);
+      setIsAddExpenseModalOpen(false); // Close modal on success
+    } catch (error) {
+      console.error("Failed to create expense", error);
+    }
+  };
+
+  const handleAddTransaction = (newTransaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const transactionWithId: Transaction = {
+      ...newTransaction,
+      id: `tx-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
-    setExpenses(prev => [expenseWithId, ...prev]);
+    setTransactions(prev => [transactionWithId, ...prev]);
+  };
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    try {
+      await deleteExpense(expenseId);
+      setExpenses(prev => prev.filter(e => e.id !== expenseId));
+    } catch (error) {
+      console.error("Failed to delete expense", error);
+    }
   };
 
   // Add state for editing transport
@@ -764,6 +821,12 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   };
 
   // Computed expense values
+  const tripParticipants: TripParticipant[] = useMemo(() => {
+    return (trip.participants || []).map(p => ({
+      ...p,
+      netBalance: 0 // Initial balance, will be calculated by BudgetView
+    }));
+  }, [trip.participants]);
 
 
 
@@ -909,9 +972,14 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         return (
           <BudgetView
             expenses={expenses}
+            transactions={transactions}
+            participants={tripParticipants}
+            currentUserId={user?.id}
+            tripId={trip.id}
             totalBudget={totalBudget}
             destination={trip.destination}
             onAddExpense={() => setIsAddExpenseModalOpen(true)}
+            onAddTransaction={handleAddTransaction}
             onDeleteExpense={handleDeleteExpense}
           />
         );
@@ -924,7 +992,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
           />
         );
       case 'memories':
-        return <JournalView tripTitle={trip.title || trip.destination} tripStartDate={trip.startDate} onDeleteEntry={handleDeleteJournalEntry} />;
+        return <JournalView tripId={trip.id} tripTitle={trip.title || trip.destination} tripStartDate={trip.startDate} />;
       default: return null;
     }
   };

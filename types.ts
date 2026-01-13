@@ -112,6 +112,7 @@ export interface DetailedDestination {
   startDate?: string;
   endDate?: string;
   image?: string;
+  editorialContent?: string;
 }
 
 export interface YouTubeVideo {

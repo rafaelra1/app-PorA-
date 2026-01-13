@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { JournalEntry, JournalMood, Participant } from '../../../types';
 import { useAuth } from '../../../contexts/AuthContext';
 import JournalInput from './JournalInput';
@@ -6,26 +6,29 @@ import JournalTimeline from './JournalTimeline';
 import JournalGallery from './JournalGallery';
 import JournalMap from './JournalMap';
 import JournalStats from './JournalStats';
+import {
+    fetchJournalEntries,
+    createJournalEntry,
+    deleteJournalEntry
+} from '../../../services/journalService';
 
 type ViewMode = 'timeline' | 'gallery' | 'map';
 
 interface JournalViewProps {
+    tripId: string;
     tripTitle?: string;
     tripStartDate?: string;
-    onDeleteEntry?: (id: string) => void;
 }
 
-const VIEW_TABS: { id: ViewMode; label: string; icon: string }[] = [
-    { id: 'timeline', label: 'Linha do Tempo', icon: 'timeline' },
-    { id: 'gallery', label: 'Galeria', icon: 'photo_library' },
-    { id: 'map', label: 'Mapa', icon: 'map' },
-];
-
-const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onDeleteEntry }) => {
+const JournalView: React.FC<JournalViewProps> = ({ tripId, tripTitle, tripStartDate }) => {
     const { user } = useAuth();
     const [entries, setEntries] = useState<JournalEntry[]>([]);
     const [viewMode, setViewMode] = useState<ViewMode>('timeline');
     const [showStats, setShowStats] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const currentUser: Participant = {
         id: user?.id || 'u-temp',
@@ -33,6 +36,28 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onD
         avatar: user?.avatar || 'https://ui-avatars.com/api/?name=User&background=667eea&color=fff',
         role: 'Viajante'
     };
+
+    // Fetch entries on mount
+    const loadEntries = useCallback(async () => {
+        if (!tripId) return;
+
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const data = await fetchJournalEntries(tripId);
+            setEntries(data);
+        } catch (err) {
+            console.error('Failed to load journal entries:', err);
+            setError('Não foi possível carregar as memórias. Tente novamente.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [tripId]);
+
+    useEffect(() => {
+        loadEntries();
+    }, [loadEntries]);
 
     // Calculate day number based on trip start date
     const calculateDayNumber = (date: string): number => {
@@ -44,37 +69,58 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onD
         return diffDays + 1;
     };
 
-    const handleCreateEntry = (data: {
+    const handleCreateEntry = async (data: {
         content: string;
         location: string;
         mood?: JournalMood;
         tags: string[];
-        images: string[];
+        images: File[];
     }) => {
-        const today = new Date();
-        const newEntry: JournalEntry = {
-            id: `j-${Date.now()}`,
-            author: currentUser,
-            timestamp: today.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            date: today.toISOString().split('T')[0],
-            dayNumber: calculateDayNumber(today.toISOString().split('T')[0]),
-            location: data.location,
-            content: data.content,
-            images: data.images.length > 0
-                ? data.images
-                : ['https://images.unsplash.com/photo-1493246507139-91e8bef99c02?auto=format&fit=crop&q=80&w=1000'],
-            mood: data.mood,
-            weather: {
-                temp: Math.floor(Math.random() * 15) + 18, // Mock 18-33°C
-                condition: 'Ensolarado',
-                icon: 'sunny',
-            },
-            tags: data.tags,
-            likes: 0,
-            comments: 0,
-        };
+        setIsSubmitting(true);
+        setError(null);
 
-        setEntries([newEntry, ...entries]);
+        try {
+            const newEntry = await createJournalEntry({
+                tripId,
+                content: data.content,
+                location: data.location,
+                mood: data.mood,
+                tags: data.tags,
+                photos: data.images,
+                dayNumber: calculateDayNumber(new Date().toISOString().split('T')[0]),
+            }, currentUser);
+
+            // Optimistic update: add new entry at the beginning
+            setEntries(prev => [newEntry, ...prev]);
+
+            // Show success message
+            setSuccessMessage('Memória salva com sucesso! ✨');
+            setTimeout(() => setSuccessMessage(null), 3000);
+        } catch (err) {
+            console.error('Failed to create journal entry:', err);
+            setError('Não foi possível salvar a memória. Tente novamente.');
+            throw err; // Re-throw to let JournalInput know it failed
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDeleteEntry = async (id: string) => {
+        const previousEntries = [...entries];
+
+        // Optimistic update: remove immediately
+        setEntries(prev => prev.filter(entry => entry.id !== id));
+
+        try {
+            await deleteJournalEntry(id);
+            setSuccessMessage('Memória excluída.');
+            setTimeout(() => setSuccessMessage(null), 3000);
+        } catch (err) {
+            console.error('Failed to delete journal entry:', err);
+            // Rollback on error
+            setEntries(previousEntries);
+            setError('Não foi possível excluir a memória.');
+        }
     };
 
     const handleLike = (id: string) => {
@@ -85,8 +131,51 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onD
         );
     };
 
+    // Loading skeleton
+    if (isLoading) {
+        return (
+            <div className="animate-in fade-in duration-300 space-y-6 pb-20">
+                <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100">
+                    <div className="flex gap-2">
+                        {[1, 2, 3].map(i => (
+                            <div key={i} className="h-8 w-24 bg-gray-200 rounded-xl animate-pulse" />
+                        ))}
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+                    <div className="lg:col-span-8 space-y-6">
+                        <div className="h-48 bg-gray-100 rounded-2xl animate-pulse" />
+                        <div className="h-64 bg-gray-100 rounded-2xl animate-pulse" />
+                    </div>
+                    <div className="lg:col-span-4">
+                        <div className="h-80 bg-gray-100 rounded-2xl animate-pulse" />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="animate-in fade-in duration-300 space-y-6 pb-20">
+            {/* Toast Messages */}
+            {(error || successMessage) && (
+                <div className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-xl shadow-lg animate-in slide-in-from-right duration-300 flex items-center gap-2 ${error
+                        ? 'bg-red-500 text-white'
+                        : 'bg-emerald-500 text-white'
+                    }`}>
+                    <span className="material-symbols-outlined text-lg">
+                        {error ? 'error' : 'check_circle'}
+                    </span>
+                    <span className="text-sm font-medium">{error || successMessage}</span>
+                    <button
+                        onClick={() => { setError(null); setSuccessMessage(null); }}
+                        className="ml-2 hover:opacity-80"
+                    >
+                        <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                </div>
+            )}
+
             {/* Standard Filter Bar */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100 sticky top-0 z-20 backdrop-blur-sm">
                 {/* View Tabs */}
@@ -114,6 +203,14 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onD
 
                 {/* Right Actions */}
                 <div className="flex items-center gap-2 w-full md:w-auto justify-end px-1">
+                    {/* Refresh Button */}
+                    <button
+                        onClick={loadEntries}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-200/50 bg-white text-text-muted hover:bg-gray-50 transition-all text-xs font-bold"
+                        title="Atualizar"
+                    >
+                        <span className="material-symbols-outlined text-base">refresh</span>
+                    </button>
                     {/* Toggle Stats */}
                     <button
                         onClick={() => setShowStats(!showStats)}
@@ -136,7 +233,11 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onD
 
                     {/* Input Area - Always visible at top */}
                     <div className="mb-8">
-                        <JournalInput user={currentUser} onSubmit={handleCreateEntry} />
+                        <JournalInput
+                            user={currentUser}
+                            onSubmit={handleCreateEntry}
+                            isSubmitting={isSubmitting}
+                        />
                     </div>
 
                     {/* View Content */}
@@ -144,12 +245,12 @@ const JournalView: React.FC<JournalViewProps> = ({ tripTitle, tripStartDate, onD
                         <JournalTimeline
                             entries={entries}
                             onLike={handleLike}
-                            onDelete={onDeleteEntry}
+                            onDelete={handleDeleteEntry}
                         />
                     )}
 
                     {viewMode === 'gallery' && (
-                        <JournalGallery entries={entries} onDelete={onDeleteEntry} />
+                        <JournalGallery entries={entries} onDelete={handleDeleteEntry} />
                     )}
 
                     {viewMode === 'map' && (

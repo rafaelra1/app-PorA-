@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { JournalMood, Participant } from '../../../types';
 import { Card, Button } from '../../ui/Base';
 
@@ -9,8 +9,9 @@ interface JournalInputProps {
         location: string;
         mood?: JournalMood;
         tags: string[];
-        images: string[];
-    }) => void;
+        images: File[];
+    }) => Promise<void>;
+    isSubmitting?: boolean;
 }
 
 const MOOD_OPTIONS: { value: JournalMood; emoji: string; label: string }[] = [
@@ -32,13 +33,42 @@ const DAILY_PROMPTS = [
     "Algo que você aprendeu sobre a cultura local.",
 ];
 
-const JournalInput: React.FC<JournalInputProps> = ({ user, onSubmit }) => {
+const JournalInput: React.FC<JournalInputProps> = ({ user, onSubmit, isSubmitting = false }) => {
     const [content, setContent] = useState('');
     const [location, setLocation] = useState('');
     const [selectedMood, setSelectedMood] = useState<JournalMood | null>(null);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [showMoodPicker, setShowMoodPicker] = useState(false);
     const [showTagPicker, setShowTagPicker] = useState(false);
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [filePreviews, setFilePreviews] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        // Limit to 5 files max
+        const newFiles = [...selectedFiles, ...files].slice(0, 5);
+        setSelectedFiles(newFiles);
+
+        // Generate previews
+        const previews = newFiles.map(file => URL.createObjectURL(file));
+        // Revoke old previews to prevent memory leaks
+        filePreviews.forEach(url => URL.revokeObjectURL(url));
+        setFilePreviews(previews);
+
+        // Reset input to allow selecting the same file again
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const removeFile = (index: number) => {
+        URL.revokeObjectURL(filePreviews[index]);
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+        setFilePreviews(prev => prev.filter((_, i) => i !== index));
+    };
 
     // Random daily prompt
     const dailyPrompt = DAILY_PROMPTS[Math.floor(Math.random() * DAILY_PROMPTS.length)];
@@ -49,24 +79,32 @@ const JournalInput: React.FC<JournalInputProps> = ({ user, onSubmit }) => {
         );
     };
 
-    const handleSubmit = () => {
-        if (!content.trim()) return;
+    const handleSubmit = async () => {
+        if (!content.trim() || isSubmitting) return;
 
-        onSubmit({
-            content,
-            location: location || 'Local não especificado',
-            mood: selectedMood || undefined,
-            tags: selectedTags,
-            images: [], // Placeholder for now
-        });
+        try {
+            await onSubmit({
+                content,
+                location: location || 'Local não especificado',
+                mood: selectedMood || undefined,
+                tags: selectedTags,
+                images: selectedFiles,
+            });
 
-        // Reset form
-        setContent('');
-        setLocation('');
-        setSelectedMood(null);
-        setSelectedTags([]);
-        setShowMoodPicker(false);
-        setShowTagPicker(false);
+            // Reset form on success
+            setContent('');
+            setLocation('');
+            setSelectedMood(null);
+            setSelectedTags([]);
+            setShowMoodPicker(false);
+            setShowTagPicker(false);
+            filePreviews.forEach(url => URL.revokeObjectURL(url));
+            setSelectedFiles([]);
+            setFilePreviews([]);
+        } catch (error) {
+            // Error is handled by parent component
+            console.error('Failed to submit:', error);
+        }
     };
 
     return (
@@ -126,6 +164,37 @@ const JournalInput: React.FC<JournalInputProps> = ({ user, onSubmit }) => {
                                 </button>
                             </span>
                         ))}
+                    </div>
+                )}
+
+                {/* Photo Previews */}
+                {filePreviews.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pb-3">
+                        {filePreviews.map((preview, index) => (
+                            <div key={index} className="relative group">
+                                <img
+                                    src={preview}
+                                    alt={`Preview ${index + 1}`}
+                                    className="size-16 rounded-lg object-cover ring-2 ring-gray-100"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => removeFile(index)}
+                                    className="absolute -top-1.5 -right-1.5 size-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                >
+                                    <span className="material-symbols-outlined text-xs">close</span>
+                                </button>
+                            </div>
+                        ))}
+                        {selectedFiles.length < 5 && (
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="size-16 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-400 hover:border-indigo-300 hover:text-indigo-500 transition-colors"
+                            >
+                                <span className="material-symbols-outlined text-lg">add</span>
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -192,12 +261,31 @@ const JournalInput: React.FC<JournalInputProps> = ({ user, onSubmit }) => {
                             />
                         </div>
 
-                        {/* Tool Buttons */}
+                        {/* Photo Upload Button */}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleFileSelect}
+                            className="hidden"
+                            id="journal-photo-input"
+                        />
                         <button
-                            className="size-10 rounded-xl bg-gray-50 text-text-muted flex items-center justify-center hover:bg-indigo-50 hover:text-indigo-600 transition-all"
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className={`size-10 rounded-xl flex items-center justify-center transition-all ${selectedFiles.length > 0
+                                ? 'bg-emerald-100 text-emerald-600'
+                                : 'bg-gray-50 text-text-muted hover:bg-indigo-50 hover:text-indigo-600'
+                                }`}
                             title="Adicionar foto"
                         >
                             <span className="material-symbols-outlined text-lg">add_a_photo</span>
+                            {selectedFiles.length > 0 && (
+                                <span className="absolute -top-1 -right-1 size-4 bg-emerald-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                                    {selectedFiles.length}
+                                </span>
+                            )}
                         </button>
 
                         <button
@@ -246,12 +334,21 @@ const JournalInput: React.FC<JournalInputProps> = ({ user, onSubmit }) => {
                     {/* Submit Button */}
                     <Button
                         onClick={handleSubmit}
-                        disabled={!content.trim()}
+                        disabled={!content.trim() || isSubmitting}
                         variant="dark"
                         className="!bg-gradient-to-r !from-indigo-600 !to-purple-600 !py-3 !px-8 !text-[11px] font-extrabold uppercase tracking-[0.15em] w-full sm:w-auto shadow-lg shadow-indigo-200/50 hover:shadow-indigo-300/60 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        <span className="material-symbols-outlined text-sm mr-2">auto_awesome</span>
-                        Publicar
+                        {isSubmitting ? (
+                            <>
+                                <span className="material-symbols-outlined text-sm mr-2 animate-spin">progress_activity</span>
+                                Salvando...
+                            </>
+                        ) : (
+                            <>
+                                <span className="material-symbols-outlined text-sm mr-2">auto_awesome</span>
+                                Publicar
+                            </>
+                        )}
                     </Button>
                 </div>
             </div>
