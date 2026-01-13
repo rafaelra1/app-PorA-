@@ -1,9 +1,13 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import multer from 'multer';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,34 +27,92 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Generic Gemini Proxy (Text/Vision)
 app.post('/api/gemini', async (req, res) => {
   try {
-    const { contents, config } = req.body;
+    let { contents, config, prompt, image, model: modelName } = req.body;
+
+    // Log input simplified for debugging
+    console.log('📥 Proxy Input:', {
+      hasContents: !!contents,
+      hasPrompt: !!prompt,
+      hasImage: !!image,
+      modelName
+    });
+
+    // Validar e construir contents se vier no formato simplificado (prompt + image)
+    if (!contents && prompt) {
+      const parts = [{ text: prompt }];
+
+      if (image) {
+        // Ensure clean base64
+        const cleanData = image.data && image.data.includes('base64,')
+          ? image.data.split('base64,')[1]
+          : image.data;
+
+        if (cleanData) {
+          parts.push({
+            inlineData: {
+              mimeType: image.mimeType,
+              data: cleanData
+            }
+          });
+        }
+      }
+      contents = [{ role: 'user', parts }];
+    }
 
     if (!GEMINI_API_KEY) {
       return res.status(500).json({ error: 'API key not configured' });
     }
 
-    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-    const model = ai.getGenerativeModel({
-      model: req.body.model || "gemini-1.5-flash",
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: modelName || "gemini-1.5-flash",
       generationConfig: config
     });
 
     console.log('📝 Proxying request to model:', model.model);
 
-    // Convert contents to match SDK format if necessary
-    const result = await model.generateContent({ contents });
-    const response = await result.response;
+    // Validate contents exists
+    if (!contents) {
+      return res.status(400).json({ error: 'Contents is required' });
+    }
 
-    // Return compatible structure
-    res.json({
-      candidates: [
-        {
-          content: {
-            parts: [{ text: response.text() }]
+    // NORMALIZE CONTENTS - Critical Fix for "request is not iterable"
+    // Ensure contents is ALWAYS an array of Content objects
+    let contentsArray = [];
+    if (Array.isArray(contents)) {
+      contentsArray = contents;
+    } else {
+      // If single object, wrap in array
+      contentsArray = [contents];
+    }
+
+    // Explicitly handle the call with deep logging if it fails
+    try {
+      // SDK always expects { contents: Content[] } structure for consistency
+      const result = await model.generateContent({ contents: contentsArray });
+      const response = await result.response;
+
+      // Return compatible structure
+      res.json({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: response.text() }]
+            }
           }
-        }
-      ]
-    });
+        ]
+      });
+    } catch (sdkError) {
+      console.error('❌ SDK Error:', sdkError);
+      console.error('   Request Payload (first item):', JSON.stringify(contentsArray[0]).substring(0, 200) + '...');
+
+      // Return a cleaner error to frontend
+      res.status(500).json({
+        error: 'Gemini SDK Error',
+        message: sdkError.message,
+        details: sdkError.toString()
+      });
+    }
 
   } catch (error) {
     console.error('❌ Proxy error:', error);
@@ -77,18 +139,16 @@ app.post('/api/gemini/imagen', async (req, res) => {
     console.log('📸 Generating image with prompt:', prompt.substring(0, 100) + '...');
     console.log('🤖 Model: gemini-2.5-flash-image');
 
-    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     // Add "generate an image" context to the prompt mostly for safety/clarity
     // The specific model usage is what triggers image generation
     const contents = [
-      { text: prompt }
+      { role: "user", parts: [{ text: prompt }] }
     ];
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: contents
-    });
+    const response = await model.generateContent({ contents });
 
     if (!response.candidates || response.candidates.length === 0) {
       throw new Error('No candidates returned from Gemini');
@@ -171,6 +231,301 @@ app.get('/api/fallback-image', async (req, res) => {
   } catch (error) {
     console.error('❌ Fallback image error:', error);
     res.status(500).json({ error: 'Failed to fetch fallback image' });
+  }
+});
+
+// =============================================================================
+// Document Processing Pipeline
+// =============================================================================
+
+// Multer configuration for in-memory storage
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported file type: ${file.mimetype}`));
+    }
+  }
+});
+
+// Document type classification prompt
+const classifyDocumentPrompt = `
+Analise esta imagem e classifique o tipo de documento.
+Categorias possíveis:
+- flight (Passagens aéreas, cartões de embarque, e-tickets)
+- hotel (Reservas de hotel, confirmações de Airbnb/Booking)
+- car (Comprovantes de aluguel de carro)
+- train (Bilhetes de trem/metrô)
+- bus (Passagens de ônibus)
+- insurance (Apólices de seguro viagem)
+- passport (Página de identificação do passaporte)
+- visa (Vistos de viagem)
+- activity (Ingressos, tickets de passeios)
+- other (Outros documentos não listados)
+
+Retorne APENAS um JSON: {"type": "categoria", "confidence": 0.0-1.0}
+`;
+
+// Document analysis prompts by type
+const getExtractionPrompt = (docType) => {
+  const fieldsByType = {
+    flight: `
+    - airline (Nome da companhia aérea)
+    - flightNumber (Número do voo. IMPORTANTE: Deve ter código da cia + 3 ou 4 dígitos, ex: LA3040, G31234)
+    - pnr (Código de Reserva / Localizador. Geralmente 6 caracteres alfanuméricos)
+    - ticketNumber (Número do E-Ticket / Bilhete. Geralmente 13 dígitos)
+    - departureAirport (Código IATA da origem, ex: GRU)
+    - arrivalAirport (Código IATA do destino, ex: JFK)
+    - departureDate (Data de partida YYYY-MM-DD)
+    - arrivalDate (Data de chegada YYYY-MM-DD)
+    - departureTime (Horário de partida HH:MM)
+    - arrivalTime (Horário de chegada HH:MM)
+    - terminal (Terminal de embarque)
+    - gate (Portão de embarque)
+    - seat (Assento)
+    - class (Classe, ex: Econômica)
+    `,
+    hotel: `
+    - hotelName (Nome do hotel)
+    - address (Endereço completo)
+    - checkInDate (Data de entrada YYYY-MM-DD)
+    - checkInTime (Horário de check-in)
+    - checkOutDate (Data de saída YYYY-MM-DD)
+    - checkOutTime (Horário de check-out)
+    - roomType (Tipo de quarto)
+    - confirmationNumber (Número da confirmação)
+    - guestName (Nome do hóspede)
+    `,
+    car: `
+    - company (Empresa locadora)
+    - pickupLocation (Local de retirada)
+    - pickupDate (Data de retirada YYYY-MM-DD)
+    - pickupTime (Horário de retirada)
+    - dropoffLocation (Local de devolução)
+    - dropoffDate (Data de devolução YYYY-MM-DD)
+    - dropoffTime (Horário de devolução)
+    - vehicleModel (Modelo do carro)
+    - confirmationNumber (Número da reserva)
+    `,
+    insurance: `
+    - provider (Seguradora)
+    - policyNumber (Número da apólice)
+    - insuredName (Nome do segurado)
+    - coverageStart (Início da vigência YYYY-MM-DD)
+    - coverageEnd (Fim da vigência YYYY-MM-DD)
+    - emergencyPhone (Telefone de emergência)
+    `,
+    other: `
+    - name (Nome principal do serviço/entidade)
+    - date (Data principal YYYY-MM-DD)
+    - reference (Código de referência)
+    - details (Descrição curta)
+    `
+  };
+
+  const fields = fieldsByType[docType] || fieldsByType.other;
+
+  return `Analise esta imagem de um documento do tipo "${docType}".
+Extraia os seguintes campos específicos para CADA item encontrado:
+${fields}
+
+IMPORTANTE: Se houver múltiplos itens (ex: vários voos em um itinerário), extraia TODOS eles.
+
+Retorne um JSON com a seguinte estrutura:
+{
+  "type": "${docType}",
+  "items": [
+    {
+      "fields": {
+        "nomeDoCampo": { "value": "valor extraído", "confidence": 0.0-1.0 },
+        ...
+      },
+      "overallConfidence": 0.0-1.0
+    }
+  ]
+}
+
+Regras:
+1. Se um campo não for encontrado, NÃO o inclua ou retorne null no value.
+2. Para datas, use SEMPRE o formato YYYY-MM-DD.
+3. Confidence deve refletir sua certeza sobre a leitura (1.0 = certeza absoluta, 0.5 = incerto).
+4. Se houver múltiplos itens, inclua TODOS no array "items".
+5. Se houver apenas 1 item, retorne um array com 1 elemento.
+`;
+};
+
+// Helper to clean JSON from markdown blocks
+const parseJsonResponse = (text) => {
+  const cleanText = text
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+  return JSON.parse(cleanText);
+};
+
+// Document Processing Endpoint
+app.post('/api/process-document', upload.single('document'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'API key not configured' });
+    }
+
+    const { buffer, mimetype, originalname } = req.file;
+    console.log(`📄 Processing document: ${originalname} (${mimetype})`);
+
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+
+    let contentParts = [];
+    let extractedText = null;
+
+    // Handle PDFs
+    if (mimetype === 'application/pdf') {
+      console.log('📑 Extracting text from PDF...');
+      try {
+        const pdfData = await pdfParse(buffer);
+        extractedText = pdfData.text;
+        console.log(`   Extracted ${extractedText.length} characters from PDF`);
+
+        // For text-based PDFs, use text extraction
+        if (extractedText && extractedText.trim().length > 100) {
+          contentParts = [
+            { text: `Aqui está o conteúdo extraído de um documento PDF:\n\n${extractedText}\n\n` }
+          ];
+        } else {
+          // Fallback: treat PDF as image (first page) - not ideal without additional deps
+          console.warn('   PDF has little text, sending as base64...');
+          contentParts = [
+            { inlineData: { mimeType: 'application/pdf', data: buffer.toString('base64') } }
+          ];
+        }
+      } catch (pdfError) {
+        console.error('   PDF parsing error:', pdfError.message);
+        // Fallback to sending raw PDF
+        contentParts = [
+          { inlineData: { mimeType: 'application/pdf', data: buffer.toString('base64') } }
+        ];
+      }
+    } else {
+      // Handle images
+      contentParts = [
+        { inlineData: { mimeType: mimetype, data: buffer.toString('base64') } }
+      ];
+    }
+
+    // Step 1: Classify document type
+    console.log('🔍 Step 1: Classifying document type...');
+    const classifyResult = await model.generateContent({
+      contents: [{ parts: [...contentParts, { text: classifyDocumentPrompt }] }]
+    });
+    const classifyResponse = await classifyResult.response;
+    const classifyText = classifyResponse.text();
+
+    let classification;
+    try {
+      classification = parseJsonResponse(classifyText);
+    } catch (e) {
+      console.error('   Classification parse error:', e.message);
+      classification = { type: 'other', confidence: 0.5 };
+    }
+
+    console.log(`   Document classified as: ${classification.type} (confidence: ${classification.confidence})`);
+
+    // Step 2: Extract data based on document type
+    console.log(`🔍 Step 2: Extracting data for type "${classification.type}"...`);
+    const extractionPrompt = getExtractionPrompt(classification.type);
+
+    const extractResult = await model.generateContent({
+      contents: [{ parts: [...contentParts, { text: extractionPrompt }] }]
+    });
+    const extractResponse = await extractResult.response;
+    const extractText = extractResponse.text();
+
+    let extractedData;
+    try {
+      extractedData = parseJsonResponse(extractText);
+    } catch (e) {
+      console.error('   Extraction parse error:', e.message);
+      return res.status(422).json({
+        error: 'Failed to parse extraction response',
+        rawResponse: extractText.substring(0, 500),
+        classification
+      });
+    }
+
+    console.log(`   Extracted ${extractedData.items?.length || 0} item(s)`);
+
+    // Step 3: Basic validation (Zod is TypeScript, so we do basic JS validation here)
+    const validatedItems = (extractedData.items || []).map((item, idx) => {
+      const warnings = [];
+      const fields = item.fields || {};
+
+      // Date format validation
+      for (const [key, fieldData] of Object.entries(fields)) {
+        if (key.toLowerCase().includes('date') && fieldData?.value) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(fieldData.value)) {
+            warnings.push(`${key}: Invalid date format (expected YYYY-MM-DD)`);
+          }
+        }
+        if (key.toLowerCase().includes('time') && fieldData?.value) {
+          if (!/^\d{2}:\d{2}$/.test(fieldData.value)) {
+            warnings.push(`${key}: Invalid time format (expected HH:MM)`);
+          }
+        }
+      }
+
+      // IATA code validation for flights
+      if (classification.type === 'flight') {
+        for (const key of ['departureAirport', 'arrivalAirport']) {
+          if (fields[key]?.value && fields[key].value.length !== 3) {
+            warnings.push(`${key}: Should be 3-letter IATA code`);
+          }
+        }
+      }
+
+      return {
+        ...item,
+        itemIndex: idx + 1,
+        validationWarnings: warnings,
+        isValid: warnings.length === 0
+      };
+    });
+
+    const response = {
+      success: true,
+      classification,
+      data: {
+        type: extractedData.type || classification.type,
+        items: validatedItems
+      },
+      metadata: {
+        filename: originalname,
+        mimetype,
+        processedAt: new Date().toISOString(),
+        hasValidationWarnings: validatedItems.some(i => i.validationWarnings.length > 0)
+      },
+      // Include raw text if PDF was parsed
+      ...(extractedText && { rawText: extractedText.substring(0, 2000) })
+    };
+
+    console.log('✅ Document processing complete');
+    res.json(response);
+
+  } catch (error) {
+    console.error('❌ Document processing error:', error);
+    res.status(500).json({
+      error: 'Document processing failed',
+      message: error.message
+    });
   }
 });
 

@@ -1850,10 +1850,78 @@ Create a new image that maintains the essence of the original but applies the re
   }
 
   /**
-   * Analyze an uploaded document image to extract travel details
+   * Analyze an uploaded document image to extract travel details.
+   * Accepts either a File object (preferred) or a base64 string.
+   * When proxy is enabled, uses the robust server-side `/api/process-document` endpoint.
    */
-  async analyzeDocumentImage(base64Image: string): Promise<DocumentAnalysisResult[] | null> {
+  async analyzeDocumentImage(input: File | string): Promise<DocumentAnalysisResult[] | null> {
     try {
+      // --- Strategy 1: Use Server Proxy (Preferred for File input) ---
+      if (USE_PROXY && input instanceof File) {
+        console.log('📤 Using server-side document processing...');
+        const formData = new FormData();
+        formData.append('document', input);
+
+        const response = await fetch('/api/process-document', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Server document processing failed:', errorData);
+          // Fallback to client-side processing
+          console.warn('⚠️ Falling back to client-side processing...');
+          return this.analyzeDocumentImageClientSide(input);
+        }
+
+        const serverResult = await response.json();
+        console.log('✅ Server processing result:', serverResult);
+
+        if (!serverResult.success || !serverResult.data?.items) {
+          return null;
+        }
+
+        // Map server response to DocumentAnalysisResult[]
+        const results: DocumentAnalysisResult[] = serverResult.data.items.map((item: any) => {
+          const f = item.fields || {};
+          const classification = serverResult.classification || {};
+          const docType = serverResult.data.type || classification.type || 'other';
+
+          const result: DocumentAnalysisResult = {
+            type: this.mapTypeToEnum(docType),
+            fields: f,
+            overallConfidence: item.overallConfidence,
+            typeConfidence: classification.confidence,
+          };
+
+          // Populate legacy flat fields for compatibility
+          this.populateLegacyFields(result, f, docType);
+
+          return result;
+        });
+
+        console.log(`Extracted ${results.length} items from server response`);
+        return results;
+      }
+
+      // --- Strategy 2: Client-side Processing (for base64 string or fallback) ---
+      const base64Image = input instanceof File ? await this.fileToBase64(input) : input;
+      return this.analyzeDocumentImageClientSide(base64Image);
+
+    } catch (error) {
+      console.error('Error analyzing document:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Client-side document analysis (original logic)
+   */
+  private async analyzeDocumentImageClientSide(input: File | string): Promise<DocumentAnalysisResult[] | null> {
+    try {
+      const base64Image = input instanceof File ? await this.fileToBase64(input) : input;
+
       // Validate input
       if (!base64Image || typeof base64Image !== 'string') {
         console.error('Invalid base64 input');
@@ -1891,9 +1959,21 @@ Create a new image that maintains the essence of the original but applies the re
       console.log(`Extracted ${extractionResults.length} items from document`);
       return extractionResults;
     } catch (error) {
-      console.error('Error analyzing document:', error);
+      console.error('Error analyzing document (client-side):', error);
       return null;
     }
+  }
+
+  /**
+   * Helper to convert a File to base64 data URL
+   */
+  private fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 
   /**

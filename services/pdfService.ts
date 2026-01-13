@@ -1,8 +1,16 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Set worker source to CDN to avoid build configuration issues
-// We use the version matching the installed package ideally, but latest usually works for standard features
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+// Configure PDF.js worker
+// Try to use the bundled worker via Vite URL import, with fallback to main thread
+try {
+    // @ts-ignore - Vite handles this as a URL import
+    const workerUrl = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+} catch {
+    // If worker fails to load, PDF.js will run on main thread (slower but works)
+    console.warn('PDF.js worker could not be loaded, running on main thread');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+}
 
 export class PdfService {
     /**

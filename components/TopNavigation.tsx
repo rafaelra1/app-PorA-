@@ -117,6 +117,13 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ activeTab, onTabChange, o
                                             Meu Perfil
                                         </button>
                                         <button
+                                            onClick={() => { onTabChange('documents'); setShowProfileMenu(false); }}
+                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 transition-colors"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">description</span>
+                                            Processar Docs
+                                        </button>
+                                        <button
                                             onClick={() => { onTabChange('settings'); setShowProfileMenu(false); }}
                                             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-sl-text hover:bg-sl-bg transition-colors"
                                         >

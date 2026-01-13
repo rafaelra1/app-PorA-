@@ -16,6 +16,7 @@ const Profile = lazy(() => import('./pages/Profile'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 const Login = lazy(() => import('./pages/Login'));
+const DocumentProcessing = lazy(() => import('./pages/DocumentProcessing'));
 
 // Lazy load heavy components
 const CreateTrip = lazy(() => import('./pages/CreateTrip'));
@@ -155,6 +156,12 @@ const AppContent: React.FC = () => {
         return (
           <Suspense fallback={<PageLoader />}>
             <CreateTrip />
+          </Suspense>
+        );
+      case 'documents':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <DocumentProcessing />
           </Suspense>
         );
       default:

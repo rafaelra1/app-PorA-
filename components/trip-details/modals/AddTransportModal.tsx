@@ -356,28 +356,25 @@ const useDocumentAnalysis = (
         setIsAnalyzing(true);
 
         try {
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                const base64 = event.target?.result as string;
+            const geminiService = getGeminiService();
+            // Pass File directly - service handles server or client-side processing
+            const results = await geminiService.analyzeDocumentImage(file);
 
-                const geminiService = getGeminiService();
-                const results = await geminiService.analyzeDocumentImage(base64);
+            if (results && results.length > 0) {
+                console.log('Transport document analysis:', results);
 
-                if (results && results.length > 0) {
-                    console.log('Transport document analysis:', results);
+                const items = results.map(result => ({
+                    ...INITIAL_FORM_STATE,
+                    ...mapResultToFormData(result)
+                }));
 
-                    const items = results.map(result => ({
-                        ...INITIAL_FORM_STATE,
-                        ...mapResultToFormData(result)
-                    }));
+                // Always show review screen for batch add
+                setDetectedItems(items);
+            } else {
+                console.warn('No results from document analysis');
+            }
 
-                    // Always show review screen for batch add
-                    setDetectedItems(items);
-                }
-
-                setIsAnalyzing(false);
-            };
-            reader.readAsDataURL(file);
+            setIsAnalyzing(false);
         } catch (error) {
             console.error('Error analyzing document:', error);
             setIsAnalyzing(false);

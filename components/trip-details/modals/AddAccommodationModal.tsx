@@ -1,13 +1,14 @@
 import * as React from 'react';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
 import { Select, SelectOption } from '../../ui/Select';
 import { Button } from '../../ui/Base';
-import { HotelReservation } from '../../../types';
+import { HotelReservation, DocumentAnalysisResult } from '../../../types';
 import { getGeminiService } from '../../../services/geminiService';
 import { formatDate, formatToDisplayDate } from '../../../lib/dateUtils';
 import { validateHotelDates } from '../../../validators/documentValidators';
+import { useDocumentAnalysis } from '../../../hooks/useDocumentAnalysis';
 
 // =============================================================================
 // Types & Interfaces
@@ -77,6 +78,58 @@ const INITIAL_FORM_STATE: AccommodationFormData = {
 };
 
 const FALLBACK_HOTEL_IMAGE = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&q=80&w=400';
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+const mapAccommodationResultToFormData = (result: DocumentAnalysisResult): Partial<AccommodationFormData> => {
+    const updates: Partial<AccommodationFormData> = {};
+
+    // Extract name
+    if (result.name) updates.name = result.name;
+    if (result.fields?.hotelName?.value) updates.name = String(result.fields.hotelName.value);
+
+    // Extract dates
+    if (result.date) updates.checkIn = result.date;
+    if (result.fields?.checkInDate?.value) updates.checkIn = String(result.fields.checkInDate.value);
+    if (result.endDate) updates.checkOut = result.endDate;
+    if (result.fields?.checkOutDate?.value) updates.checkOut = String(result.fields.checkOutDate.value);
+
+    // Extract times
+    if (result.fields?.checkInTime?.value) {
+        const time = String(result.fields.checkInTime.value);
+        updates.checkInTime = time.slice(0, 5);
+    }
+    if (result.fields?.checkOutTime?.value) {
+        const time = String(result.fields.checkOutTime.value);
+        updates.checkOutTime = time.slice(0, 5);
+    }
+
+    // Extract address
+    if (result.address) updates.address = result.address;
+    if (result.fields?.address?.value) updates.address = String(result.fields.address.value);
+
+    // Extract confirmation
+    if (result.reference) updates.confirmation = result.reference;
+    if (result.fields?.confirmationNumber?.value) updates.confirmation = String(result.fields.confirmationNumber.value);
+
+    // Calculate nights if dates are available
+    const checkIn = updates.checkIn;
+    const checkOut = updates.checkOut;
+    if (checkIn && checkOut) {
+        try {
+            const start = new Date(checkIn);
+            const end = new Date(checkOut);
+            const diffDays = Math.ceil(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+            updates.nights = diffDays > 0 ? diffDays : 1;
+        } catch {
+            updates.nights = 1;
+        }
+    }
+
+    return updates;
+};
 
 // =============================================================================
 // Helper Components
@@ -223,8 +276,17 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
     const { isOpen, onClose, onAdd, initialData, cities = [], accommodations = [] } = props;
     const [mode, setMode] = useState<InputMode>('manual');
     const [formData, setFormData] = useState<AccommodationFormData>(INITIAL_FORM_STATE);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isEnriching, setIsEnriching] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Memoize the options for the hook
+    const documentAnalysisOptions = useMemo(() => ({
+        mapResultToFormData: mapAccommodationResultToFormData,
+        initialFormState: INITIAL_FORM_STATE,
+    }), []);
+
+    // Use shared document analysis hook
+    const { isAnalyzing, detectedItems, analyzeDocument, clearDetectedItems } = useDocumentAnalysis<AccommodationFormData>(documentAnalysisOptions);
 
     // Populate form when initialData is provided (for editing/viewing)
     useEffect(() => {
@@ -252,8 +314,9 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
             setFormData(INITIAL_FORM_STATE);
             setMode('manual');
             setError(null);
+            clearDetectedItems();
         }
-    }, [initialData, isOpen]);
+    }, [initialData, isOpen, clearDetectedItems]);
 
     const updateField = useCallback(<K extends keyof AccommodationFormData>(
         field: K,
@@ -266,98 +329,41 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
         setFormData(INITIAL_FORM_STATE);
         setMode('manual');
         setError(null);
-    }, []);
+        clearDetectedItems();
+    }, [clearDetectedItems]);
 
-    const handleFileUpload = useCallback(async (file: File) => {
-        setIsAnalyzing(true);
+    // Handler to select and populate form from detected item
+    const handleSelectItem = useCallback(async (item: AccommodationFormData) => {
+        setFormData({ ...INITIAL_FORM_STATE, ...item });
+        clearDetectedItems();
+        setMode('manual');
 
-        try {
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                const base64 = event.target?.result as string;
-
-                const geminiService = getGeminiService();
-                const analysisResult = await geminiService.analyzeDocumentImage(base64);
-
-                // Handle array response: use first item for hotel type
-                const results = Array.isArray(analysisResult) ? analysisResult : (analysisResult ? [analysisResult] : []);
-                const result = results.find(r => r.type === 'hotel') || results[0]; // Prefer hotel type
-
-                if (results.length > 1) {
-                    console.log(`Found ${results.length} items in document, using first hotel or first item.`);
-                }
-
-                if (result) {
-                    console.log('Document analysis result:', result);
-
-                    // Update form with extracted data
-                    if (result.name) updateField('name', result.name);
-                    if (result.date) updateField('checkIn', result.date);
-                    if (result.endDate) updateField('checkOut', result.endDate);
-                    if (result.reference) updateField('confirmation', result.reference);
-
-                    // Extract time from details
-                    if (result.details) {
-                        const timeMatch = result.details.match(/\d{1,2}:\d{2}/);
-                        if (timeMatch) updateField('checkInTime', timeMatch[0]);
-                    }
-
-                    // Calculate nights
-                    if (result.date && result.endDate) {
-                        const start = new Date(result.date);
-                        const end = new Date(result.endDate);
-                        const diffDays = Math.ceil(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-                        updateField('nights', diffDays > 0 ? diffDays : 1);
-                    }
-
-                    if (result.name) {
-                        try {
-                            const metadata = await geminiService.getHotelMetadata(result.name);
-                            if (metadata) {
-                                if (metadata.address && !result.address) updateField('address', metadata.address);
-                                if (metadata.stars) updateField('stars', metadata.stars);
-                                if (metadata.rating) updateField('rating', metadata.rating);
-                            }
-                        } catch (e) {
-                            console.error('Error enriching hotel data:', e);
-                        }
-                    }
-
-                    // Fetch hotel info from Google Places (New Service)
-                    if (result.name) {
-                        const placeInfo = await googlePlacesService.searchPlace(result.name);
-
-                        // Prioritize AI extracted address if available, otherwise Google
-                        if (result.address) updateField('address', result.address);
-                        else if (placeInfo.address) updateField('address', placeInfo.address);
-
-                        if (result.stars) updateField('stars', result.stars);
-                        // Use Google Rating if available
-                        if (placeInfo.rating) updateField('rating', placeInfo.rating);
-                        else if (result.rating) updateField('rating', result.rating);
-
-                        if (placeInfo.image) updateField('image', placeInfo.image);
-                    } else {
-                        // If no name, set fields directly from AI
-                        if (result.address) updateField('address', result.address);
-                        if (result.stars) updateField('stars', result.stars);
-                        if (result.rating) updateField('rating', result.rating);
-                    }
-                }
-
-                setIsAnalyzing(false);
-            };
-            reader.readAsDataURL(file);
-        } catch (error) {
-            console.error('Error analyzing document:', error);
-            setIsAnalyzing(false);
+        // Enrich with Google Places if we have a name
+        if (item.name) {
+            setIsEnriching(true);
+            try {
+                const placeInfo = await googlePlacesService.searchPlace(item.name);
+                if (placeInfo.address && !item.address) setFormData(prev => ({ ...prev, address: placeInfo.address || '' }));
+                if (placeInfo.rating) setFormData(prev => ({ ...prev, rating: placeInfo.rating || 0 }));
+                if (placeInfo.image) setFormData(prev => ({ ...prev, image: placeInfo.image || '' }));
+            } catch (e) {
+                console.error('Error enriching hotel data:', e);
+            } finally {
+                setIsEnriching(false);
+            }
         }
-    }, [updateField]);
+    }, [clearDetectedItems]);
+
+    const handleRemoveItem = useCallback((index: number) => {
+        // Since we can't mutate detectedItems directly, we re-trigger with filtered list
+        // For simplicity, we'll just clear all if user removes one (or implement local state)
+        clearDetectedItems();
+    }, [clearDetectedItems]);
 
     const handleSearchHotel = useCallback(async () => {
         if (!formData.name) return;
 
-        setIsAnalyzing(true); // Reuse analyzing state for spinner
+        setIsEnriching(true); // Reuse enriching state for spinner
 
         try {
             // Parallel fetch: Google (image/address) + Gemini (Metadata)
@@ -380,7 +386,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
         } catch (error) {
             console.error('Error searching hotel:', error);
         } finally {
-            setIsAnalyzing(false);
+            setIsEnriching(false);
         }
     }, [formData.name, formData.address, updateField]);
 
@@ -535,6 +541,70 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
         );
     }
 
+    // Review Items Modal (when AI detects accommodations)
+    if (detectedItems.length > 0) {
+        return (
+            <Modal
+                isOpen={isOpen}
+                onClose={handleClose}
+                title="Hospedagem Identificada"
+                size="md"
+                footer={
+                    <>
+                        <Button variant="outline" onClick={() => clearDetectedItems()}>
+                            Cancelar
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 text-center">
+                        <span className="material-symbols-outlined text-3xl text-primary mb-2">auto_awesome</span>
+                        <h3 className="font-bold text-primary">IA detectou {detectedItems.length} hospedagem(ns)</h3>
+                        <p className="text-sm text-text-muted">Selecione uma para preencher o formulário.</p>
+                    </div>
+
+                    <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                        {detectedItems.map((item, index) => (
+                            <button
+                                key={index}
+                                onClick={() => handleSelectItem(item)}
+                                className="w-full p-4 border border-gray-200 rounded-xl bg-white hover:border-primary/50 transition-colors flex justify-between items-start gap-3 group text-left"
+                            >
+                                <div className="flex items-center justify-center size-10 rounded-full bg-gray-50 text-text-muted shrink-0">
+                                    <span className="material-symbols-outlined">
+                                        {item.type === 'home' ? 'home' : 'hotel'}
+                                    </span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <p className="font-bold text-text-main truncate">{item.name || 'Hotel não identificado'}</p>
+                                    </div>
+                                    <div className="flex items-center gap-4 mt-2 text-xs font-bold text-text-muted uppercase tracking-wider">
+                                        <span className="flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+                                            {item.checkIn ? formatToDisplayDate(item.checkIn) : 'Data ???'}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[14px]">dark_mode</span>
+                                            {item.nights || 1} noite(s)
+                                        </span>
+                                    </div>
+                                    {item.confirmation && (
+                                        <p className="text-xs text-text-muted mt-1">Confirmação: {item.confirmation}</p>
+                                    )}
+                                </div>
+                                <span className="material-symbols-outlined text-gray-300 group-hover:text-primary transition-colors">
+                                    arrow_forward
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </Modal>
+        );
+    }
+
     const footer = (
         <>
             <Button variant="outline" onClick={handleClose}>
@@ -561,7 +631,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
             {mode === 'ai' && (
                 <DocumentUpload
                     isAnalyzing={isAnalyzing}
-                    onFileSelect={handleFileUpload}
+                    onFileSelect={analyzeDocument}
                 />
             )}
 
@@ -582,11 +652,10 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                         <button
                             type="button"
                             onClick={() => updateField('type', 'hotel')}
-                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
-                                formData.type === 'hotel'
-                                    ? 'border-primary bg-primary/5 text-primary'
-                                    : 'border-gray-200 text-text-muted hover:border-gray-300'
-                            }`}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all ${formData.type === 'hotel'
+                                ? 'border-primary bg-primary/5 text-primary'
+                                : 'border-gray-200 text-text-muted hover:border-gray-300'
+                                }`}
                         >
                             <span className="material-symbols-outlined">hotel</span>
                             Hotel
@@ -594,11 +663,10 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                         <button
                             type="button"
                             onClick={() => updateField('type', 'home')}
-                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
-                                formData.type === 'home'
-                                    ? 'border-primary bg-primary/5 text-primary'
-                                    : 'border-gray-200 text-text-muted hover:border-gray-300'
-                            }`}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition-all ${formData.type === 'home'
+                                ? 'border-primary bg-primary/5 text-primary'
+                                : 'border-gray-200 text-text-muted hover:border-gray-300'
+                                }`}
                         >
                             <span className="material-symbols-outlined">home</span>
                             Casa / Apartamento

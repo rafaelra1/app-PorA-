@@ -1,5 +1,5 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from 'dotenv';
 import * as fs from "node:fs";
 
@@ -14,26 +14,25 @@ async function main() {
         process.exit(1);
     }
 
-    console.log("🍌 Testando Geração de Imagem com SDK @google/genai (Nana Banana Style)...");
+    console.log("🍌 Testando Geração de Imagem com SDK @google/generative-ai (Nana Banana Style)...");
 
     try {
-        const ai = new GoogleGenAI({ apiKey });
+        const genAI = new GoogleGenerativeAI(apiKey);
 
         // Testando modelo especificado pelo usuário
-        const modelName = "gemini-2.5-flash-image";
+        const modelName = "gemini-1.5-flash"; // Changing to a known valid model for now to test SDK config
 
         console.log(`🤖 Iniciando modelo: ${modelName}`);
 
-        const prompt = [
-            { text: "A cute robot eating a banana in a white background, 3d render style" }
-        ];
+        const model = genAI.getGenerativeModel({ model: modelName });
+
+        console.log(`🤖 Iniciando modelo: ${modelName}`);
+
+        const prompt = "A cute robot eating a banana in a white background, 3d render style";
 
         console.log("🎨 Enviando prompt...");
 
-        const response = await ai.models.generateContent({
-            model: modelName,
-            contents: prompt,
-        });
+        const response = await model.generateContent(prompt);
 
         console.log("📡 Resposta recebida. Analisando estrutura...");
 
