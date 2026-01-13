@@ -14,7 +14,7 @@ interface PlaceCardProps {
     variant?: 'horizontal' | 'vertical';
     onClick?: () => void;
     onMapClick?: (e: React.MouseEvent) => void;
-    onEditImage?: (e: React.MouseEvent) => void;
+
     onAddToItinerary?: (e: React.MouseEvent) => void;
     onDelete?: (e: React.MouseEvent) => void;
     isGenerating?: boolean;
@@ -37,7 +37,6 @@ const PlaceCard: React.FC<PlaceCardProps> = ({
     variant = 'horizontal',
     onClick,
     onMapClick,
-    onEditImage,
     onAddToItinerary,
     onDelete,
     isGenerating,
@@ -68,16 +67,7 @@ const PlaceCard: React.FC<PlaceCardProps> = ({
                         </div>
                     )}
 
-                    {/* AI Edit Button - Mini */}
-                    {onEditImage && (
-                        <button
-                            onClick={onEditImage}
-                            className="absolute bottom-1 right-1 bg-black/50 backdrop-blur-md p-1 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-                            title="Gerar nova imagem com IA"
-                        >
-                            <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
-                        </button>
-                    )}
+
                 </div>
 
                 {/* Content Section */}
@@ -197,16 +187,7 @@ const PlaceCard: React.FC<PlaceCardProps> = ({
                     </div>
                 )}
 
-                {/* AI Generation Button */}
-                {onEditImage && (
-                    <button
-                        onClick={onEditImage}
-                        className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md p-2 rounded-xl text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-                        title="Gerar nova imagem com IA"
-                    >
-                        <span className="material-symbols-outlined text-base">auto_awesome</span>
-                    </button>
-                )}
+
 
                 {/* Loading State */}
                 {isGenerating && (

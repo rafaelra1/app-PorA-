@@ -21,7 +21,6 @@ interface TypicalDish {
 interface GastronomyTabProps {
     cityGuide: CityGuide | null;
     isLoadingGuide: boolean;
-    onEditImage: (type: 'dish', index: number, data: any) => void;
     cityName?: string;
     onAddToItinerary?: (data: { itemName: string; itemType: 'restaurant' | 'attraction'; date: string; time: string; notes?: string; address?: string; image?: string; category?: string }) => void;
     onTabChange?: (tab: 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map') => void;
@@ -54,7 +53,6 @@ const getCategoryStyle = (category: string = '') => {
 const GastronomyTab: React.FC<GastronomyTabProps> = ({
     cityGuide,
     isLoadingGuide,
-    onEditImage,
     cityName = 'Atenas',
     onAddToItinerary,
     onTabChange,
@@ -664,7 +662,6 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                                             specialty={restaurant.specialty}
                                             highlight={restaurant.highlight}
                                             onClick={() => setSelectedRestaurant(restaurant)}
-                                            onEditImage={(e) => { e.stopPropagation(); onEditImage('dish', idx, restaurant); }}
                                             onMapClick={(e) => { e.stopPropagation(); handleGoogleMaps(e, restaurant); }}
                                             onAddToItinerary={(e) => { e.stopPropagation(); handleAddToItinerary(restaurant); }}
                                             onDelete={(e) => { e.stopPropagation(); handleDeleteRestaurant(restaurant); }}

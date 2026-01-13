@@ -26,9 +26,7 @@ interface AttractionsTabProps {
     onSearchChange: (search: string) => void;
     onAspectRatioChange: (ratio: string) => void;
     onSizeChange: (size: string) => void;
-    onRegenerateAll: () => void;
     onAttractionClick: (attraction: Attraction) => void;
-    onEditImage: (type: 'attraction', index: number, data: any) => void;
     onShowMap: () => void;
     onAddManual: () => void;
     onSuggestAI: (category: string) => void;
@@ -125,7 +123,6 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     attractionSearch,
     onSearchChange,
     onAttractionClick,
-    onEditImage,
     onShowMap,
     onAddManual,
     onSuggestAI,
@@ -612,8 +609,8 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                                 }
                                             }}
                                             className={`p-3 rounded-xl border transition-colors ${importedAttractions.some(a => a.name === selectedTopAttraction.name)
-                                                    ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
-                                                    : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-100 hover:text-indigo-600'
+                                                ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                                : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-100 hover:text-indigo-600'
                                                 }`}
                                             title="Salvar na lista"
                                         >
@@ -752,7 +749,6 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                             color={style.color}
                                             variant={viewMode === 'list' ? 'horizontal' : 'vertical'}
                                             onClick={() => handleAttractionClick(attr)}
-                                            onEditImage={(e) => { e.stopPropagation(); onEditImage('attraction', idx, attr); }}
                                             onMapClick={(e) => {
                                                 e.stopPropagation();
                                                 const query = encodeURIComponent(`${attr.name} ${cityName}`);

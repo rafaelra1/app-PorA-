@@ -17,7 +17,49 @@ const PORT = process.env.PORT || 3001;
 const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increase limit for images
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Generic Gemini Proxy (Text/Vision)
+app.post('/api/gemini', async (req, res) => {
+  try {
+    const { contents, config } = req.body;
+
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'API key not configured' });
+    }
+
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const model = ai.getGenerativeModel({
+      model: req.body.model || "gemini-1.5-flash",
+      generationConfig: config
+    });
+
+    console.log('📝 Proxying request to model:', model.model);
+
+    // Convert contents to match SDK format if necessary
+    const result = await model.generateContent({ contents });
+    const response = await result.response;
+
+    // Return compatible structure
+    res.json({
+      candidates: [
+        {
+          content: {
+            parts: [{ text: response.text() }]
+          }
+        }
+      ]
+    });
+
+  } catch (error) {
+    console.error('❌ Proxy error:', error);
+    res.status(error.status || 500).json({
+      error: 'Gemini Proxy Error',
+      message: error.message
+    });
+  }
+});
 
 // Imagen API proxy endpoint (Updated to use Gemini 2.5 Flash Image via SDK)
 app.post('/api/gemini/imagen', async (req, res) => {

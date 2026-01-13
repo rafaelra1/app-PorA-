@@ -45,7 +45,7 @@ import GastronomyTab from '../components/trip-details/city-guide/GastronomyTab';
 import TipsTab from '../components/trip-details/city-guide/TipsTab';
 
 // Modal imports
-import ImageEditorModal from '../components/trip-details/modals/ImageEditorModal';
+
 import AttractionDetailModal from '../components/trip-details/modals/AttractionDetailModal';
 import AddCityModal from '../components/trip-details/modals/AddCityModal';
 import EditCityModal from '../components/trip-details/modals/EditCityModal';
@@ -174,9 +174,6 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   const [genSize, setGenSize] = useState<string>("1K");
   const [isSuggestingAI, setIsSuggestingAI] = useState(false);
 
-  // Image editing state
-  const [editingImage, setEditingImage] = useState<{ type: 'attraction' | 'dish', index: number, data: any } | null>(null);
-  const [isEditingWithAI, setIsEditingWithAI] = useState(false);
   const [isGeneratingEditorial, setIsGeneratingEditorial] = useState(false);
 
   // Documents state
@@ -463,52 +460,6 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   };
   const fetchGroundingInfo = async () => { };
   const handleGenerateAllImages = async () => { };
-  const handleEditImageComplete = async (type: 'attraction' | 'dish', index: number, newImageUrl: string) => {
-    if (!cityGuide) return;
-
-    if (type === 'attraction') {
-      const updatedAttractions = [...cityGuide.attractions];
-      updatedAttractions[index] = {
-        ...updatedAttractions[index],
-        aiImage: newImageUrl
-      };
-      setCityGuide({ ...cityGuide, attractions: updatedAttractions });
-    } else if (type === 'dish') {
-      const updatedDishes = [...cityGuide.typicalDishes];
-      updatedDishes[index] = {
-        ...updatedDishes[index],
-        aiImage: newImageUrl
-      };
-      setCityGuide({ ...cityGuide, typicalDishes: updatedDishes });
-    }
-  };
-
-  const handleEditAttractionImage = async (type: 'attraction' | 'dish', index: number, data: any) => {
-    setEditingImage({ type, index, data });
-    setIsEditingWithAI(true);
-
-    try {
-      const service = getGeminiService();
-      const prompt = type === 'attraction'
-        ? `A high-quality, professional travel photography of ${data.name} in ${selectedCity?.name || ''}, cinematic lighting, stunning landscape, vibrant colors`
-        : `A high-quality, professional food photography of ${data.name}, delicious, appetizing, restaurant quality`;
-
-      const newImageUrl = await service.generateImage(prompt, {
-        aspectRatio: genAspectRatio as any,
-        imageSize: genSize as any
-      });
-
-      if (newImageUrl) {
-        await handleEditImageComplete(type, index, newImageUrl);
-      }
-    } catch (error) {
-      console.error('Error generating image:', error);
-      alert('Falha ao gerar imagem. Tente novamente.');
-    } finally {
-      setEditingImage(null);
-      setIsEditingWithAI(false);
-    }
-  };
 
   const handleUpdateEditorialContent = async (content: string) => {
     if (!selectedCity) return;
@@ -877,8 +828,8 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
               }}
             />
           )}
-          {activeCityTab === 'attractions' && <AttractionsTab key={selectedCity?.name || 'attractions'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} attractionSearch={attractionSearch} genAspectRatio={genAspectRatio} genSize={genSize} onSearchChange={setAttractionSearch} onAspectRatioChange={setGenAspectRatio} onSizeChange={setGenSize} onRegenerateAll={() => { }} onAttractionClick={setSelectedAttraction} onEditImage={handleEditAttractionImage} onAddManual={() => { }} onShowMap={() => setIsMapModalOpen(true)} onSuggestAI={() => { }} isSuggestingAI={false} onTabChange={(tab) => setActiveCityTab(tab)} tripStartDate={trip.startDate} tripEndDate={trip.endDate} onAddToItinerary={handleAddItineraryActivity} cityName={selectedCity?.name} />}
-          {activeCityTab === 'gastronomy' && <GastronomyTab key={selectedCity?.name || 'gastronomy'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} onEditImage={() => { }} cityName={selectedCity?.name} onTabChange={(tab) => setActiveCityTab(tab)} onAddToItinerary={handleAddItineraryActivity} tripStartDate={trip.startDate} tripEndDate={trip.endDate} />}
+          {activeCityTab === 'attractions' && <AttractionsTab key={selectedCity?.name || 'attractions'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} attractionSearch={attractionSearch} genAspectRatio={genAspectRatio} genSize={genSize} onSearchChange={setAttractionSearch} onAspectRatioChange={setGenAspectRatio} onSizeChange={setGenSize} onAttractionClick={setSelectedAttraction} onAddManual={() => { }} onShowMap={() => setIsMapModalOpen(true)} onSuggestAI={() => { }} isSuggestingAI={false} onTabChange={(tab) => setActiveCityTab(tab)} tripStartDate={trip.startDate} tripEndDate={trip.endDate} onAddToItinerary={handleAddItineraryActivity} cityName={selectedCity?.name} />}
+          {activeCityTab === 'gastronomy' && <GastronomyTab key={selectedCity?.name || 'gastronomy'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} cityName={selectedCity?.name} onTabChange={(tab) => setActiveCityTab(tab)} onAddToItinerary={handleAddItineraryActivity} tripStartDate={trip.startDate} tripEndDate={trip.endDate} />}
           {activeCityTab === 'tips' && <TipsTab cityGuide={cityGuide} />}
         </CityGuideLayout>
       );
@@ -1042,15 +993,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         onClose={() => setSelectedAttraction(null)}
         attraction={selectedAttraction}
       />
-      {editingImage && (
-        <ImageEditorModal
-          isOpen={!!editingImage}
-          onClose={() => setEditingImage(null)}
-          imageData={editingImage}
-          onEditComplete={handleEditImageComplete}
-          isEditing={isEditingWithAI}
-        />
-      )}
+
 
       <AddCityModal
         isOpen={isAddCityModalOpen}

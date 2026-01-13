@@ -1140,6 +1140,18 @@ export class GeminiService {
     return content.parts[0]?.text || '';
   }
 
+  /**
+   * Generate generic text from a prompt
+   */
+  async generateText(prompt: string): Promise<string> {
+    try {
+      return await this.callGeminiAPI(prompt, undefined, undefined, 'text/plain');
+    } catch (error) {
+      console.error('Error generating text:', error);
+      throw new Error('Failed to generate text');
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Public API Methods
   // -------------------------------------------------------------------------
@@ -1279,7 +1291,7 @@ export class GeminiService {
         })),
         typicalDishes: (data.typicalDishes || []).map((d, i) => ({
           ...d,
-          image: `https://loremflickr.com/800/600/food?sig=${i + 10}`,
+          image: '',
         })),
         gastronomy: data.gastronomy || [],
         tips: data.tips || [],
@@ -1578,9 +1590,8 @@ export class GeminiService {
 
 Be specific and detailed for accurate recreation.`;
 
-      const visionEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent`;
-
       const analysisRequest = {
+        model: "gemini-2.0-flash-exp",
         contents: [{
           parts: [
             { text: analysisPrompt },
@@ -1594,7 +1605,7 @@ Be specific and detailed for accurate recreation.`;
         }]
       };
 
-      const analysisResponse = await fetch(`${visionEndpoint}?key=${this.apiKey}`, {
+      const analysisResponse = await fetch('/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(analysisRequest)

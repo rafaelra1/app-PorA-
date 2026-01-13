@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Trip, TripStatus, Participant, DetailedDestination } from '../types';
 import { Button, Card, Input, Icon, PageContainer, PageHeader } from '../components/ui/Base';
 import { useAuth } from '../contexts/AuthContext';
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiService } from '../services/geminiService';
 import { parseDisplayDate, formatToDisplayDate, calculateDuration as calcDuration } from '../lib/dateUtils';
 import { useLoadScript } from '@react-google-maps/api';
 import usePlacesAutocomplete from 'use-places-autocomplete';
@@ -140,34 +140,17 @@ const CreateTrip: React.FC = () => {
 
         setIsGeneratingImage(true);
         try {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (!apiKey) {
-                showToast("Chave de API não configurada.", "error");
-                return;
-            }
-
-            const ai = new GoogleGenAI({ apiKey });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash-exp',
-                contents: {
-                    parts: [{ text: `A high-quality, professional travel photography of ${destinationNames}, cinematic lighting, wide angle, stunning landscape, vibrant colors, 4K resolution.` }]
-                },
-                config: {
-                    imageConfig: {
-                        aspectRatio: "16:9",
-                        imageSize: imageSize
-                    }
-                }
+            const geminiService = getGeminiService();
+            const imageUrl = await geminiService.generateImage(destinationNames, {
+                aspectRatio: "16:9",
+                imageSize: imageSize
             });
 
-            if (response.candidates?.[0]?.content?.parts) {
-                for (const part of response.candidates[0].content.parts) {
-                    if (part.inlineData) {
-                        setFormValue('coverImage', `data:image/png;base64,${part.inlineData.data}`);
-                        showToast("Imagem gerada com sucesso!", "success");
-                        break;
-                    }
-                }
+            if (imageUrl) {
+                setFormValue('coverImage', imageUrl);
+                showToast("Imagem gerada com sucesso!", "success");
+            } else {
+                showToast("Falha ao gerar imagem.", "error");
             }
         } catch (error) {
             console.error("Image generation failed", error);
@@ -182,19 +165,14 @@ const CreateTrip: React.FC = () => {
         if (!destinationNames) return;
         setIsOptimizing(true);
         try {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-            if (!apiKey) {
-                showToast("Chave de API não configurada.", "error");
-                return;
-            }
+            const geminiService = getGeminiService();
+            const prompt = `Sugira um título criativo e inspirador para uma viagem para ${destinationNames}. Responda apenas o título, sem aspas.`;
 
-            const ai = new GoogleGenAI({ apiKey });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash-exp',
-                contents: `Sugira um título criativo e inspirador para uma viagem para ${destinationNames}. Responda apenas o título, sem aspas.`,
-            });
-            if (response.text) {
-                setFormValue('title', response.text.replace(/"/g, '').trim());
+            // Using a generic call via the service which uses the proxy
+            const title = await geminiService.generateText(prompt);
+
+            if (title) {
+                setFormValue('title', title.replace(/"/g, '').trim());
                 showToast("Título sugerido aplicado!", "info");
             }
         } catch (error) {
