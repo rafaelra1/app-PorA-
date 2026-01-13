@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { PageContainer, PageHeader, Card } from '../components/ui/Base';
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import DayAgenda from '../components/dashboard/DayAgenda';
 import CheckInWidget from '../components/dashboard/CheckInWidget';
 import ImagineTripsWidget from '../components/dashboard/ImagineTripsWidget';
@@ -11,6 +11,7 @@ import { useCalendar } from '../contexts/CalendarContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { BRAZILIAN_HOLIDAYS } from '../constants';
 import { fromISODate } from '../lib/dateUtils';
+import { getTripBackgroundService } from '../services/tripBackgroundService';
 
 interface DashboardProps {
   onOpenAddModal: () => void;
@@ -33,6 +34,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
   // Removed local state - now using CalendarContext
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const [hoveredHolidayDay, setHoveredHolidayDay] = useState<number | null>(null);
+  // AI Background generation state
+  const [isRegeneratingBg, setIsRegeneratingBg] = useState(false);
+  const [generatedBgUrl, setGeneratedBgUrl] = useState<string | null>(null);
+  const tripBackgroundService = getTripBackgroundService();
 
   // Sync all trip data with CalendarContext
   useEffect(() => {
@@ -238,11 +243,157 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
 
       <div className="flex flex-col gap-6">
 
-        {/* ========== ROW 1: HERO (Full Width) ========== */}
+        {/* ========== HERO SECTION: Próxima Viagem (Full Width) ========== */}
+        <section className="mb-6">
+          <div className="bg-white rounded-2xl overflow-hidden shadow-soft group">
+            {nextTrip ? (
+              <div className="relative min-h-[380px]">
+                {/* Background Image - Priority: generated > uploaded > loading > placeholder */}
+                {(generatedBgUrl || nextTrip.generatedCoverImage || nextTrip.coverImage) && !imageErrors.has(nextTrip.id) ? (
+                  <>
+                    <img
+                      src={generatedBgUrl || nextTrip.generatedCoverImage || nextTrip.coverImage}
+                      alt={nextTrip.destination}
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      onError={() => setImageErrors(prev => new Set(prev).add(nextTrip.id))}
+                    />
+                  </>
+                ) : isRegeneratingBg || nextTrip.isGeneratingCover ? (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary-dark to-secondary-dark animate-pulse"></div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                      <div className="size-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <span className="text-white/80 text-sm font-medium">Gerando imagem com IA...</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-9xl text-white/10">photo_camera</span>
+                    </div>
+                  </>
+                )}
+
+                {/* Gradient Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/30"></div>
+
+                {/* Content Container */}
+                <div className="absolute inset-0 p-8 flex flex-col justify-between">
+
+                  {/* Top Row: Title Block Left + Countdown Right */}
+                  <div className="flex justify-between items-start">
+
+                    {/* Left: Text Block */}
+                    <div className="flex flex-col">
+                      <span className="text-white/90 text-sm font-semibold tracking-widest uppercase mb-2 drop-shadow-md">Próxima Viagem</span>
+                      <h3 className="text-4xl md:text-5xl font-bold text-white tracking-tight leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] max-w-xl">
+                        {nextTrip.title || nextTrip.destination}
+                      </h3>
+                      {/* Date as Subtitle */}
+                      <div className="flex items-center gap-2 mt-4 bg-black/50 backdrop-blur-sm px-4 py-2 rounded-full w-fit">
+                        <span className="material-symbols-outlined text-xl text-white">calendar_today</span>
+                        <span className="text-lg font-bold text-white">{nextTrip.startDate}</span>
+                      </div>
+                    </div>
+
+                    {/* Right: Countdown Circle */}
+                    <div className="relative size-24 flex items-center justify-center rounded-full border-2 border-white/20 bg-black/30 backdrop-blur-md shadow-lg">
+                      <div className="flex flex-col items-center">
+                        <span className="text-[10px] uppercase font-bold text-white/50 tracking-wider">Faltam</span>
+                        <span className="text-3xl font-black text-white leading-none">{countdown.days}</span>
+                        <span className="text-[10px] uppercase font-bold text-white/50 tracking-wider">dias</span>
+                      </div>
+                      <svg className="absolute inset-0 size-full -rotate-90">
+                        <circle cx="48" cy="48" r="46" className="stroke-white/30 fill-none" strokeWidth="2" strokeDasharray="289" strokeDashoffset={289 - (289 * Math.min(100, (100 - (countdown.days / 30 * 100)))) / 100} strokeLinecap="round" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Bottom Row: Participants Left + Action Right */}
+                  <div className="flex items-center justify-between">
+                    {/* Participants */}
+                    <div className="flex items-center gap-3">
+                      {nextTrip.participants && nextTrip.participants.length > 0 ? (
+                        <>
+                          <div className="flex -space-x-3">
+                            {nextTrip.participants.slice(0, 4).map((p, i) => (
+                              <div key={p.id || i} className="size-11 rounded-full border-2 border-black/50 ring-2 ring-white/20 overflow-hidden bg-gray-800" title={p.name}>
+                                {p.avatar ? (
+                                  <img src={p.avatar} alt={p.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-gray-700 text-white text-xs font-bold">
+                                    {p.initials || p.name.charAt(0)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <span className="text-base text-white font-medium">
+                            Você + {Math.max(0, nextTrip.participants.length - 1)} amigos
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-sm text-white/50 italic">Nenhum participante</span>
+                      )}
+                    </div>
+
+                    {/* Action Buttons: Regenerate + Ver Detalhes */}
+                    <div className="flex items-center gap-3">
+                      {/* Regenerate AI Background Button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (isRegeneratingBg) return;
+                          setIsRegeneratingBg(true);
+                          try {
+                            const result = await tripBackgroundService.generateBackground(nextTrip, true);
+                            if (result?.url) {
+                              setGeneratedBgUrl(result.url);
+                            }
+                          } catch (error) {
+                            console.error('Failed to regenerate background:', error);
+                          } finally {
+                            setIsRegeneratingBg(false);
+                          }
+                        }}
+                        disabled={isRegeneratingBg}
+                        className="bg-white/10 backdrop-blur-md border border-white/20 text-white hover:bg-white/20 p-3 rounded-full transition-all flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Gerar nova imagem com IA"
+                      >
+                        <span className={`material-symbols-outlined text-lg ${isRegeneratingBg ? 'animate-spin' : ''}`}>
+                          {isRegeneratingBg ? 'progress_activity' : 'auto_awesome'}
+                        </span>
+                      </button>
+
+                      {/* Ver Detalhes Button */}
+                      <button
+                        onClick={() => onViewTrip(nextTrip.id)}
+                        className="bg-white/10 backdrop-blur-md border border-white/30 text-white hover:bg-white hover:text-gray-900 px-8 py-3.5 rounded-full font-bold text-sm transition-all flex items-center gap-2 hover:scale-105 active:scale-95 group/btn"
+                      >
+                        Ver Detalhes
+                        <span className="material-symbols-outlined text-lg transition-transform group-hover/btn:translate-x-1">arrow_forward</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[320px] flex flex-col items-center justify-center gap-4 p-6 bg-gradient-to-br from-secondary-light to-primary-light">
+                <span className="material-symbols-outlined text-6xl text-white">flight</span>
+                <p className="text-text-main font-semibold">Nenhuma viagem planejada</p>
+                <button onClick={onOpenAddModal} className="bg-primary-dark text-white px-5 py-2.5 rounded-full font-bold text-sm">
+                  Criar Nova Viagem
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ========== SEUS PRÓXIMOS PLANOS: Trip Carousel ========== */}
         <section>
-          {/* Minhas Viagens */}
           <div className="bg-white rounded-2xl p-5 shadow-soft">
-            <div className="flex justify-end mb-4">
+            <div className="flex justify-start mb-4">
               <div className="flex gap-1.5">
                 {(['all', 'confirmed', 'planning'] as const).map((filter) => (
                   <button
@@ -260,87 +411,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
             </div>
 
             <TripCarousel
-              trips={trips.filter(t => statusFilter === 'all' || t.status === statusFilter)}
+              trips={trips.filter(t => (statusFilter === 'all' || t.status === statusFilter) && t.id !== nextTrip?.id)}
               onViewTrip={onViewTrip}
               onAddTrip={onOpenAddModal}
             />
           </div>
         </section>
 
-        {/* ========== ROW 2: WIDGETS (Left) + CALENDAR (Right) ========== */}
+        {/* ========== DISCOVERY SECTION: AI Search + Calendar ========== */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Widgets */}
+          {/* Left Column: AI Discovery */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Check-in Reminders (only shows if any pending) */}
-            {/* CheckInWidget removed - data now comes from CalendarContext */}
-
             {/* Imaginar Viagens com IA */}
             <ImagineTripsWidget onCreateTrip={() => onOpenAddModal()} />
-
-            {/* Next Trip Hero Card */}
-            <div className="bg-white rounded-2xl overflow-hidden shadow-soft group">
-              {nextTrip ? (
-                <div className="relative h-[320px]">
-                  {nextTrip.coverImage && !imageErrors.has(nextTrip.id) ? (
-                    <>
-                      <img
-                        src={nextTrip.coverImage}
-                        alt={nextTrip.destination}
-                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        onError={() => setImageErrors(prev => new Set(prev).add(nextTrip.id))}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary-dark to-secondary"></div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-9xl text-white/20">photo_camera</span>
-                      </div>
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
-                    </>
-                  )}
-                  <div className="absolute inset-0 p-6 flex flex-col justify-between text-white">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500 text-xs font-bold uppercase tracking-wide w-fit">
-                      <span className="size-2 rounded-full bg-white animate-pulse"></span>
-                      Confirmado
-                    </span>
-                    <div>
-                      <h2 className="text-xl md:text-2xl font-bold mb-1">Próxima Viagem:</h2>
-                      <h3 className="text-3xl md:text-4xl font-black tracking-tight">{nextTrip.title || nextTrip.destination}</h3>
-                      <p className="text-white/70 text-sm mt-2 flex items-center gap-2">
-                        {nextTrip.startDate}
-                      </p>
-                      <div className="flex items-center gap-4 mt-4">
-                        <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 text-center">
-                          <span className="block text-2xl font-bold">{countdown.days}</span>
-                          <span className="text-[10px] uppercase font-semibold text-white/80">Dias</span>
-                        </div>
-                        <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 text-center">
-                          <span className="block text-2xl font-bold">{countdown.hours.toString().padStart(2, '0')}</span>
-                          <span className="text-[10px] uppercase font-semibold text-white/80">Horas</span>
-                        </div>
-                        <button
-                          onClick={() => onViewTrip(nextTrip.id)}
-                          className="ml-auto bg-secondary text-text-main hover:bg-secondary-dark px-5 py-2.5 rounded-full font-bold text-sm transition-colors flex items-center gap-2"
-                        >
-                          Ver Detalhes
-                          <span className="material-symbols-outlined text-base">arrow_forward</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="h-[320px] flex flex-col items-center justify-center gap-4 p-6 bg-gradient-to-br from-secondary-light to-primary-light">
-                  <span className="material-symbols-outlined text-6xl text-white">flight</span>
-                  <p className="text-text-main font-semibold">Nenhuma viagem planejada</p>
-                  <button onClick={onOpenAddModal} className="bg-primary-dark text-white px-5 py-2.5 rounded-full font-bold text-sm">
-                    Criar Nova Viagem
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Right Column: Calendar + Day Agenda */}

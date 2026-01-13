@@ -154,6 +154,11 @@ export interface Trip {
   videos?: YouTubeVideo[];
   tasks?: TaskItem[];
   luggage?: LuggageItem[];
+  // AI-generated background fields
+  vibe?: 'praia' | 'urbano' | 'montanha' | 'rural' | 'cultural' | 'aventura' | 'tropical' | 'historico';
+  tags?: string[];
+  generatedCoverImage?: string;
+  isGeneratingCover?: boolean;
 }
 
 export interface Flight {

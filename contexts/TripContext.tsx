@@ -3,6 +3,7 @@ import { Trip } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { toISODate, fromISODate } from '../lib/dateUtils';
+import { getTripBackgroundService } from '../services/tripBackgroundService';
 
 // Helper to safely set item in localStorage
 const safeLocalStorageSetItem = (key: string, value: string) => {
@@ -34,6 +35,11 @@ const compressTripForCache = (trip: Trip): Trip => {
         coverImage: (trip.coverImage && trip.coverImage.length < 50000) ? trip.coverImage : '',
         participants: trip.participants || [],
         isFlexibleDates: trip.isFlexibleDates,
+        // AI-generated background fields
+        vibe: trip.vibe,
+        tags: trip.tags,
+        generatedCoverImage: trip.generatedCoverImage,
+        isGeneratingCover: trip.isGeneratingCover,
         // Exclude heavier fields that are fetched on detail view
         videos: [],
         tasks: [],
@@ -140,9 +146,18 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const addTrip = useCallback(async (newTripData: Omit<Trip, 'id'>): Promise<string | null> => {
         if (!user) throw new Error('Usuário não autenticado');
 
+        // Detect vibe for the new trip
+        const tripBackgroundService = getTripBackgroundService();
+        const detectedVibe = tripBackgroundService.detectVibe(newTripData.destination);
+
         // 1. Optimistic Update with Temp ID
         const tempId = `temp-${Date.now()}`;
-        const optimisticTrip: Trip = { ...newTripData, id: tempId };
+        const optimisticTrip: Trip = {
+            ...newTripData,
+            id: tempId,
+            vibe: detectedVibe,
+            isGeneratingCover: true  // Show loading state in UI
+        };
 
         setTripsState(prev => {
             const newState = [optimisticTrip, ...prev];
@@ -163,19 +178,62 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 end_date: toISODate(endDate),
                 status,
                 cover_image: coverImage,
-                data: rest // Store remainder as JSONB
+                data: { ...rest, vibe: detectedVibe } // Include detected vibe in JSONB
             }).select('id').single();
 
             if (error) throw error;
 
             // 4. Update State with Real ID
             if (data) {
+                const realId = data.id;
+
                 setTripsState(prev => {
-                    const newState = prev.map(t => t.id === tempId ? { ...t, id: data.id } : t);
+                    const newState = prev.map(t => t.id === tempId ? { ...t, id: realId } : t);
                     updateCache(newState);
                     return newState;
                 });
-                return data.id;
+
+                // 5. Trigger AI Background Generation (async, don't block)
+                (async () => {
+                    try {
+                        const tripWithRealId: Trip = { ...optimisticTrip, id: realId };
+                        const result = await tripBackgroundService.generateBackground(tripWithRealId);
+
+                        if (result?.url) {
+                            // Update trip with generated image
+                            setTripsState(prev => {
+                                const newState = prev.map(t =>
+                                    t.id === realId
+                                        ? { ...t, generatedCoverImage: result.url, isGeneratingCover: false }
+                                        : t
+                                );
+                                updateCache(newState);
+                                return newState;
+                            });
+
+                            // Also persist to Supabase
+                            await supabase
+                                .from('trips')
+                                .update({
+                                    data: { ...rest, vibe: detectedVibe, generatedCoverImage: result.url }
+                                })
+                                .eq('id', realId);
+                        }
+                    } catch (bgError) {
+                        console.warn('Background generation failed (non-blocking):', bgError);
+                        // Turn off loading state even on failure
+                        setTripsState(prev => {
+                            const newState = prev.map(t =>
+                                t.id === realId
+                                    ? { ...t, isGeneratingCover: false }
+                                    : t
+                            );
+                            return newState;
+                        });
+                    }
+                })();
+
+                return realId;
             }
             return null;
 

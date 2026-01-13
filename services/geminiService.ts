@@ -1419,8 +1419,7 @@ export class GeminiService {
   }
 
   /**
-   * Fallback image generation with multi-tier strategy
-   * Tries: Unsplash → Pexels → Local Placeholder
+   * Fallback image generation using backend proxy to avoid CORS
    */
   private async generateFallbackImage(prompt: string): Promise<string> {
     // Extract city name from prompt "City of {name}, {country}" or use raw prompt
@@ -1429,33 +1428,21 @@ export class GeminiService {
       query = prompt.replace('City of ', '').split(',')[0];
     }
 
-    const keywords = `${query},landmark,city,travel`;
+    const keywords = `${query},landmark,travel`;
 
     try {
-      // Try LoremFlickr (reliable placeholder)
-      // Format: /width/height/comma,separated,keywords/all
-      const formattedKeywords = keywords.split(',').map(k => encodeURIComponent(k.trim())).join(',');
-      const loremFlickrUrl = `https://loremflickr.com/800/600/${formattedKeywords}/all`;
+      // Use backend proxy to fetch Unsplash image (avoids CORS)
+      const response = await fetch(`/api/fallback-image?query=${encodeURIComponent(keywords)}`);
 
-      // Verify if LoremFlickr is accessible (HEAD request)
-      const check = await fetch(loremFlickrUrl, { method: 'HEAD' });
-      if (check.ok) {
-        console.log('Using LoremFlickr fallback');
-        return loremFlickrUrl;
+      if (response.ok) {
+        const data = await response.json();
+        if (data.url) {
+          console.log('Using Unsplash fallback via proxy');
+          return data.url;
+        }
       }
     } catch (error) {
-      console.warn('Unsplash fallback failed:', error);
-    }
-
-    try {
-      // Try Pexels as second fallback
-      const pexelsUrl = await this.getPexelsImage(keywords);
-      if (pexelsUrl) {
-        console.log('Using Pexels fallback');
-        return pexelsUrl;
-      }
-    } catch (error) {
-      console.warn('Pexels fallback failed:', error);
+      console.warn('Backend fallback proxy failed:', error);
     }
 
     // Final fallback: colored placeholder with icon

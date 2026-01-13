@@ -22,7 +22,7 @@ const TripCarousel: React.FC<TripCarouselProps> = ({ trips, onViewTrip, onAddTri
 
     const scroll = (direction: 'left' | 'right') => {
         if (scrollRef.current) {
-            const scrollAmount = 300; // Approximate card width + gap
+            const scrollAmount = 320; // Updated for new card width + gap
             const newScrollLeft = scrollRef.current.scrollLeft + (direction === 'right' ? scrollAmount : -scrollAmount);
             scrollRef.current.scrollTo({
                 left: newScrollLeft,
@@ -102,7 +102,7 @@ const TripCarousel: React.FC<TripCarouselProps> = ({ trips, onViewTrip, onAddTri
                         <div
                             key={trip.id}
                             onClick={() => onViewTrip(trip.id)}
-                            className="relative min-w-[260px] h-[340px] rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-xl transition-all hover:-translate-y-1 shrink-0"
+                            className="relative min-w-[300px] h-[200px] rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-xl transition-all hover:-translate-y-1 shrink-0"
                             style={{ scrollSnapAlign: 'start' }}
                         >
                             {/* Background Image */}
@@ -145,9 +145,9 @@ const TripCarousel: React.FC<TripCarouselProps> = ({ trips, onViewTrip, onAddTri
                                     </div>
                                 </div>
 
-                                {/* Participants */}
+                                {/* Participants removed or hidden if too crowded? User didn't say, but keeping for now */}
                                 {trip.participants && trip.participants.length > 0 && (
-                                    <div className="flex -space-x-2 pt-1">
+                                    <div className="hidden sm:flex -space-x-2 pt-1">
                                         {trip.participants.slice(0, 4).map((p, i) => (
                                             <div key={p.id || i} className="w-8 h-8 rounded-full border-2 border-white/20 overflow-hidden bg-gray-200" title={p.name}>
                                                 {p.avatar ? (
@@ -174,7 +174,7 @@ const TripCarousel: React.FC<TripCarouselProps> = ({ trips, onViewTrip, onAddTri
                 {/* Add New Trip Card */}
                 <div
                     onClick={onAddTrip}
-                    className="min-w-[100px] h-[340px] flex flex-col items-center justify-center gap-3 rounded-xl bg-gray-50 border-2 border-dashed border-gray-300 hover:border-primary hover:bg-primary-light/10 transition-all cursor-pointer shrink-0 group text-gray-400 hover:text-primary"
+                    className="min-w-[300px] h-[200px] flex flex-col items-center justify-center gap-3 rounded-xl bg-gray-50 border-2 border-dashed border-gray-300 hover:border-primary hover:bg-primary-light/10 transition-all cursor-pointer shrink-0 group text-gray-400 hover:text-primary"
                     style={{ scrollSnapAlign: 'start' }}
                 >
                     <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">

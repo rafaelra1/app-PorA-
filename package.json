@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:full": "concurrently \"npm run dev\" \"npm run server\"",
+    "dev": "concurrently \"vite\" \"npm run server\"",
+    "dev:client": "vite",
+    "dev:full": "npm run dev",
     "server": "node server/index.js",
     "build": "vite build",
     "preview": "vite preview",

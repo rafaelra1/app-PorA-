@@ -1,31 +1,21 @@
+import { GoogleGenAI } from "@google/genai";
 import express from 'express';
 import cors from 'cors';
-import { config } from 'dotenv';
+import dotenv from 'dotenv';
 
-// Load environment variables from .env.local
-config({ path: '.env.local' });
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 
-// Middleware
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:4173'], // Vite dev and preview ports
-  credentials: true
-}));
-app.use(express.json({ limit: '10mb' }));
+app.use(cors());
+app.use(express.json());
 
-// Get API key from environment (server-side only)
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-
-if (!GEMINI_API_KEY) {
-  console.error('WARNING: GEMINI_API_KEY not found in environment variables');
-}
-
-// Gemini API proxy endpoint
-app.post('/api/gemini', async (req, res) => {
+// Imagen API proxy endpoint (Updated to use Gemini 2.5 Flash Image via SDK)
+app.post('/api/gemini/imagen', async (req, res) => {
   try {
-    const { prompt, image, tools, responseMimeType } = req.body;
+    const { prompt, aspectRatio } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -35,105 +25,106 @@ app.post('/api/gemini', async (req, res) => {
       return res.status(500).json({ error: 'API key not configured' });
     }
 
-    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+    console.log('📸 Generating image with prompt:', prompt.substring(0, 100) + '...');
+    console.log('🤖 Model: gemini-2.5-flash-image');
 
-    // Build request body
-    const parts = [{ text: prompt }];
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-    if (image) {
-      parts.push({
-        inline_data: {
-          mime_type: image.mimeType,
-          data: image.data
-        }
-      });
-    }
+    // Add "generate an image" context to the prompt mostly for safety/clarity
+    // The specific model usage is what triggers image generation
+    const contents = [
+      { text: prompt }
+    ];
 
-    const body = {
-      contents: [{ parts }]
-    };
-
-    if (tools) {
-      body.tools = tools;
-    }
-
-    if (responseMimeType) {
-      body.generationConfig = { response_mime_type: responseMimeType };
-    }
-
-    // Call Gemini API
-    const response = await fetch(`${API_URL}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: contents,
+      config: {
+        responseMimeType: 'application/json'
+      }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API error:', errorText);
-      return res.status(response.status).json({
-        error: `Gemini API error: ${response.statusText}`,
-        details: errorText
-      });
+    if (!response.candidates || response.candidates.length === 0) {
+      throw new Error('No candidates returned from Gemini');
     }
 
-    const data = await response.json();
-    res.json(data);
+    const parts = response.candidates[0].content.parts;
+    let base64Image = null;
+
+    // Search for image data in the response parts
+    for (const part of parts) {
+      if (part.inlineData && part.inlineData.data) {
+        base64Image = part.inlineData.data;
+        break;
+      }
+    }
+
+    if (!base64Image) {
+      // If no image found, check if there's a text refusal
+      const textPart = parts.find(p => p.text);
+      if (textPart) {
+        console.warn('⚠️ Model returned text instead of image:', textPart.text);
+
+        // Check for common policy violation messages
+        if (textPart.text.includes('policy') || textPart.text.includes('violates')) {
+          return res.status(400).json({
+            error: 'Image generation blocked by safety policy',
+            details: textPart.text
+          });
+        }
+      }
+      throw new Error('No image data found in response');
+    }
+
+    console.log('✅ Image generated successfully via SDK');
+
+    // Return in the format expected by the frontend
+    // Use the exact structure the frontend expects or specific predictions format
+    res.json({
+      predictions: [
+        {
+          bytesBase64Encoded: base64Image,
+          mimeType: 'image/png'
+        }
+      ]
+    });
 
   } catch (error) {
-    console.error('Server error:', error);
+    console.error('❌ Server error:', error);
+
+    // Handle SDK specific errors
+    if (error.response) {
+      console.error('SDK Response Error:', error.response);
+      if (error.status === 400 || error.status === 404) {
+        return res.status(error.status).json({
+          error: 'Gemini API Error',
+          details: error.message
+        });
+      }
+    }
+
     res.status(500).json({ error: 'Internal server error', message: error.message });
   }
 });
 
-// Imagen API proxy endpoint
-app.post('/api/gemini/imagen', async (req, res) => {
+// Fallback image proxy - avoids CORS issues with external image services
+app.get('/api/fallback-image', async (req, res) => {
   try {
-    const { prompt, aspectRatio, negativePrompt } = req.body;
+    const { query } = req.query;
+    const searchTerm = encodeURIComponent(query || 'travel');
+    const unsplashUrl = `https://source.unsplash.com/random/1920x1080/?${searchTerm}`;
 
-    if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
-    }
+    console.log('🖼️ Fetching fallback image for:', searchTerm);
 
-    if (!GEMINI_API_KEY) {
-      return res.status(500).json({ error: 'API key not configured' });
-    }
+    const response = await fetch(unsplashUrl, { redirect: 'follow' });
+    const finalUrl = response.url; // Unsplash redirects to actual image
 
-    // Using gemini-3-pro-image-preview compliant with user request (Attempt 2)
-    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
-
-    const body = {
-      instances: [{ prompt }],
-      parameters: {
-        sampleCount: 1,
-        aspectRatio: aspectRatio || '16:9',
-        negativePrompt: negativePrompt || 'blurry, low quality, distorted, ugly, watermark, text',
-        safetySetting: 'block_some',
-        personGeneration: 'allow_adult'
-      }
-    };
-
-    const response = await fetch(`${API_URL}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Imagen API error:', errorText);
-      return res.status(response.status).json({
-        error: `Imagen API error: ${response.statusText}`,
-        details: errorText
-      });
-    }
-
-    const data = await response.json();
-    res.json(data);
+    console.log('✅ Fallback image URL:', finalUrl);
+    res.json({ url: finalUrl });
 
   } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({ error: 'Internal server error', message: error.message });
+    console.error('❌ Fallback image error:', error);
+    res.status(500).json({ error: 'Failed to fetch fallback image' });
   }
 });
 
