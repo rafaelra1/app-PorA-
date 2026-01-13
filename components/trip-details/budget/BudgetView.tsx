@@ -1,18 +1,53 @@
 import * as React from 'react';
 import { useState, useMemo } from 'react';
-import { Expense, ExpenseCategory, ExpenseFilter } from '../../../types';
+import {
+    Expense,
+    ExpenseCategory,
+    ExpenseFilter,
+    Transaction,
+    TripParticipant
+} from '../../../types';
+import {
+    calculateNetBalances,
+    getUserTransactionRole,
+    formatCurrency,
+    getUserPosition
+} from '../../../utils/finance';
 import ExchangeRateCard from '../ExchangeRateCard';
+import ExpenseModal from './ExpenseModal';
 
 interface BudgetViewProps {
     expenses: Expense[];
+    transactions?: Transaction[];
+    participants?: TripParticipant[];
+    currentUserId?: string;
+    tripId?: string;
     totalBudget: number;
     destination?: string;
+    baseCurrency?: string;
     onAddExpense: () => void;
+    onAddTransaction?: (transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => void;
     onDeleteExpense?: (id: string) => void;
 }
 
-const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destination, onAddExpense, onDeleteExpense }) => {
+const BudgetView: React.FC<BudgetViewProps> = ({
+    expenses,
+    transactions = [],
+    participants = [],
+    currentUserId = 'u1',
+    tripId = '',
+    totalBudget,
+    destination,
+    baseCurrency = 'BRL',
+    onAddExpense,
+    onAddTransaction,
+    onDeleteExpense
+}) => {
     const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('todas');
+    const [showExpenseModal, setShowExpenseModal] = useState(false);
+
+    // Check if we're in collaborative mode (have participants)
+    const isCollaborativeMode = participants.length > 0;
 
     const categoryConfig: Record<ExpenseCategory, { label: string; icon: string; color: string; bg: string }> = {
         alimentacao: { label: 'Alimentação', icon: 'restaurant', color: 'text-amber-500', bg: 'bg-amber-100' },
@@ -23,13 +58,13 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
         outros: { label: 'Outros', icon: 'more_horiz', color: 'text-gray-500', bg: 'bg-gray-100' },
     };
 
-    const formatCurrency = (value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const formatCurrencyLocal = (value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr);
         return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
     };
 
-    // Computations
+    // Legacy computations (for non-collaborative mode)
     const totalSpent = useMemo(() =>
         expenses.filter(e => e.type === 'saida').reduce((sum, e) => sum + e.amount, 0),
         [expenses]
@@ -58,26 +93,62 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
         );
     }, [expenses, expenseFilter]);
 
-    const dailyAverage = useMemo(() => {
-        const days = new Set(expenses.map(e => e.date)).size || 1;
-        return totalSpent / days;
-    }, [expenses, totalSpent]);
+    // Collaborative mode computations
+    const updatedParticipants = useMemo(() => {
+        if (!isCollaborativeMode) return participants;
+        return calculateNetBalances(transactions, participants);
+    }, [transactions, participants, isCollaborativeMode]);
+
+    const currentUserBalance = useMemo(() => {
+        const user = updatedParticipants.find(p => p.id === currentUserId);
+        return user?.netBalance ?? 0;
+    }, [updatedParticipants, currentUserId]);
+
+    const userPosition = getUserPosition(currentUserBalance);
+
+    const totalGroupSpend = useMemo(() => {
+        return transactions.reduce((sum, tx) => sum + (tx.amountInBase ?? tx.amountOriginal), 0);
+    }, [transactions]);
 
     const maxExpense = useMemo(() =>
         Math.max(...expenses.filter(e => e.type === 'saida').map(e => e.amount), 0),
         [expenses]
     );
 
+    const handleAddExpense = () => {
+        if (isCollaborativeMode) {
+            setShowExpenseModal(true);
+        } else {
+            onAddExpense();
+        }
+    };
+
+    const handleSaveTransaction = (transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => {
+        onAddTransaction?.(transaction);
+        setShowExpenseModal(false);
+    };
+
+    const getInitials = (name: string) => {
+        return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold text-text-main">Gerenciamento de Orçamento</h2>
-                    <p className="text-text-muted text-sm">Acompanhe seus gastos e mantenha-se dentro do orçamento da viagem.</p>
+                    <h2 className="text-2xl font-bold text-text-main">
+                        {isCollaborativeMode ? 'Divisão de Despesas' : 'Gerenciamento de Orçamento'}
+                    </h2>
+                    <p className="text-text-muted text-sm">
+                        {isCollaborativeMode
+                            ? 'Gerencie despesas compartilhadas e veja quem deve a quem.'
+                            : 'Acompanhe seus gastos e mantenha-se dentro do orçamento da viagem.'
+                        }
+                    </p>
                 </div>
                 <button
-                    onClick={onAddExpense}
+                    onClick={handleAddExpense}
                     className="flex items-center gap-2 px-5 py-3 bg-primary text-text-main rounded-xl font-bold text-sm hover:bg-primary-dark transition-colors shadow-md"
                 >
                     <span className="material-symbols-outlined text-base">add</span>
@@ -105,17 +176,17 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                                     <span className="text-xs text-text-muted">Restante</span>
                                     <span className="text-3xl font-extrabold text-text-main">{remainingPercent}%</span>
-                                    <span className="text-xs text-text-muted">{formatCurrency(remainingBudget)}</span>
+                                    <span className="text-xs text-text-muted">{formatCurrencyLocal(remainingBudget)}</span>
                                 </div>
                             </div>
                             <div className="flex gap-8 text-center">
                                 <div>
                                     <p className="text-xs text-text-muted uppercase tracking-wider">Total</p>
-                                    <p className="font-bold text-text-main">{formatCurrency(totalBudget)}</p>
+                                    <p className="font-bold text-text-main">{formatCurrencyLocal(totalBudget)}</p>
                                 </div>
                                 <div>
                                     <p className="text-xs text-text-muted uppercase tracking-wider">Gasto</p>
-                                    <p className="font-bold text-cyan-600">{formatCurrency(totalSpent)}</p>
+                                    <p className="font-bold text-cyan-600">{formatCurrencyLocal(totalSpent)}</p>
                                 </div>
                             </div>
                         </div>
@@ -134,7 +205,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
                                     <div key={cat}>
                                         <div className="flex justify-between text-sm mb-1">
                                             <span className="flex items-center gap-2"><span className={`size-2 ${config.bg.replace('bg-', 'bg-').replace('100', '500')} rounded-full`}></span>{config.label}</span>
-                                            <span className="font-bold">{formatCurrency(amount)}</span>
+                                            <span className="font-bold">{formatCurrencyLocal(amount)}</span>
                                         </div>
                                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                                             <div className={`h-full ${config.bg.replace('100', '500')} rounded-full`} style={{ width: `${percent}%` }}></div>
@@ -155,33 +226,106 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
                 <div className="lg:col-span-2 space-y-6">
                     {/* Stats Cards */}
                     <div className="grid grid-cols-3 gap-4">
-                        <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 flex items-center gap-4">
-                            <div className="size-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                <span className="material-symbols-outlined text-blue-500">calendar_today</span>
+                        {/* Net Balance Card (Collaborative Mode) or Daily Average (Individual Mode) */}
+                        {isCollaborativeMode ? (
+                            <div className={`bg-white rounded-2xl p-5 shadow-soft border ${userPosition === 'CREDITOR'
+                                    ? 'border-green-200 bg-gradient-to-br from-green-50 to-white'
+                                    : userPosition === 'DEBTOR'
+                                        ? 'border-rose-200 bg-gradient-to-br from-rose-50 to-white'
+                                        : 'border-gray-100/50'
+                                } flex items-center gap-4`}>
+                                <div className={`size-12 ${userPosition === 'CREDITOR' ? 'bg-green-100' : userPosition === 'DEBTOR' ? 'bg-rose-100' : 'bg-gray-100'
+                                    } rounded-xl flex items-center justify-center`}>
+                                    <span className={`material-symbols-outlined ${userPosition === 'CREDITOR' ? 'text-green-500' : userPosition === 'DEBTOR' ? 'text-rose-500' : 'text-gray-500'
+                                        }`}>
+                                        {userPosition === 'CREDITOR' ? 'trending_up' : userPosition === 'DEBTOR' ? 'trending_down' : 'check_circle'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-text-muted">Seu Saldo</p>
+                                    <p className={`font-bold text-lg ${userPosition === 'CREDITOR' ? 'text-green-600' : userPosition === 'DEBTOR' ? 'text-rose-600' : 'text-gray-600'
+                                        }`}>
+                                        {userPosition === 'CREDITOR' && '+'}
+                                        {formatCurrencyLocal(Math.abs(currentUserBalance))}
+                                    </p>
+                                    <p className={`text-xs font-medium ${userPosition === 'CREDITOR' ? 'text-green-500' : userPosition === 'DEBTOR' ? 'text-rose-500' : 'text-gray-500'
+                                        }`}>
+                                        {userPosition === 'CREDITOR' ? 'A receber' : userPosition === 'DEBTOR' ? 'A pagar' : 'Zerado'}
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-xs text-text-muted">Média Diária</p>
-                                <p className="font-bold text-lg text-text-main">{formatCurrency(dailyAverage)}</p>
+                        ) : (
+                            <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 flex items-center gap-4">
+                                <div className="size-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-blue-500">calendar_today</span>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-text-muted">Média Diária</p>
+                                    <p className="font-bold text-lg text-text-main">
+                                        {formatCurrencyLocal(totalSpent / (new Set(expenses.map(e => e.date)).size || 1))}
+                                    </p>
+                                </div>
                             </div>
-                        </div>
-                        <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 flex items-center gap-4">
-                            <div className="size-12 bg-rose-100 rounded-xl flex items-center justify-center">
-                                <span className="material-symbols-outlined text-rose-500">trending_up</span>
+                        )}
+
+                        {/* Group Total (Collaborative) or Max Expense (Individual) */}
+                        {isCollaborativeMode ? (
+                            <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 flex items-center gap-4">
+                                <div className="size-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-indigo-500">group</span>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-text-muted">Total do Grupo</p>
+                                    <p className="font-bold text-lg text-text-main">{formatCurrencyLocal(totalGroupSpend)}</p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-xs text-text-muted">Maior Gasto</p>
-                                <p className="font-bold text-lg text-text-main">{formatCurrency(maxExpense)}</p>
+                        ) : (
+                            <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 flex items-center gap-4">
+                                <div className="size-12 bg-rose-100 rounded-xl flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-rose-500">trending_up</span>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-text-muted">Maior Gasto</p>
+                                    <p className="font-bold text-lg text-text-main">{formatCurrencyLocal(maxExpense)}</p>
+                                </div>
                             </div>
-                        </div>
-                        <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 flex items-center gap-4">
-                            <div className="size-12 bg-green-100 rounded-xl flex items-center justify-center">
-                                <span className="material-symbols-outlined text-green-500">savings</span>
+                        )}
+
+                        {/* Participants Overview (Collaborative) or Savings (Individual) */}
+                        {isCollaborativeMode ? (
+                            <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50">
+                                <p className="text-xs text-text-muted mb-2">Participantes</p>
+                                <div className="flex -space-x-2">
+                                    {updatedParticipants.slice(0, 4).map(p => (
+                                        <div
+                                            key={p.id}
+                                            className={`w-10 h-10 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold ${p.netBalance > 0 ? 'bg-green-100 text-green-600' :
+                                                    p.netBalance < 0 ? 'bg-rose-100 text-rose-600' :
+                                                        'bg-gray-100 text-gray-600'
+                                                }`}
+                                            title={`${p.name}: ${formatCurrencyLocal(p.netBalance)}`}
+                                        >
+                                            {getInitials(p.name)}
+                                        </div>
+                                    ))}
+                                    {updatedParticipants.length > 4 && (
+                                        <div className="w-10 h-10 rounded-full border-2 border-white bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
+                                            +{updatedParticipants.length - 4}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-xs text-text-muted">Economia</p>
-                                <p className="font-bold text-lg text-green-600">{remainingPercent > 50 ? '+' : ''}{Math.round(remainingPercent - 50)}%</p>
+                        ) : (
+                            <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100/50 flex items-center gap-4">
+                                <div className="size-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-green-500">savings</span>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-text-muted">Economia</p>
+                                    <p className="font-bold text-lg text-green-600">{remainingPercent > 50 ? '+' : ''}{Math.round(remainingPercent - 50)}%</p>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
 
                     {/* Transactions Table */}
@@ -209,13 +353,73 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
                                     <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-gray-100">
                                         <th className="pb-3 font-bold">Despesa</th>
                                         <th className="pb-3 font-bold">Categoria</th>
+                                        {isCollaborativeMode && <th className="pb-3 font-bold">Status</th>}
                                         <th className="pb-3 font-bold">Data</th>
                                         <th className="pb-3 font-bold text-right">Valor</th>
                                         <th className="pb-3 font-bold text-right">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {filteredExpenses.map((expense) => {
+                                    {/* Render Collaborative Transactions */}
+                                    {isCollaborativeMode && transactions.map((tx) => {
+                                        const catConfig = categoryConfig[(tx.categoryId as ExpenseCategory) ?? 'outros'];
+                                        const role = getUserTransactionRole(tx, currentUserId);
+                                        const payer = participants.find(p => p.id === tx.payers[0]?.userId);
+
+                                        return (
+                                            <tr key={tx.id} className="group hover:bg-gray-50/50 transition-colors">
+                                                <td className="py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`size-10 ${catConfig.bg} rounded-lg flex items-center justify-center`}>
+                                                            <span className={`material-symbols-outlined ${catConfig.color} text-lg`}>{catConfig.icon}</span>
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold text-text-main text-sm">{tx.description}</p>
+                                                            <p className="text-xs text-text-muted">
+                                                                Pago por {payer?.id === currentUserId ? 'você' : payer?.name}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td><span className={`px-3 py-1 ${catConfig.bg} ${catConfig.color.replace('text-', 'text-').replace('500', '700')} text-xs font-bold rounded-full`}>{catConfig.label}</span></td>
+                                                <td>
+                                                    {role.role === 'lent' ? (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="material-symbols-outlined text-green-500 text-base">arrow_upward</span>
+                                                            <span className="text-xs font-bold text-green-600">
+                                                                Você emprestou {formatCurrencyLocal(role.amount)}
+                                                            </span>
+                                                        </div>
+                                                    ) : role.role === 'borrowed' ? (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="material-symbols-outlined text-amber-500 text-base">arrow_downward</span>
+                                                            <span className="text-xs font-bold text-amber-600">
+                                                                Você deve {formatCurrencyLocal(role.amount)}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-text-muted">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="text-sm text-text-muted">{formatDate(tx.date)}</td>
+                                                <td className="text-right font-bold text-text-main">
+                                                    {formatCurrency(tx.amountInBase ?? tx.amountOriginal, baseCurrency)}
+                                                </td>
+                                                <td className="text-right">
+                                                    <button
+                                                        onClick={() => onDeleteExpense?.(tx.id)}
+                                                        className="p-1.5 rounded-lg text-gray-400 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover:opacity-100"
+                                                        title="Excluir despesa"
+                                                    >
+                                                        <span className="material-symbols-outlined text-lg">delete</span>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+
+                                    {/* Render Legacy Expenses (non-collaborative) */}
+                                    {!isCollaborativeMode && filteredExpenses.map((expense) => {
                                         const config = categoryConfig[expense.category];
                                         return (
                                             <tr key={expense.id} className="group hover:bg-gray-50/50 transition-colors">
@@ -233,7 +437,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
                                                 <td><span className={`px-3 py-1 ${config.bg} ${config.color.replace('text-', 'text-').replace('500', '700')} text-xs font-bold rounded-full`}>{config.label}</span></td>
                                                 <td className="text-sm text-text-muted">{formatDate(expense.date)}</td>
                                                 <td className={`text-right font-bold ${expense.type === 'saida' ? 'text-rose-600' : 'text-green-600'}`}>
-                                                    {expense.type === 'saida' ? '-' : '+'} {formatCurrency(expense.amount)}
+                                                    {expense.type === 'saida' ? '-' : '+'} {formatCurrencyLocal(expense.amount)}
                                                 </td>
                                                 <td className="text-right">
                                                     <button
@@ -251,11 +455,26 @@ const BudgetView: React.FC<BudgetViewProps> = ({ expenses, totalBudget, destinat
                             </table>
                         </div>
                         <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                            <p className="text-sm text-text-muted">Mostrando {Math.min(filteredExpenses.length)} de {filteredExpenses.length} transações</p>
+                            <p className="text-sm text-text-muted">
+                                Mostrando {isCollaborativeMode ? transactions.length : filteredExpenses.length} transações
+                            </p>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Expense Modal */}
+            {isCollaborativeMode && (
+                <ExpenseModal
+                    isOpen={showExpenseModal}
+                    onClose={() => setShowExpenseModal(false)}
+                    onSave={handleSaveTransaction}
+                    participants={participants}
+                    currentUserId={currentUserId}
+                    tripId={tripId}
+                    baseCurrency={baseCurrency}
+                />
+            )}
         </div>
     );
 };

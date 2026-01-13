@@ -98,10 +98,10 @@ const TripSidebar: React.FC<TripSidebarProps> = ({
         },
         {
             id: 'media',
-            label: 'Mídias',
-            icon: 'perm_media',
-            gradient: 'from-fuchsia-500 to-purple-600',
-            iconColor: 'text-fuchsia-500',
+            label: 'Pesquisa',
+            icon: 'search',
+            gradient: 'from-violet-500 to-indigo-600',
+            iconColor: 'text-violet-500',
         },
         {
             id: 'memories',

@@ -4,11 +4,13 @@ import { useRef, useState, useEffect, useMemo } from 'react';
 import DayAgenda from '../components/dashboard/DayAgenda';
 import CheckInWidget from '../components/dashboard/CheckInWidget';
 import ImagineTripsWidget from '../components/dashboard/ImagineTripsWidget';
+import TripCarousel from '../components/dashboard/TripCarousel';
 import { Trip, ItineraryActivity, Transport, HotelReservation } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useCalendar } from '../contexts/CalendarContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { BRAZILIAN_HOLIDAYS } from '../constants';
+import { fromISODate } from '../lib/dateUtils';
 
 interface DashboardProps {
   onOpenAddModal: () => void;
@@ -21,97 +23,37 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEditTrip, onDeleteTrip, trips, onNavigate }) => {
   const { user } = useAuth();
-  const { syncFromTrips, syncFromActivities, syncFromTransports, syncActivitiesFromSupabase, getEventsForDate } = useCalendar();
+  const { syncFromTrips, syncActivitiesFromSupabase, syncTransportsFromSupabase, syncAccommodationsFromSupabase, getEventsForDate } = useCalendar();
   const { unreadCount } = useNotifications();
   const nextTrip = trips.find(t => t.status === 'confirmed') || trips[0];
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'planning' | 'completed'>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [allActivities, setAllActivities] = useState<ItineraryActivity[]>([]);
-  const [allTransports, setAllTransports] = useState<Transport[]>([]);
-  const [allHotels, setAllHotels] = useState<HotelReservation[]>([]);
+  // Removed local state - now using CalendarContext
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const [hoveredHolidayDay, setHoveredHolidayDay] = useState<number | null>(null);
 
-  // Load activities, transports, and hotels from Supabase/localStorage and sync with CalendarContext
+  // Sync all trip data with CalendarContext
   useEffect(() => {
-    const loadData = async () => {
-      const collectedActivities: ItineraryActivity[] = [];
-      const collectedTransports: Transport[] = [];
-      const collectedHotels: HotelReservation[] = [];
+    const syncAllData = async () => {
+      // Sync trips with calendar (creates trip start/end events)
+      syncFromTrips(trips);
 
+      // Sync all data from Supabase to CalendarContext
       for (const trip of trips) {
         try {
-          // Load itinerary activities from Supabase (new source of truth)
           await syncActivitiesFromSupabase(trip.id);
-
-          // Also fetch activities for local display
-          const { supabase } = await import('../lib/supabase');
-          const { data: activitiesData } = await supabase
-            .from('itinerary_activities')
-            .select('*')
-            .eq('trip_id', trip.id);
-
-          if (activitiesData && Array.isArray(activitiesData)) {
-            const mappedActivities: ItineraryActivity[] = activitiesData.map(item => ({
-              id: item.id,
-              day: item.day,
-              date: item.date,
-              time: item.time ? item.time.slice(0, 5) : '00:00',
-              title: item.title,
-              location: item.location,
-              locationDetail: item.location_detail,
-              type: item.type as any,
-              completed: item.completed,
-              notes: item.notes,
-              image: item.image,
-              price: item.price ? String(item.price) : undefined,
-              duration: item.duration || 60,
-            }));
-            collectedActivities.push(...mappedActivities);
-          }
-
-          // Load transports from localStorage (TransportContext may also use Supabase in future)
-          if (typeof window !== 'undefined') {
-            const storedTransports = window.localStorage.getItem(`porai_trip_${trip.id}_transports`);
-            if (storedTransports) {
-              const parsed = JSON.parse(storedTransports);
-              if (Array.isArray(parsed)) {
-                collectedTransports.push(...parsed);
-                // Sync transports with calendar
-                syncFromTransports(parsed, trip.id);
-              }
-            }
-
-            // Load hotels
-            const storedHotels = window.localStorage.getItem(`porai_trip_${trip.id}_hotels`);
-            if (storedHotels) {
-              const parsed = JSON.parse(storedHotels);
-              if (Array.isArray(parsed)) {
-                collectedHotels.push(...parsed);
-              }
-            }
-          }
+          await syncTransportsFromSupabase(trip.id);
+          await syncAccommodationsFromSupabase(trip.id);
         } catch (e) {
-          console.error(`Error loading data for trip ${trip.id}`, e);
+          console.error(`Error syncing data for trip ${trip.id}:`, e);
         }
       }
-
-      setAllActivities(collectedActivities);
-      setAllTransports(collectedTransports);
-      setAllHotels(collectedHotels);
     };
 
-    // Sync trips with calendar
-    syncFromTrips(trips);
-
-    loadData();
-
-    // Listen for storage events to update real-time
-    window.addEventListener('storage', loadData);
-    return () => window.removeEventListener('storage', loadData);
-  }, [trips, syncFromTrips, syncActivitiesFromSupabase, syncFromTransports]);
+    syncAllData();
+  }, [trips, syncFromTrips, syncActivitiesFromSupabase, syncTransportsFromSupabase, syncAccommodationsFromSupabase]);
 
   // Stats calculations - memoized for performance
   const totalTrips = trips.length;
@@ -174,141 +116,64 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
 
   const countdown = useMemo(() => getCountdown(), [nextTrip]);
 
-  // Generate events for DayAgenda based on selected date - memoized
-  const generateEventsForDate = useMemo(() => (date: Date) => {
-    const events: {
-      id: string;
-      title: string;
-      subtitle?: string;
-      startTime: string;
-      endTime: string;
-      color: string;
-      type: 'flight' | 'train' | 'bus' | 'car' | 'ferry' | 'transfer' | 'meal' | 'sightseeing' | 'accommodation' | 'activity';
-      location?: string;
-      status?: 'on_time' | 'delayed' | 'cancelled';
-      route?: { from: string; to: string };
-      image?: string;
-    }[] = [];
-
-    const isSameDay = (d1: Date, d2: Date) =>
-      d1.getFullYear() === d2.getFullYear() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getDate() === d2.getDate();
-
-    // Format date for comparison
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    const formattedDate = `${day}/${month}/${year}`;
-
-    // Add Transports (flights, trains, etc.)
-    allTransports.forEach(transport => {
-      if (!transport.departureDate) return;
-
-      if (transport.departureDate === formattedDate) {
-        const typeMap: Record<string, 'flight' | 'train' | 'bus' | 'car' | 'ferry' | 'transfer'> = {
-          flight: 'flight',
-          train: 'train',
-          bus: 'bus',
-          car: 'car',
-          transfer: 'transfer',
-          ferry: 'ferry'
-        };
-
-        const typeLabels: Record<string, string> = {
-          flight: 'Voo',
-          train: 'Trem',
-          bus: 'Ônibus',
-          car: 'Carro',
-          transfer: 'Transfer',
-          ferry: 'Balsa'
-        };
-
-        const typeLabel = typeLabels[transport.type] || 'Transporte';
-
-        // Calculate end time
-        let endTime = transport.arrivalTime || transport.departureTime;
-        if (!endTime) {
-          const [h, m] = (transport.departureTime || '08:00').split(':').map(Number);
-          const endH = (h + 2) % 24;
-          endTime = `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        }
-
-        // Build route info
-        const fromLocation = transport.departureCity || transport.departureLocation || '';
-        const toLocation = transport.arrivalCity || transport.arrivalLocation || '';
-
-        events.push({
-          id: `transport-${transport.id}`,
-          title: `${typeLabel}: ${transport.operator} ${transport.reference || ''}`.trim(),
-          subtitle: transport.route || `${fromLocation} → ${toLocation}`,
-          startTime: transport.departureTime?.slice(0, 5) || '08:00',
-          endTime: endTime,
-          color: 'bg-violet-50 text-violet-700 border-violet-100',
-          type: typeMap[transport.type] || 'transfer',
-          location: toLocation,
-          status: 'on_time', // Default to on_time, could be dynamic
-          route: fromLocation && toLocation ? { from: fromLocation, to: toLocation } : undefined,
-          image: transport.type === 'flight' ? 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=600&q=80' : undefined
-        });
-      }
-    });
-
-    // Add Itinerary Activities
-    const daysActivities = allActivities.filter(a => {
-      if (!a.date) return false;
-
-      let activityDate: Date;
-      if (a.date.includes('/')) {
-        const [d, m, y] = a.date.split('/').map(Number);
-        activityDate = new Date(y, m - 1, d);
+  // Map CalendarEvent to DayAgenda event format
+  const mapCalendarEventToDayEvent = (calEvent: any) => {
+    // Derive holidayType from description for holidays added by syncHolidays
+    let holidayType: 'nacional' | 'facultativo' | undefined;
+    if (calEvent.type === 'holiday') {
+      if (calEvent.description?.toLowerCase().includes('nacional')) {
+        holidayType = 'nacional';
       } else {
-        const [y, m, d] = a.date.split('-').map(Number);
-        activityDate = new Date(y, m - 1, d);
+        holidayType = 'facultativo';
       }
+    }
 
-      return isSameDay(activityDate, date);
+    // Format time to HH:MM (remove seconds if present)
+    const formatTime = (time: string | undefined, fallback: string): string => {
+      if (!time) return fallback;
+      // If time is HH:MM:SS, slice to HH:MM
+      return time.length >= 5 ? time.slice(0, 5) : time;
+    };
+
+    return {
+      id: calEvent.id,
+      title: calEvent.title,
+      subtitle: calEvent.description || calEvent.location,
+      startTime: formatTime(calEvent.startTime, '00:00'),
+      endTime: formatTime(calEvent.endTime, '23:59'),
+      type: calEvent.type as any,
+      location: calEvent.location,
+      status: 'on_time' as const,
+      route: calEvent.locationDetail?.includes('→') ? { from: calEvent.locationDetail.split('→')[0].trim(), to: calEvent.locationDetail.split('→')[1].trim() } : undefined,
+      holidayType: holidayType,
+    };
+  };
+
+  // Get events from CalendarContext and map to DayAgenda format
+  // 1. Filter out 'trip' type events (phantom Embarque/Retorno cards)
+  // 2. Deduplicate by a composite key (title + startDate + startTime for identical visual entries)
+  const selectedDateEvents = useMemo(() => {
+    if (!selectedDate) return [];
+
+    const rawEvents = getEventsForDate(selectedDate);
+
+    // Filter: remove 'trip' type events (they render as grey/slate and are unwanted)
+    const filteredEvents = rawEvents.filter(e => e.type !== 'trip');
+
+    // Deduplicate: Use title + date + time as key to catch visually identical entries
+    const seen = new Map<string, any>();
+    filteredEvents.forEach(e => {
+      // Create a composite key that identifies visually identical events
+      const key = `${e.title}|${e.startDate}|${e.startTime}`;
+      if (!seen.has(key)) {
+        seen.set(key, e);
+      }
     });
 
-    daysActivities.forEach(act => {
-      const [h, m] = act.time.split(':').map(Number);
-      const endH = (h + 1) % 24;
-      const endTime = `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-
-      // Map activity type
-      let eventType: 'meal' | 'sightseeing' | 'accommodation' | 'activity' = 'activity';
-      let color = 'bg-gray-50 text-gray-700 border-gray-100';
-
-      if (act.type === 'food' || act.type === 'meal') {
-        eventType = 'meal';
-        color = 'bg-orange-50 text-orange-700 border-orange-100';
-      } else if (act.type === 'sightseeing' || act.type === 'culture') {
-        eventType = 'sightseeing';
-        color = 'bg-amber-50 text-amber-700 border-amber-100';
-      } else if (act.type === 'accommodation') {
-        eventType = 'accommodation';
-        color = 'bg-emerald-50 text-emerald-700 border-emerald-100';
-      }
-
-      events.push({
-        id: act.id,
-        title: act.title,
-        subtitle: act.location || (act.type === 'food' ? 'Restaurante' : 'Atividade'),
-        startTime: act.time,
-        endTime: endTime,
-        color: color,
-        type: eventType,
-        location: act.location
-      });
-    });
-
-    // Sort events by start time
-    events.sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-    return events;
-  }, [allTransports, allActivities, allHotels]);
-
-  const selectedDateEvents = selectedDate ? generateEventsForDate(selectedDate) : [];
+    return Array.from(seen.values())
+      .map(mapCalendarEventToDayEvent)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }, [selectedDate, getEventsForDate]);
 
   return (
     <PageContainer>
@@ -375,69 +240,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
 
         {/* ========== ROW 1: HERO (Full Width) ========== */}
         <section>
-          {/* Next Trip Hero Card */}
-          <div className="bg-white rounded-2xl overflow-hidden shadow-soft group">
-            {nextTrip ? (
-              <div className="relative h-[320px]">
-                {nextTrip.coverImage && !imageErrors.has(nextTrip.id) ? (
-                  <>
-                    <img
-                      src={nextTrip.coverImage}
-                      alt={nextTrip.destination}
-                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      onError={() => setImageErrors(prev => new Set(prev).add(nextTrip.id))}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
-                  </>
-                ) : (
-                  <>
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary-dark to-secondary"></div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-9xl text-white/20">photo_camera</span>
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
-                  </>
-                )}
-                <div className="absolute inset-0 p-6 flex flex-col justify-between text-white">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500 text-xs font-bold uppercase tracking-wide w-fit">
-                    <span className="size-2 rounded-full bg-white animate-pulse"></span>
-                    Confirmado
-                  </span>
-                  <div>
-                    <h2 className="text-xl md:text-2xl font-bold mb-1">Próxima Viagem:</h2>
-                    <h3 className="text-3xl md:text-4xl font-black tracking-tight">{nextTrip.title || nextTrip.destination}</h3>
-                    <p className="text-white/70 text-sm mt-2 flex items-center gap-2">
-                      {nextTrip.startDate}
-                    </p>
-                    <div className="flex items-center gap-4 mt-4">
-                      <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 text-center">
-                        <span className="block text-2xl font-bold">{countdown.days}</span>
-                        <span className="text-[10px] uppercase font-semibold text-white/80">Dias</span>
-                      </div>
-                      <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 text-center">
-                        <span className="block text-2xl font-bold">{countdown.hours.toString().padStart(2, '0')}</span>
-                        <span className="text-[10px] uppercase font-semibold text-white/80">Horas</span>
-                      </div>
-                      <button
-                        onClick={() => onViewTrip(nextTrip.id)}
-                        className="ml-auto bg-secondary text-text-main hover:bg-secondary-dark px-5 py-2.5 rounded-full font-bold text-sm transition-colors flex items-center gap-2"
-                      >
-                        Ver Detalhes
-                        <span className="material-symbols-outlined text-base">arrow_forward</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+          {/* Minhas Viagens */}
+          <div className="bg-white rounded-2xl p-5 shadow-soft">
+            <div className="flex justify-end mb-4">
+              <div className="flex gap-1.5">
+                {(['all', 'confirmed', 'planning'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setStatusFilter(filter)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${statusFilter === filter
+                      ? 'bg-text-main text-white'
+                      : 'bg-background-light text-text-muted hover:bg-primary-light hover:text-primary-dark'
+                      }`}
+                  >
+                    {filter === 'all' ? 'Todos' : filter === 'confirmed' ? 'Próximas' : 'Planejando'}
+                  </button>
+                ))}
               </div>
-            ) : (
-              <div className="h-[320px] flex flex-col items-center justify-center gap-4 p-6 bg-gradient-to-br from-secondary-light to-primary-light">
-                <span className="material-symbols-outlined text-6xl text-white">flight</span>
-                <p className="text-text-main font-semibold">Nenhuma viagem planejada</p>
-                <button onClick={onOpenAddModal} className="bg-primary-dark text-white px-5 py-2.5 rounded-full font-bold text-sm">
-                  Criar Nova Viagem
-                </button>
-              </div>
-            )}
+            </div>
+
+            <TripCarousel
+              trips={trips.filter(t => statusFilter === 'all' || t.status === statusFilter)}
+              onViewTrip={onViewTrip}
+              onAddTrip={onOpenAddModal}
+            />
           </div>
         </section>
 
@@ -446,75 +272,74 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
           {/* Left Column: Widgets */}
           <div className="lg:col-span-2 space-y-6">
             {/* Check-in Reminders (only shows if any pending) */}
-            <CheckInWidget transports={allTransports} hotels={allHotels} />
+            {/* CheckInWidget removed - data now comes from CalendarContext */}
 
             {/* Imaginar Viagens com IA */}
             <ImagineTripsWidget onCreateTrip={() => onOpenAddModal()} />
 
-            {/* Minhas Viagens */}
-            <div className="bg-white rounded-2xl p-5 shadow-soft">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-lg text-primary-dark">luggage</span>
-                  <h3 className="font-bold text-text-main">Minhas Viagens</h3>
-                </div>
-                <div className="flex gap-1.5">
-                  {(['all', 'confirmed', 'planning'] as const).map((filter) => (
-                    <button
-                      key={filter}
-                      onClick={() => setStatusFilter(filter)}
-                      className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${statusFilter === filter
-                        ? 'bg-text-main text-white'
-                        : 'bg-background-light text-text-muted hover:bg-primary-light hover:text-primary-dark'
-                        }`}
-                    >
-                      {filter === 'all' ? 'Todos' : filter === 'confirmed' ? 'Próximas' : 'Planejando'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div ref={scrollContainerRef} className="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
-                {trips
-                  .filter(t => statusFilter === 'all' || t.status === statusFilter)
-                  .map((trip) => (
-                    <div
-                      key={trip.id}
-                      onClick={() => onViewTrip(trip.id)}
-                      className="min-w-[160px] rounded-xl overflow-hidden bg-background-light hover:shadow-lg transition-all cursor-pointer group shrink-0"
-                    >
-                      <div className="h-20 bg-cover bg-center relative bg-gradient-to-br from-primary-light to-secondary-light" style={{ backgroundImage: trip.coverImage && !imageErrors.has(trip.id) ? `url(${trip.coverImage})` : 'none' }}>
-                        {trip.coverImage && !imageErrors.has(trip.id) && (
-                          <img
-                            src={trip.coverImage}
-                            alt={trip.destination}
-                            className="hidden"
-                            onError={() => setImageErrors(prev => new Set(prev).add(trip.id))}
-                          />
-                        )}
-                        <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
-                        {(!trip.coverImage || imageErrors.has(trip.id)) && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="material-symbols-outlined text-3xl text-white/50">photo_camera</span>
-                          </div>
-                        )}
+            {/* Next Trip Hero Card */}
+            <div className="bg-white rounded-2xl overflow-hidden shadow-soft group">
+              {nextTrip ? (
+                <div className="relative h-[320px]">
+                  {nextTrip.coverImage && !imageErrors.has(nextTrip.id) ? (
+                    <>
+                      <img
+                        src={nextTrip.coverImage}
+                        alt={nextTrip.destination}
+                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        onError={() => setImageErrors(prev => new Set(prev).add(nextTrip.id))}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary-dark to-secondary"></div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-9xl text-white/20">photo_camera</span>
                       </div>
-                      <div className="p-2.5">
-                        <h4 className="font-bold text-text-main text-xs truncate">{trip.title || trip.destination}</h4>
-                        <p className="text-[10px] text-text-muted mt-0.5">{trip.startDate}</p>
-                        <span className={`inline-block mt-1.5 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${trip.status === 'confirmed' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                          {trip.status === 'confirmed' ? 'Próxima' : 'Planejando'}
-                        </span>
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"></div>
+                    </>
+                  )}
+                  <div className="absolute inset-0 p-6 flex flex-col justify-between text-white">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500 text-xs font-bold uppercase tracking-wide w-fit">
+                      <span className="size-2 rounded-full bg-white animate-pulse"></span>
+                      Confirmado
+                    </span>
+                    <div>
+                      <h2 className="text-xl md:text-2xl font-bold mb-1">Próxima Viagem:</h2>
+                      <h3 className="text-3xl md:text-4xl font-black tracking-tight">{nextTrip.title || nextTrip.destination}</h3>
+                      <p className="text-white/70 text-sm mt-2 flex items-center gap-2">
+                        {nextTrip.startDate}
+                      </p>
+                      <div className="flex items-center gap-4 mt-4">
+                        <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 text-center">
+                          <span className="block text-2xl font-bold">{countdown.days}</span>
+                          <span className="text-[10px] uppercase font-semibold text-white/80">Dias</span>
+                        </div>
+                        <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 text-center">
+                          <span className="block text-2xl font-bold">{countdown.hours.toString().padStart(2, '0')}</span>
+                          <span className="text-[10px] uppercase font-semibold text-white/80">Horas</span>
+                        </div>
+                        <button
+                          onClick={() => onViewTrip(nextTrip.id)}
+                          className="ml-auto bg-secondary text-text-main hover:bg-secondary-dark px-5 py-2.5 rounded-full font-bold text-sm transition-colors flex items-center gap-2"
+                        >
+                          Ver Detalhes
+                          <span className="material-symbols-outlined text-base">arrow_forward</span>
+                        </button>
                       </div>
                     </div>
-                  ))}
-                <div
-                  onClick={onOpenAddModal}
-                  className="min-w-[100px] flex flex-col items-center justify-center gap-2 rounded-xl bg-background-light border-2 border-dashed border-gray-300 hover:border-primary-dark hover:bg-primary-light/50 transition-all cursor-pointer shrink-0 py-6"
-                >
-                  <span className="material-symbols-outlined text-2xl text-text-muted">add</span>
-                  <span className="text-[10px] font-bold text-text-muted uppercase">Nova</span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="h-[320px] flex flex-col items-center justify-center gap-4 p-6 bg-gradient-to-br from-secondary-light to-primary-light">
+                  <span className="material-symbols-outlined text-6xl text-white">flight</span>
+                  <p className="text-text-main font-semibold">Nenhuma viagem planejada</p>
+                  <button onClick={onOpenAddModal} className="bg-primary-dark text-white px-5 py-2.5 rounded-full font-bold text-sm">
+                    Criar Nova Viagem
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -601,9 +426,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenAddModal, onViewTrip, onEdi
                           }`}>
                           <div className="flex items-center gap-2 text-[10px]">
                             <span className="material-symbols-outlined text-xs">celebration</span>
-                            <div>
-                              <p className="font-bold">{holiday.name}</p>
-                              <p className="opacity-75 capitalize">Feriado {holiday.type}</p>
+                            <div className="flex flex-col">
+                              <p className="font-bold leading-tight">{holiday.name}</p>
+                              <p className="opacity-75 capitalize leading-tight">Feriado {holiday.type}</p>
                             </div>
                           </div>
                           {/* Arrow */}

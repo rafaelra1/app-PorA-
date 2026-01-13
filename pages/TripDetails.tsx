@@ -60,7 +60,7 @@ import BudgetView from '../components/trip-details/budget/BudgetView';
 import Modal from '../components/trip-details/modals/Modal';
 import { Button } from '../components/ui/Base';
 import AddActivityModal from '../components/trip-details/modals/AddActivityModal';
-import { useChecklist } from '../contexts/ChecklistContext';
+import { useChecklist, ChecklistProvider } from '../contexts/ChecklistContext';
 
 import { TaskChecklist } from '../components/trip-details/city-guide/TaskChecklist';
 import TripMapExplorer from '../components/trip-details/maps/TripMapExplorer';
@@ -231,13 +231,15 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   // Checklist Context
   const { deleteTasksByPattern } = useChecklist();
 
-  // Fetch transports on load
+  // Fetch transports and activities on load
+  // Note: fetchActivities is memoized with 'user' as dependency, so when user changes,
+  // this effect will re-run and properly fetch activities after authentication
   useEffect(() => {
     if (trip.id) {
       fetchTransportsContext(trip.id);
       fetchActivities(trip.id);
     }
-  }, [trip.id]);
+  }, [trip.id, fetchActivities, fetchTransportsContext]);
 
   // Remove local filter state as it's handled in TransportView now
   // const [transportFilter, setTransportFilter] = useState<TransportType | 'all'>('all');
@@ -1067,6 +1069,10 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         trip={trip}
+        cities={cities}
+        activities={itineraryActivities}
+        hotels={hotels}
+        transports={transports}
       />
 
       <AddAccommodationModal
@@ -1155,13 +1161,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
 };
 
 const TripDetails: React.FC<TripDetailsProps> = (props) => (
-  <AccommodationProvider>
-    <TransportProvider>
-      <ItineraryProvider>
-        <TripDetailsContent {...props} />
-      </ItineraryProvider>
-    </TransportProvider>
-  </AccommodationProvider>
+  <TripDetailsContent {...props} />
 );
 
 export default TripDetails;

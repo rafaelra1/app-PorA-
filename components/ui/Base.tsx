@@ -64,7 +64,8 @@ export { Select } from './Select';
 export { Icon } from './Icon';
 export { LoadingSpinner } from './LoadingSpinner';
 export { Skeleton, SkeletonText } from './Skeleton';
-export { EmptyState } from './EmptyState';
+// Export removed to avoid circular dependency
+// export { EmptyState } from './EmptyState';
 export { PageContainer } from './PageContainer';
 export { PageHeader } from './PageHeader';
 export { FilterButton } from './FilterButton';

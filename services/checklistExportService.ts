@@ -5,40 +5,40 @@ import { Task } from '../types';
  */
 
 interface ExportOptions {
-    includeCompleted?: boolean;
-    groupByCategory?: boolean;
-    showDueDates?: boolean;
+  includeCompleted?: boolean;
+  groupByCategory?: boolean;
+  showDueDates?: boolean;
 }
 
 /**
  * Gera HTML formatado para impressão do checklist
  */
 export const generatePrintableHTML = (
-    tasks: Task[],
-    tripTitle: string,
-    tripDates: { start: string; end: string },
-    options: ExportOptions = {}
+  tasks: Task[],
+  tripTitle: string,
+  tripDates: { start: string; end: string },
+  options: ExportOptions = {}
 ): string => {
-    const {
-        includeCompleted = true,
-        groupByCategory = true,
-        showDueDates = true,
-    } = options;
+  const {
+    includeCompleted = true,
+    groupByCategory = true,
+    showDueDates = true,
+  } = options;
 
-    const filteredTasks = includeCompleted
-        ? tasks
-        : tasks.filter(t => !t.is_completed);
+  const filteredTasks = includeCompleted
+    ? tasks
+    : tasks.filter(t => !t.is_completed);
 
-    const groupedTasks = groupByCategory
-        ? groupTasksByCategory(filteredTasks)
-        : { 'Todas': filteredTasks };
+  const groupedTasks = groupByCategory
+    ? groupTasksByCategory(filteredTasks)
+    : { 'Todas': filteredTasks };
 
-    const completedCount = tasks.filter(t => t.is_completed).length;
-    const completionPercentage = tasks.length > 0
-        ? Math.round((completedCount / tasks.length) * 100)
-        : 0;
+  const completedCount = tasks.filter(t => t.is_completed).length;
+  const completionPercentage = tasks.length > 0
+    ? Math.round((completedCount / tasks.length) * 100)
+    : 0;
 
-    return `
+  return `
     <!DOCTYPE html>
     <html>
     <head>
@@ -317,12 +317,12 @@ export const generatePrintableHTML = (
 
       <div class="footer">
         <p>Gerado em ${new Date().toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    })}</p>
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })}</p>
         <p>PorAí - Seu Companheiro de Viagem</p>
       </div>
     </body>
@@ -334,77 +334,77 @@ export const generatePrintableHTML = (
  * Agrupa tarefas por categoria
  */
 function groupTasksByCategory(tasks: Task[]): Record<string, Task[]> {
-    const grouped: Record<string, Task[]> = {};
+  const grouped: Record<string, Task[]> = {};
 
-    tasks.forEach(task => {
-        const category = task.category || 'other';
-        if (!grouped[category]) {
-            grouped[category] = [];
-        }
-        grouped[category].push(task);
-    });
+  tasks.forEach(task => {
+    const category = task.category || 'other';
+    if (!grouped[category]) {
+      grouped[category] = [];
+    }
+    grouped[category].push(task);
+  });
 
-    return grouped;
+  return grouped;
 }
 
 /**
  * Retorna nome amigável da categoria
  */
 function getCategoryName(category: string): string {
-    const names: Record<string, string> = {
-        documentation: 'Documentação',
-        health: 'Saúde',
-        financial: 'Financeiro',
-        packing: 'Bagagem',
-        other: 'Outros',
-    };
+  const names: Record<string, string> = {
+    documentation: 'Documentação',
+    health: 'Saúde',
+    financial: 'Financeiro',
+    packing: 'Bagagem',
+    other: 'Outros',
+  };
 
-    return names[category] || category;
+  return names[category] || category;
 }
 
 /**
  * Formata data para exibição
  */
 function formatDate(dateString: string): string {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: 'short',
-    });
+  const date = new Date(dateString);
+  return date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+  });
 }
 
 /**
  * Abre janela de impressão com o checklist
  */
 export const printChecklist = (
-    tasks: Task[],
-    tripTitle: string,
-    tripDates: { start: string; end: string },
-    options?: ExportOptions
+  tasks: Task[],
+  tripTitle: string,
+  tripDates: { start: string; end: string },
+  options?: ExportOptions
 ): void => {
-    const html = generatePrintableHTML(tasks, tripTitle, tripDates, options);
+  const html = generatePrintableHTML(tasks, tripTitle, tripDates, options);
 
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-        printWindow.document.write(html);
-        printWindow.document.close();
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(html);
+    printWindow.document.close();
 
-        // Aguarda o carregamento antes de imprimir
-        printWindow.onload = () => {
-            printWindow.print();
-        };
-    }
+    // Aguarda o carregamento antes de imprimir
+    printWindow.onload = () => {
+      printWindow.print();
+    };
+  }
 };
 
 /**
  * Exporta checklist como PDF (usando impressão do navegador)
  */
 export const exportToPDF = (
-    tasks: Task[],
-    tripTitle: string,
-    tripDates: { start: string; end: string },
-    options?: ExportOptions
+  tasks: Task[],
+  tripTitle: string,
+  tripDates: { start: string; end: string },
+  options?: ExportOptions
 ): void => {
-    // Usa a mesma função de impressão, mas o usuário pode escolher "Salvar como PDF"
-    printChecklist(tasks, tripTitle, tripDates, options);
+  // Usa a mesma função de impressão, mas o usuário pode escolher "Salvar como PDF"
+  printChecklist(tasks, tripTitle, tripDates, options);
 };

@@ -99,7 +99,8 @@ app.post('/api/gemini/imagen', async (req, res) => {
       return res.status(500).json({ error: 'API key not configured' });
     }
 
-    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict';
+    // Using gemini-3-pro-image-preview compliant with user request (Attempt 2)
+    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
 
     const body = {
       instances: [{ prompt }],

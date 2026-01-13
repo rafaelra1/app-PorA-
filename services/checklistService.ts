@@ -353,10 +353,8 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
                 category: task.category,
                 priority: task.priority,
                 rule_id: task.rule_id,
-                is_completed: task.is_completed,
-                // Note: due_date is stored locally but not synced to DB (column doesn't exist in Supabase)
-                created_at: task.created_at,
-                updated_at: task.updated_at
+                completed: task.is_completed, // DB uses 'completed'
+                due_date: task.due_date
             })));
 
         if (insertError) {
@@ -374,7 +372,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
     if (tasksToRemove.length > 0) {
         const idsToRemove = tasksToRemove.map(t => t.id);
         const { error: deleteError } = await supabase
-            .from('trip_checklist_items')
+            .from('checklist_tasks')
             .delete()
             .in('id', idsToRemove);
 
@@ -398,6 +396,9 @@ export const fetchRemoteTasks = async (tripId: string): Promise<Task[]> => {
     }
 
     if (data) {
+        if (data.length > 0) {
+            console.log('DEBUG: checklist_tasks raw row:', data[0]);
+        }
         // Map DB record (text) to Task object (title)
         const mappedTasks: Task[] = (data as any[]).map(row => ({
             id: row.id,
@@ -406,7 +407,7 @@ export const fetchRemoteTasks = async (tripId: string): Promise<Task[]> => {
             category: row.category,
             priority: row.priority,
             rule_id: row.rule_id,
-            is_completed: row.is_completed,
+            is_completed: row.completed, // DB 'completed' -> Interface 'is_completed'
             is_urgent: row.priority === 'blocking', // Derive is_urgent from priority
             due_date: row.due_date,
             created_at: row.created_at,
@@ -426,28 +427,39 @@ const processAction = async (action: PendingAction): Promise<void> => {
 
     switch (type) {
         case 'ADD': {
-            // Exclude fields that don't exist in DB schema
-            const { title, is_urgent, due_date, ...rest } = payload as any;
+            // Explicitly map fields to match schema 'checklist_tasks'
+            const dbPayload = {
+                id: payload.id,
+                trip_id: payload.trip_id,
+                text: payload.title, // Map title to text
+                category: payload.category || 'other',
+                priority: payload.priority || 'recommended',
+                completed: payload.is_completed || false, // DB uses 'completed'
+                due_date: payload.due_date,
+                rule_id: payload.rule_id
+            };
+
             const { error: addError } = await supabase
                 .from('checklist_tasks')
-                .insert({
-                    ...rest,
-                    text: title || rest.text // Map title to text column
-                });
+                .insert(dbPayload);
             if (addError) throw addError;
             break;
         }
 
         case 'UPDATE': {
-            // Exclude fields that don't exist in DB schema
-            const { id, title, is_urgent, due_date, ...updates } = payload as any;
-            const dbUpdates: any = { ...updates };
-            if (title) dbUpdates.text = title; // Map title to text column
+            // Explicitly pick allowed fields
+            const dbUpdates: any = {};
+            if (payload.title !== undefined) dbUpdates.text = payload.title;
+            if (payload.category !== undefined) dbUpdates.category = payload.category;
+            if (payload.priority !== undefined) dbUpdates.priority = payload.priority;
+            if (payload.is_completed !== undefined) dbUpdates.completed = payload.is_completed; // DB uses 'completed'
+            if (payload.due_date !== undefined) dbUpdates.due_date = payload.due_date;
+            if (payload.rule_id !== undefined) dbUpdates.rule_id = payload.rule_id;
 
             const { error: updateError } = await supabase
                 .from('checklist_tasks')
                 .update(dbUpdates)
-                .eq('id', id);
+                .eq('id', payload.id);
             if (updateError) throw updateError;
             break;
         }
@@ -474,11 +486,24 @@ export const syncPendingActions = async (): Promise<void> => {
             await processAction(action);
             // If successful, remove from queue
             await checklistCache.removePendingAction(action.id);
-        } catch (error) {
+        } catch (error: any) {
             console.error(`Failed to process action ${action.id}:`, error);
-            // Decide strategy: keep in queue for retry, or move to a 'failed' queue?
-            // For now, we leave it. If it's a permanent error (e.g. schema mismatch), this could block the queue.
-            // Ideally we check error code. For now, stop processing to preserve order.
+
+            // Handle permanent errors - remove from queue to avoid blocking
+            const errorCode = error?.code;
+            const isPermanentError =
+                errorCode === '23503' || // FK violation (trip deleted)
+                errorCode === '22P02' || // Invalid enum value
+                errorCode === 'PGRST204' || // Column not found
+                errorCode === 'PGRST205';   // Table not found
+
+            if (isPermanentError) {
+                console.warn(`Removing orphaned/invalid action ${action.id} (error: ${errorCode})`);
+                await checklistCache.removePendingAction(action.id);
+                continue; // Continue processing other actions
+            }
+
+            // For transient errors, stop and retry later
             break;
         }
     }

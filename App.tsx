@@ -18,7 +18,7 @@ const Notifications = lazy(() => import('./pages/Notifications'));
 const Login = lazy(() => import('./pages/Login'));
 
 // Lazy load heavy components
-const AddTripModal = lazy(() => import('./components/AddTripModal'));
+const CreateTrip = lazy(() => import('./pages/CreateTrip'));
 const Chatbot = lazy(() => import('./components/Chatbot'));
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TripProvider, useTrips } from './contexts/TripContext';
@@ -31,11 +31,14 @@ import { CalendarProvider } from './contexts/CalendarContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { CurrencyProvider } from './contexts/CurrencyContext';
 import { ChecklistProvider } from './contexts/ChecklistContext';
+import { AccommodationProvider } from './contexts/AccommodationContext';
+import { TransportProvider } from './contexts/TransportContext';
+import { ItineraryProvider } from './contexts/ItineraryContext';
 import { Trip } from './types';
 
 const AppContent: React.FC = () => {
-  const { trips, selectedTrip, selectTrip, editingTrip, setEditingTrip, addTrip, updateTrip, deleteTrip, isLoading: isLoadingTrips } = useTrips();
-  const { activeTab, setActiveTab, isAddModalOpen, openAddModal, closeAddModal } = useUI();
+  const { trips, selectedTrip, selectTrip, editingTrip, setEditingTrip, deleteTrip, isLoading: isLoadingTrips } = useTrips();
+  const { activeTab, setActiveTab } = useUI();
   const { isAuthenticated, isLoading: isLoadingAuth } = useAuth();
 
   // Show loading state while checking authentication or loading trips
@@ -59,28 +62,10 @@ const AppContent: React.FC = () => {
     );
   }
 
-  const handleAddTrip = async (newTrip: Omit<Trip, 'id'> | Trip) => {
-    try {
-      await addTrip(newTrip);
-      closeAddModal();
-    } catch (error) {
-      alert('Erro ao criar viagem');
-    }
-  };
-
-  const handleUpdateTrip = async (updatedTrip: Trip) => {
-    try {
-      await updateTrip(updatedTrip);
-      setEditingTrip(undefined);
-      closeAddModal();
-    } catch (error) {
-      alert('Erro ao atualizar viagem');
-    }
-  };
-
   const openAddModalWithTrip = (trip?: Trip) => {
     setEditingTrip(trip);
-    openAddModal();
+    // Instead of opening modal, switch to CreateTrip tab
+    setActiveTab('create-trip');
   };
 
   const handleViewTrip = (id: string) => {
@@ -166,6 +151,12 @@ const AppContent: React.FC = () => {
             <Notifications />
           </Suspense>
         );
+      case 'create-trip':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <CreateTrip />
+          </Suspense>
+        );
       default:
         return (
           <div className="flex flex-col items-center justify-center h-full py-20 text-center">
@@ -208,18 +199,6 @@ const AppContent: React.FC = () => {
         </div>
       </main>
 
-      {isAddModalOpen && (
-        <Suspense fallback={null}>
-          <AddTripModal
-            isOpen={isAddModalOpen}
-            onClose={closeAddModal}
-            onAdd={handleAddTrip}
-            onUpdate={handleUpdateTrip}
-            initialTrip={editingTrip}
-          />
-        </Suspense>
-      )}
-
       {/* Global Chatbot */}
       <Suspense fallback={null}>
         <Chatbot />
@@ -239,15 +218,21 @@ const App: React.FC = () => {
             <CalendarProvider>
               <CurrencyProvider>
                 <ChecklistProvider>
-                  <UIProvider>
-                    <AIProvider>
-                      <NotificationProvider>
-                        <ToastProvider>
-                          <AppContent />
-                        </ToastProvider>
-                      </NotificationProvider>
-                    </AIProvider>
-                  </UIProvider>
+                  <AccommodationProvider>
+                    <TransportProvider>
+                      <ItineraryProvider>
+                        <UIProvider>
+                          <AIProvider>
+                            <NotificationProvider>
+                              <ToastProvider>
+                                <AppContent />
+                              </ToastProvider>
+                            </NotificationProvider>
+                          </AIProvider>
+                        </UIProvider>
+                      </ItineraryProvider>
+                    </TransportProvider>
+                  </AccommodationProvider>
                 </ChecklistProvider>
               </CurrencyProvider>
             </CalendarProvider>

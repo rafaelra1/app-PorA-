@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { HotelReservation } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import { useCalendar } from './CalendarContext';
 import { toISODate, fromISODate } from '../lib/dateUtils';
 
 interface AccommodationContextType {
@@ -19,6 +20,7 @@ const AccommodationContext = createContext<AccommodationContextType | null>(null
 
 export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { user } = useAuth();
+    const { syncFromAccommodations, deleteEventsByAccommodationId } = useCalendar();
     const [accommodations, setAccommodations] = useState<HotelReservation[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -97,7 +99,9 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
 
             // Update with real ID
             if (data) {
+                const newAccommodation = { ...accommodation, id: data.id } as HotelReservation;
                 setAccommodations(prev => prev.map(acc => acc.id === tempId ? { ...acc, id: data.id } : acc));
+                syncFromAccommodations([newAccommodation], tripId);
                 return data.id;
             }
             return null;
@@ -108,7 +112,7 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
             setAccommodations(prev => prev.filter(acc => acc.id !== tempId));
             return null;
         }
-    }, [user]);
+    }, [user, syncFromAccommodations]);
 
     const updateAccommodation = useCallback(async (tripId: string, accommodation: HotelReservation) => {
         if (!user || !tripId) return;
@@ -135,17 +139,22 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
             }).eq('id', accommodation.id).eq('trip_id', tripId);
 
             if (error) throw error;
+
+            syncFromAccommodations([accommodation], tripId);
         } catch (err: any) {
             console.error('Error updating accommodation:', err);
             setError(err.message || 'Failed to update accommodation');
             fetchAccommodations(tripId);
         }
-    }, [user, fetchAccommodations]);
+    }, [user, fetchAccommodations, syncFromAccommodations]);
 
     const deleteAccommodation = useCallback(async (tripId: string, accommodationId: string) => {
         if (!user || !tripId) return;
 
         setAccommodations(prev => prev.filter(acc => acc.id !== accommodationId));
+
+        // Sync Calendar deletion
+        deleteEventsByAccommodationId(accommodationId);
 
         try {
             const { error } = await supabase.from('accommodations').delete().eq('id', accommodationId).eq('trip_id', tripId);
@@ -156,7 +165,7 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
             setError(err.message || 'Failed to delete accommodation');
             fetchAccommodations(tripId);
         }
-    }, [user, fetchAccommodations]);
+    }, [user, fetchAccommodations, deleteEventsByAccommodationId]);
 
     const migrateFromLocalStorage = useCallback(async (tripId: string, localAccommodations: HotelReservation[]) => {
         if (!user || !tripId || localAccommodations.length === 0) return;

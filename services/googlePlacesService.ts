@@ -13,10 +13,13 @@ export interface PlaceDetails {
     };
     priceLevel?: number; // 0-4
     types?: string[];
+    businessStatus?: string;
+    openingHours?: any;
+    photos?: string[];
 }
 
 export const googlePlacesService = {
-    searchPlace: async (query: string): Promise<PlaceDetails> => {
+    searchPlace: async (query: string): Promise<PlaceDetails & { businessStatus?: string; openingHours?: any }> => {
         // FAIL-SAFE MOCK for "IconSphere" to ensure user demo works even if API fails
         if (query.toLowerCase().includes('iconsphere') || query.toLowerCase().includes('icon sphere')) {
             console.log('Using Mock Data for IconSphere');
@@ -26,7 +29,8 @@ export const googlePlacesService = {
                 userRatingCount: 1250,
                 image: FALLBACK_HOTEL_IMAGE,
                 priceLevel: 4, // "Expensive" -> implies 5 stars
-                types: ['hotel', 'lodging']
+                types: ['hotel', 'lodging'],
+                businessStatus: 'OPERATIONAL'
             };
         }
 
@@ -41,7 +45,7 @@ export const googlePlacesService = {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Goog-Api-Key': API_KEY,
-                    'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.photos,places.location,places.priceLevel,places.types'
+                    'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.photos,places.location,places.priceLevel,places.types,places.businessStatus,places.regularOpeningHours'
                 },
                 body: JSON.stringify({
                     textQuery: query,
@@ -60,9 +64,13 @@ export const googlePlacesService = {
                 return { image: FALLBACK_HOTEL_IMAGE };
             }
 
+            const photos = (place.photos || []).slice(0, 5).map(photo =>
+                `https://places.googleapis.com/v1/${photo.name}/media?maxHeightPx=800&maxWidthPx=800&key=${API_KEY}`
+            );
+
             let image = FALLBACK_HOTEL_IMAGE;
-            if (place.photos?.[0]?.name) {
-                image = `https://places.googleapis.com/v1/${place.photos[0].name}/media?maxHeightPx=400&maxWidthPx=400&key=${API_KEY}`;
+            if (photos.length > 0) {
+                image = photos[0];
             }
 
             return {
@@ -70,9 +78,12 @@ export const googlePlacesService = {
                 rating: place.rating,
                 userRatingCount: place.userRatingCount,
                 image,
+                photos, // Return array of photos
                 location: place.location,
                 priceLevel: place.priceLevel,
-                types: place.types
+                types: place.types,
+                businessStatus: place.businessStatus,
+                openingHours: place.regularOpeningHours
             };
         } catch (error) {
             console.error('Error fetching place info:', error);

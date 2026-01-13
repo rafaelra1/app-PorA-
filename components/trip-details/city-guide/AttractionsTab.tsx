@@ -1,15 +1,21 @@
 import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
 import { useLocalStorage } from '../../../hooks/useLocalStorage';
-import { Attraction, CityGuide } from '../../../types';
+import { Attraction, CityGuide, DiscoveryAttraction } from '../../../types';
 import { Card, Badge } from '../../ui/Base';
-import { Sparkles, Map, Plus, Search, Star, Heart, Clock, Ticket, MapPin, Loader2 } from 'lucide-react';
+import { Sparkles, Map, Plus, Search, Star, Heart, Clock, Ticket, MapPin, Loader2, ChevronLeft, ChevronRight, Info, Calendar, X, Camera, ExternalLink, Bookmark } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import PlaceCard from './PlaceCard';
 import ImportAttractionsModal from '../modals/ImportAttractionsModal';
 import AttractionDetailModal from '../modals/AttractionDetailModal';
 import AddToItineraryModal from '../modals/AddToItineraryModal';
+import DiscoveryMode from './DiscoveryMode';
 import { getGeminiService } from '../../../services/geminiService';
 import { googlePlacesService } from '../../../services/googlePlacesService';
+import discoveryService from '../../../services/discoveryService';
+
+// Import animations
+import '../../../styles/discovery-mode.css';
 
 interface AttractionsTabProps {
     cityGuide: CityGuide | null;
@@ -30,7 +36,7 @@ interface AttractionsTabProps {
     onTabChange?: (tab: 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map') => void;
     tripStartDate?: string;
     tripEndDate?: string;
-    onAddToItinerary?: (data: { itemName: string; itemType: 'restaurant' | 'attraction' | 'custom'; date: string; time: string; notes?: string; address?: string; image?: string; category?: string }) => void;
+    onAddToItinerary?: (data: { itemName: string; itemType: 'restaurant' | 'attraction' | 'custom'; date: string; time: string; notes?: string; address?: string; image?: string; category?: string }) => Promise<void>;
     cityName?: string;
 }
 
@@ -51,6 +57,14 @@ interface TouristTask {
     completed: boolean;
 }
 
+
+interface TopAttraction {
+    name: string;
+    description: string;
+    tags: { label: string; value: string }[];
+    history_trivia: string;
+    category: string;
+}
 
 // Helper to get icon and color based on category
 const getCategoryIcon = (category: string = '') => {
@@ -125,6 +139,10 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     const [activeFilter, setActiveFilter] = useState('all');
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
     const [hasImported, setHasImported] = useState(false);
+
+    // Discovery Mode State
+    const [isDiscoveryMode, setIsDiscoveryMode] = useState(false);
+
     // Modal States
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -134,18 +152,10 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     const [importedAttractions, setImportedAttractions] = useLocalStorage<Attraction[]>(`imported_attractions_${cityName}`, []);
     const [excludedAttractions, setExcludedAttractions] = useLocalStorage<string[]>(`excluded_attractions_${cityName}`, []);
 
-    // Task Checklist State
-    const [tasks, setTasks] = useState<TouristTask[]>([
-        { id: '1', title: 'Solicitar visto de turista', dueDate: '15/01/2026', icon: 'card_travel', priority: 'urgent', completed: false },
-        { id: '2', title: 'Reservar hotel em Sapa', dueDate: '20/01/2026', icon: 'hotel', priority: 'urgent', completed: false },
-        { id: '3', title: 'Contratar seguro viagem', dueDate: '01/02/2026', icon: 'verified_user', priority: 'urgent', completed: false },
-        { id: '4', title: 'Fazer check-in online', dueDate: '10/02/2026', icon: 'check_circle', priority: 'urgent', completed: false },
-        { id: '5', title: 'Reservar tour guiado', dueDate: '25/01/2026', icon: 'tour', priority: 'normal', completed: true },
-        { id: '6', title: 'Comprar ingressos museu', dueDate: '22/01/2026', icon: 'confirmation_number', priority: 'normal', completed: true },
-        { id: '7', title: 'Baixar mapa offline', dueDate: '12/02/2026', icon: 'map', priority: 'normal', completed: true },
-    ]);
-    const [isAddingTask, setIsAddingTask] = useState(false);
-    const [newTaskTitle, setNewTaskTitle] = useState('');
+    // Top Attractions State
+    const [topAttractions, setTopAttractions] = useLocalStorage<TopAttraction[]>(`porai_city_${cityName}_top_attractions`, []);
+    const [isLoadingTopAttractions, setIsLoadingTopAttractions] = useState(false);
+    const [selectedTopAttraction, setSelectedTopAttraction] = useState<TopAttraction | null>(null);
 
     // Visitor Guide State
     const [visitorGuideContent, setVisitorGuideContent] = useState<string | null>(null);
@@ -154,11 +164,6 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     // Store real images fetched from Google Places
     const [realImages, setRealImages] = useState<Record<string, string>>({});
 
-
-
-    // Get city name from cityGuide or default
-
-
     // Persistence: Load from localStorage
     useEffect(() => {
         if (importedAttractions.length > 0) {
@@ -166,29 +171,26 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
         }
     }, [importedAttractions]);
 
-    const completedCount = tasks.filter(t => t.completed).length;
-    const totalCount = tasks.length;
-
-    const toggleTaskComplete = (taskId: string) => {
-        setTasks(prev => prev.map(t =>
-            t.id === taskId ? { ...t, completed: !t.completed } : t
-        ));
-    };
-
-    const addTask = () => {
-        if (!newTaskTitle.trim()) return;
-        const newTask: TouristTask = {
-            id: `t-${Date.now()}`,
-            title: newTaskTitle,
-            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
-            icon: 'task_alt',
-            priority: 'normal',
-            completed: false
+    // Fetch Top Attractions on mount
+    useEffect(() => {
+        const loadTopAttractions = async () => {
+            if (topAttractions.length === 0 && !isLoadingTopAttractions && cityName) {
+                setIsLoadingTopAttractions(true);
+                try {
+                    const service = getGeminiService();
+                    const attractions = await service.generateTopAttractions(cityName);
+                    if (attractions) {
+                        setTopAttractions(attractions);
+                    }
+                } catch (e) {
+                    console.error('Error loading top attractions:', e);
+                } finally {
+                    setIsLoadingTopAttractions(false);
+                }
+            }
         };
-        setTasks(prev => [...prev, newTask]);
-        setNewTaskTitle('');
-        setIsAddingTask(false);
-    };
+        loadTopAttractions();
+    }, [cityName]);
 
     // Handler for generating visitor guide
     const handleGenerateVisitorGuide = async () => {
@@ -234,6 +236,33 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
             });
         }
         setIsAddToItineraryOpen(false);
+    };
+
+    // Callback for saving discovery mode items
+    const handleSaveDiscovery = (discoveryAttr: DiscoveryAttraction) => {
+        const converted = discoveryService.convertToAttraction(discoveryAttr);
+
+        // Add if not already present
+        if (!importedAttractions.some(a => a.name === converted.name)) {
+            setImportedAttractions(prev => [...prev, converted]);
+            setHasImported(true);
+        }
+    };
+
+    const handleTopAttractionAddToItinerary = () => {
+        if (!selectedTopAttraction) return;
+
+        // Convert TopAttraction to Attraction-like structure for the modal
+        const attractionLike = {
+            name: selectedTopAttraction.name,
+            address: '',
+            image: '', // Will let the modal handle image search or use placeholder
+            category: selectedTopAttraction.category
+        };
+
+        setSelectedAttraction(attractionLike as any);
+        setSelectedTopAttraction(null); // Close detail modal
+        setIsAddToItineraryOpen(true);
     };
 
     const filteredAttractions = useMemo(() => {
@@ -318,40 +347,26 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
         return () => clearTimeout(timeoutId);
     }, [filteredAttractions, cityName, realImages]);
 
-    const [isGeneratingAttractions, setIsGeneratingAttractions] = useState(false);
-
-    const handleGenerateAI = async () => {
-        setIsGeneratingAttractions(true);
-        try {
-            const service = getGeminiService();
-            // We use generateCityGuide to get a curated list of attractions
-            const guide = await service.generateCityGuide(cityName, 'local');
-
-            if (guide && guide.attractions) {
-                // Enrich with rough IDs and ensure properties
-                const newAttractions = guide.attractions.map((a, i) => ({
-                    ...a,
-                    id: `gen-${Date.now()}-${i}`,
-                    // Ensure we have at least defaults if API misses something
-                    rating: typeof a.rating === 'string' ? parseFloat(a.rating) : (a.rating || 4.5),
-                    price: a.price || 'Consultar'
-                }));
-
-                setImportedAttractions(newAttractions);
-                setHasImported(true);
-            }
-        } catch (error) {
-            console.error("Error generating attractions:", error);
-            alert("Não foi possível gerar as atrações. Tente novamente.");
-        } finally {
-            setIsGeneratingAttractions(false);
-        }
-    };
-
     const handleImportWrapper = (attractions: Attraction[]) => {
         setImportedAttractions(attractions);
         setHasImported(true); // Reveal the list
     };
+
+    // Render Discovery Mode if active
+    if (isDiscoveryMode) {
+        return (
+            <DiscoveryMode
+                cityName={cityName}
+                country={cityGuide?.essentials ? 'local' : 'local'} // Fallback country
+                existingAttractions={importedAttractions}
+                tripStartDate={tripStartDate}
+                tripEndDate={tripEndDate}
+                onSaveToRepository={handleSaveDiscovery}
+                onAddToItinerary={async (data) => { if (onAddToItinerary) await onAddToItinerary(data); }}
+                onExit={() => setIsDiscoveryMode(false)}
+            />
+        );
+    }
 
     return (
         <div className="w-full animate-in fade-in duration-300">
@@ -410,16 +425,218 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                 </div>
             </div>
 
-            {/* Main Layout: Two Columns - Left (1/3) Visitor Guide, Right (2/3) Attractions */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column (1/3): Visitor Guide */}
-                <div className="lg:col-span-1 space-y-4">
-                    {/* Visitor Guide Widget */}
-                    <div className="bg-blue-50 rounded-3xl p-5 border border-blue-100 shadow-sm relative overflow-hidden">
-                        {/* Decorator */}
-                        <div className="absolute top-0 right-0 p-4 opacity-10">
-                            <span className="material-symbols-outlined text-6xl text-blue-600">tour</span>
+
+            {/* Top Attractions Carousel */}
+            <div className="mb-10">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
+                            <Star className="w-5 h-5 fill-indigo-600" />
+                        </span>
+                        Destaques Imperdíveis da Cidade
+                    </h3>
+                </div>
+
+                <div className="relative group/carousel">
+                    {/* Scroll Buttons */}
+                    <button
+                        onClick={() => {
+                            const container = document.getElementById('attractions-carousel');
+                            if (container) container.scrollBy({ left: -250, behavior: 'smooth' });
+                        }}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 -ml-3 z-10 p-2 bg-white rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover/carousel:opacity-100 transition-all duration-300 hover:scale-110 disabled:opacity-0"
+                    >
+                        <ChevronLeft className="w-5 h-5" />
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            const container = document.getElementById('attractions-carousel');
+                            if (container) container.scrollBy({ left: 250, behavior: 'smooth' });
+                        }}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 -mr-3 z-10 p-2 bg-white rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover/carousel:opacity-100 transition-all duration-300 hover:scale-110"
+                    >
+                        <ChevronRight className="w-5 h-5" />
+                    </button>
+
+                    <div id="attractions-carousel" className="flex gap-4 overflow-x-auto pb-6 pt-2 snap-x hide-scrollbar px-1 scroll-smooth">
+                        {isLoadingTopAttractions ? (
+                            [1, 2, 3, 4, 5].map((i) => (
+                                <div key={i} className="min-w-[200px] h-32 bg-gray-100 rounded-xl animate-pulse flex-shrink-0" />
+                            ))
+                        ) : topAttractions.length > 0 ? (
+                            topAttractions.map((attr, idx) => (
+                                <div
+                                    key={idx}
+                                    onClick={() => setSelectedTopAttraction(attr)}
+                                    className="min-w-[200px] max-w-[200px] bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group/card snap-start"
+                                >
+                                    <div>
+                                        <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-500 mb-3 group-hover/card:scale-110 transition-transform">
+                                            <Ticket className="w-5 h-5" />
+                                        </div>
+                                        <h4 className="font-bold text-gray-800 leading-tight mb-1">{attr.name}</h4>
+                                        <p className="text-xs text-gray-500 line-clamp-2">{attr.description}</p>
+                                    </div>
+                                    <div className="mt-3 flex items-center text-xs font-semibold text-indigo-600">
+                                        Ver detalhes <ChevronRight className="w-3 h-3 ml-1" />
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="w-full text-center py-8 text-sm text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                Nenhum destaque encontrado.
+                            </div>
+                        )}
+                    </div>
+                    {/* Gradient Overlays for scroll indication */}
+                    <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-white via-white/80 to-transparent pointer-events-none" />
+                    <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white via-white/50 to-transparent pointer-events-none" />
+                </div>
+            </div>
+
+            {/* Top Attraction Detail Modal */}
+            <AnimatePresence>
+                {
+                    selectedTopAttraction && (
+                        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setSelectedTopAttraction(null)}
+                                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            />
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl relative z-10"
+                            >
+                                {/* Header Image Placeholder */}
+                                <div className="h-32 bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center p-6 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-8 opacity-20 transform translate-x-1/4 -translate-y-1/4">
+                                        <MapPin className="w-40 h-40 text-black" />
+                                    </div>
+                                    <div className="absolute bottom-0 left-0 right-0 h-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNDQwIDMyMCI+PHBhdGggZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIxIiBkPSJNMCwyMjRMMjQsMjEzLjNDNDgsMjAzLDk2LDE4MSwxNDQsMTgxLjNDMTkyLDE4MSwyNDAsMjAzLDI4OCwyMjRMMzM2LDI0NSI+PC9wYXRoPjwvc3ZnPg==')] bg-cover bg-bottom opacity-30"></div>
+                                    <h2 className="text-2xl font-black text-white text-center relative z-10 drop-shadow-md px-4">
+                                        {selectedTopAttraction.name}
+                                    </h2>
+                                    <button
+                                        onClick={() => setSelectedTopAttraction(null)}
+                                        className="absolute top-3 right-3 p-2 bg-black/20 hover:bg-black/30 text-white rounded-full transition-colors backdrop-blur-md"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                <div className="p-6">
+                                    <div className="space-y-6">
+                                        {/* Description */}
+                                        <div>
+                                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sobre o Local</h3>
+                                            <p className="text-gray-700 leading-relaxed text-sm">
+                                                {selectedTopAttraction.description}
+                                            </p>
+                                        </div>
+
+                                        {/* Highlights Tags */}
+                                        {selectedTopAttraction.tags && selectedTopAttraction.tags.length > 0 && (
+                                            <div>
+                                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Destaques & Info</h3>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedTopAttraction.tags.map((tag, i) => (
+                                                        <span key={i} className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-medium border border-indigo-100 flex items-center gap-1">
+                                                            <span className="opacity-70 font-normal">{tag.label}:</span>
+                                                            {tag.value}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* History/Trivia Box */}
+                                        {selectedTopAttraction.history_trivia && (
+                                            <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                                                <div className="flex items-start gap-2">
+                                                    <Sparkles className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                                                    <div>
+                                                        <h3 className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">Por que visitar?</h3>
+                                                        <p className="text-xs text-amber-900 leading-relaxed italic">
+                                                            "{selectedTopAttraction.history_trivia}"
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-8 flex items-center gap-3">
+                                        <button
+                                            onClick={handleTopAttractionAddToItinerary}
+                                            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-200"
+                                        >
+                                            <Calendar className="w-4 h-4" />
+                                            Adicionar ao Roteiro
+                                        </button>
+
+                                        {/* Google Maps Button */}
+                                        <button
+                                            onClick={() => {
+                                                const query = encodeURIComponent(`${selectedTopAttraction.name} ${cityName}`);
+                                                window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+                                            }}
+                                            className="p-3 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-indigo-600 rounded-xl border border-gray-100 transition-colors"
+                                            title="Ver no Google Maps"
+                                        >
+                                            <MapPin className="w-5 h-5" />
+                                        </button>
+
+                                        {/* Save to List Button */}
+                                        <button
+                                            onClick={() => {
+                                                const newAttr: Attraction = {
+                                                    name: selectedTopAttraction.name,
+                                                    description: selectedTopAttraction.description,
+                                                    image: '', // Will be fetched/handled by list logic
+                                                    category: selectedTopAttraction.category,
+                                                    rating: 4.8, // Mock high rating for top attractions
+                                                    price: selectedTopAttraction.tags.find(t => t.label === 'Entrada')?.value,
+                                                    time: selectedTopAttraction.tags.find(t => t.label === 'Tempo')?.value,
+                                                };
+
+                                                if (!importedAttractions.some(a => a.name === newAttr.name)) {
+                                                    setImportedAttractions(prev => [...prev, newAttr]);
+                                                    setHasImported(true);
+                                                    // Ideally show a toast here, but for now the visual feedback of the button or list update will do
+                                                }
+                                            }}
+                                            className={`p-3 rounded-xl border transition-colors ${importedAttractions.some(a => a.name === selectedTopAttraction.name)
+                                                    ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                                    : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-100 hover:text-indigo-600'
+                                                }`}
+                                            title="Salvar na lista"
+                                        >
+                                            <Bookmark className={`w-5 h-5 ${importedAttractions.some(a => a.name === selectedTopAttraction.name) ? 'fill-current' : ''}`} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
                         </div>
+                    )
+                }
+            </AnimatePresence >
+
+            {/* Main Layout: Two Columns - Left (1/3) Visitor Guide, Right (2/3) Attractions */}
+            < div className="grid grid-cols-1 lg:grid-cols-3 gap-8" >
+                {/* Left Column (1/3): Visitor Guide */}
+                < div className="lg:col-span-1 space-y-4" >
+                    {/* Visitor Guide Widget */}
+                    < div className="bg-blue-50 rounded-3xl p-5 border border-blue-100 shadow-sm relative overflow-hidden" >
+                        {/* Decorator */}
+                        < div className="absolute top-0 right-0 p-4 opacity-10" >
+                            <span className="material-symbols-outlined text-6xl text-blue-600">tour</span>
+                        </div >
 
                         <div className="relative z-10">
                             <div className="flex items-center justify-between mb-3">
@@ -451,12 +668,12 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                 {isGeneratingVisitorGuide ? 'Gerando...' : visitorGuideContent ? 'Atualizar Dicas' : 'Gerar com IA'}
                             </button>
                         </div>
-                    </div>
+                    </div >
 
                     {/* Navigation Boxes Row */}
-                    <div className="grid grid-cols-3 gap-2">
+                    < div className="grid grid-cols-3 gap-2" >
                         {/* Map */}
-                        <div
+                        < div
                             onClick={onShowMap}
                             className="relative h-24 rounded-2xl overflow-hidden group shadow-sm cursor-pointer hover:shadow-md transition-all block"
                         >
@@ -470,10 +687,10 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                 <span className="material-symbols-outlined text-2xl mb-0.5">map</span>
                                 <span className="text-[10px] font-bold">Mapa</span>
                             </div>
-                        </div>
+                        </div >
 
                         {/* Gastronomy */}
-                        <div
+                        < div
                             onClick={() => onTabChange && onTabChange('gastronomy')}
                             className="relative h-24 rounded-2xl overflow-hidden group shadow-sm cursor-pointer hover:shadow-md transition-all"
                         >
@@ -487,10 +704,10 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                 <span className="material-symbols-outlined text-2xl mb-0.5">restaurant</span>
                                 <span className="text-[10px] font-bold">Comida</span>
                             </div>
-                        </div>
+                        </div >
 
                         {/* About City */}
-                        <div
+                        < div
                             onClick={() => onTabChange && onTabChange('info')}
                             className="relative h-24 rounded-2xl overflow-hidden group shadow-sm cursor-pointer hover:shadow-md transition-all"
                         >
@@ -504,14 +721,14 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                 <span className="material-symbols-outlined text-2xl mb-0.5">location_city</span>
                                 <span className="text-[10px] font-bold leading-tight">Sobre a<br />Cidade</span>
                             </div>
-                        </div>
-                    </div>
-                </div>
+                        </div >
+                    </div >
+                </div >
 
                 {/* Right Column (2/3): Attractions List */}
-                <div className="lg:col-span-2">
+                < div className="lg:col-span-2" >
                     {/* Attractions Grid/List */}
-                    <div className={viewMode === 'grid'
+                    < div className={viewMode === 'grid'
                         ? "grid grid-cols-1 md:grid-cols-2 gap-6"
                         : "grid grid-cols-1 gap-4"
                     }>
@@ -549,67 +766,61 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                 })}
                             </>
                         )}
-                    </div>
+                    </div >
 
 
                     {/* Load More Footer */}
-                    {!isLoadingGuide && filteredAttractions.length > 0 && (
-                        <div className="mt-12 flex justify-center pb-8">
-                            <button className="px-8 py-3 bg-white border border-gray-200 text-gray-600 rounded-full font-bold text-sm shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2">
-                                Carregar Mais
-                                <span className="material-symbols-outlined text-lg">expand_more</span>
-                            </button>
-                        </div>
-                    )}
+                    {
+                        !isLoadingGuide && filteredAttractions.length > 0 && (
+                            <div className="mt-12 flex justify-center pb-8">
+                                <button className="px-8 py-3 bg-white border border-gray-200 text-gray-600 rounded-full font-bold text-sm shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2">
+                                    Carregar Mais
+                                    <span className="material-symbols-outlined text-lg">expand_more</span>
+                                </button>
+                            </div>
+                        )
+                    }
 
                     {/* Empty State - Now handles initial import */}
-                    {!isLoadingGuide && filteredAttractions.length === 0 && (
-                        <div className="col-span-full py-12 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400 shadow-sm">
-                                <span className="material-symbols-outlined text-3xl">add_location_alt</span>
+                    {
+                        !isLoadingGuide && filteredAttractions.length === 0 && (
+                            <div className="col-span-full py-12 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400 shadow-sm">
+                                    <span className="material-symbols-outlined text-3xl">add_location_alt</span>
+                                </div>
+                                <h3 className="text-gray-900 font-bold text-lg mb-2">Comece a planejar suas visitas</h3>
+                                <p className="text-gray-500 font-medium max-w-md mx-auto mb-6">
+                                    Você ainda não tem atrações listadas. Adicione manualmente ou importe nossa lista curada.
+                                </p>
+                                <div className="flex items-center justify-center gap-4 flex-wrap">
+                                    <button
+                                        onClick={onAddManual} // Note: This assumes onAddManual is available
+                                        className="px-6 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-xl font-bold text-sm shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2"
+                                    >
+                                        <span className="material-symbols-outlined text-xl">add</span>
+                                        Adicionar Manualmente
+                                    </button>
+                                    <button
+                                        onClick={() => setIsImportModalOpen(true)}
+                                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
+                                    >
+                                        Importar Lista de Atrações
+                                    </button>
+                                    <button
+                                        onClick={() => setIsDiscoveryMode(true)}
+                                        className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
+                                    >
+                                        <span className="material-symbols-outlined text-xl">auto_awesome</span>
+                                        Gerar Sugestões com IA
+                                    </button>
+                                </div>
                             </div>
-                            <h3 className="text-gray-900 font-bold text-lg mb-2">Comece a planejar suas visitas</h3>
-                            <p className="text-gray-500 font-medium max-w-md mx-auto mb-6">
-                                Você ainda não tem atrações listadas. Adicione manualmente ou importe nossa lista curada.
-                            </p>
-                            <div className="flex items-center justify-center gap-4 flex-wrap">
-                                <button
-                                    onClick={onAddManual} // Note: This assumes onAddManual is available
-                                    className="px-6 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-xl font-bold text-sm shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2"
-                                >
-                                    <span className="material-symbols-outlined text-xl">add</span>
-                                    Adicionar Manualmente
-                                </button>
-                                <button
-                                    onClick={() => setIsImportModalOpen(true)}
-                                    className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
-                                >
-                                    Importar Lista de Atrações
-                                </button>
-                                <button
-                                    onClick={handleGenerateAI}
-                                    disabled={isGeneratingAttractions}
-                                    className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                                >
-                                    {isGeneratingAttractions ? (
-                                        <>
-                                            <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            Gerando Roteiro...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="material-symbols-outlined text-xl">auto_awesome</span>
-                                            Gerar Sugestões com IA
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+                        )
+                    }
+                </div >
+            </div >
             {/* Modals */}
-            <ImportAttractionsModal
+            < ImportAttractionsModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}
                 onImport={handleImportWrapper}
@@ -639,7 +850,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                 minDate={tripStartDate}
                 maxDate={tripEndDate}
             />
-        </div>
+        </div >
     );
 };
 

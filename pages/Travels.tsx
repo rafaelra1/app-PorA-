@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Trip } from '../types';
-import { Card, Badge, Button, PageContainer, PageHeader, FilterBar, FilterButton, EmptyState } from '../components/ui/Base';
+import { Card, Badge, Button, PageContainer, PageHeader, FilterBar, FilterButton } from '../components/ui/Base';
+import { EmptyState } from '../components/ui/EmptyState';
 import { getFlagsForDestinations } from '../lib/countryUtils';
 
 // Status labels in Portuguese

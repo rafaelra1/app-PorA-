@@ -1,12 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { CityGuide, Restaurant } from '../../../types';
 import { Button } from '../../ui/Base';
-import { ChevronDown, Sparkles, FileText, X } from 'lucide-react';
+import { ChevronDown, Sparkles, FileText, X, ChevronRight, Utensils, ChefHat, Search, ChevronLeft } from 'lucide-react';
 import { getGeminiService } from '../../../services/geminiService';
 import { useLocalStorage } from '../../../hooks/useLocalStorage';
 import RestaurantDetailModal from '../modals/RestaurantDetailModal';
 import AddToItineraryModal from '../modals/AddToItineraryModal';
 import PlaceCard from './PlaceCard';
+import GastronomyDiscoveryMode from './GastronomyDiscoveryMode';
+
+import { AnimatePresence, motion } from 'framer-motion';
+
+interface TypicalDish {
+    name: string;
+    description: string;
+    ingredients: string[];
+    history: string;
+}
 
 interface GastronomyTabProps {
     cityGuide: CityGuide | null;
@@ -62,6 +72,9 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedRestaurants, setGeneratedRestaurants] = useLocalStorage<Restaurant[]>(`porai_city_${cityName}_restaurants`, []);
 
+    // Discovery Mode State
+    const [showDiscoveryMode, setShowDiscoveryMode] = useState(false);
+
     // AI Overview State
     const [isGeneratingOverview, setIsGeneratingOverview] = useState(false);
     const [gastronomyOverview, setGastronomyOverview] = useState<{
@@ -80,6 +93,42 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     // Gastronomy Guide State
     const [gastronomyGuideContent, setGastronomyGuideContent] = useState<string | null>(null);
     const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
+
+    // Typical Dishes State
+    const [typicalDishes, setTypicalDishes] = useLocalStorage<TypicalDish[]>(`porai_city_${cityName}_dishes`, []);
+    const [isLoadingDishes, setIsLoadingDishes] = useState(false);
+    const [selectedDish, setSelectedDish] = useState<TypicalDish | null>(null);
+
+    // Generate Typical Dishes on mount if empty
+    React.useEffect(() => {
+        const loadDishes = async () => {
+            if (typicalDishes.length === 0 && !isLoadingDishes && cityName) {
+                setIsLoadingDishes(true);
+                try {
+                    const service = getGeminiService();
+                    const dishes = await service.generateTypicalDishes(cityName);
+                    if (dishes) {
+                        setTypicalDishes(dishes);
+                    }
+                } catch (e) {
+                    console.error('Error loading typical dishes:', e);
+                } finally {
+                    setIsLoadingDishes(false);
+                }
+            }
+        };
+        loadDishes();
+    }, [cityName]);
+
+    const handleSearchDish = (dishName: string) => {
+        setSearchQuery(dishName);
+        setSelectedDish(null);
+        // Scroll to restaurants section
+        const element = document.getElementById('restaurants-grid');
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
 
     // Handler for generating AI gastronomy overview and restaurants
     const handleGenerateCuration = async () => {
@@ -125,7 +174,8 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     };
 
     // Persistence: Load from localStorage
-    useMemo(() => {
+    // Persistence: Load from localStorage
+    React.useEffect(() => {
         if (typeof window !== 'undefined') {
             const savedExcluded = localStorage.getItem(`excluded_restaurants_${cityName}`);
             if (savedExcluded) {
@@ -142,7 +192,8 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     }, [cityName]);
 
     // Persistence: Save to localStorage
-    useMemo(() => {
+    // Persistence: Save to localStorage
+    React.useEffect(() => {
         if (typeof window !== 'undefined') {
             localStorage.setItem(`excluded_restaurants_${cityName}`, JSON.stringify(excludedRestaurants));
         }
@@ -175,6 +226,22 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
             });
         }
         console.log('Added to itinerary:', data);
+    };
+
+    // Handler for Discovery Mode actions
+    const handleDiscoverySave = (restaurant: Restaurant) => {
+        // Check if already exists by name to avoid duplicates
+        if (!generatedRestaurants.some(r => r.name === restaurant.name)) {
+            setGeneratedRestaurants(prev => [restaurant, ...prev]);
+        }
+    };
+
+    const handleDiscoverySchedule = (restaurant: Restaurant) => {
+        // Add to main list first if not there
+        handleDiscoverySave(restaurant);
+        // Open schedule modal
+        setItemToAdd(restaurant);
+        setShowAddToItinerary(true);
     };
 
     const handleImportList = async () => {
@@ -235,7 +302,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
             return generatedRestaurants.filter(r => !excludedRestaurants.includes(r.name));
         }
         return [];
-    }, [cityGuide, generatedRestaurants]);
+    }, [cityGuide, generatedRestaurants, excludedRestaurants]);
 
     return (
         <div className="w-full animate-in fade-in duration-300">
@@ -271,6 +338,163 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* Typical Dishes Section */}
+            <div className="mb-10">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <span className="p-1.5 bg-orange-100 text-orange-600 rounded-lg">
+                            <ChefHat className="w-5 h-5" />
+                        </span>
+                        Pratos Típicos da Região
+                    </h3>
+                </div>
+
+                <div className="relative group/carousel">
+                    {/* Scroll Buttons */}
+                    <button
+                        onClick={() => {
+                            const container = document.getElementById('dishes-carousel');
+                            if (container) container.scrollBy({ left: -250, behavior: 'smooth' });
+                        }}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 -ml-3 z-10 p-2 bg-white rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover/carousel:opacity-100 transition-all duration-300 hover:scale-110 disabled:opacity-0"
+                    >
+                        <ChevronLeft className="w-5 h-5" />
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            const container = document.getElementById('dishes-carousel');
+                            if (container) container.scrollBy({ left: 250, behavior: 'smooth' });
+                        }}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 -mr-3 z-10 p-2 bg-white rounded-full shadow-lg border border-gray-100 text-gray-700 opacity-0 group-hover/carousel:opacity-100 transition-all duration-300 hover:scale-110"
+                    >
+                        <ChevronRight className="w-5 h-5" />
+                    </button>
+
+                    <div id="dishes-carousel" className="flex gap-4 overflow-x-auto pb-6 pt-2 snap-x hide-scrollbar px-1 scroll-smooth">
+                        {isLoadingDishes ? (
+                            [1, 2, 3, 4, 5].map((i) => (
+                                <div key={i} className="min-w-[200px] h-32 bg-gray-100 rounded-xl animate-pulse flex-shrink-0" />
+                            ))
+                        ) : typicalDishes.length > 0 ? (
+                            typicalDishes.map((dish, idx) => (
+                                <div
+                                    key={idx}
+                                    onClick={() => setSelectedDish(dish)}
+                                    className="min-w-[200px] max-w-[200px] bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group/card snap-start"
+                                >
+                                    <div>
+                                        <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center text-orange-500 mb-3 group-hover/card:scale-110 transition-transform">
+                                            <Utensils className="w-5 h-5" />
+                                        </div>
+                                        <h4 className="font-bold text-gray-800 leading-tight mb-1">{dish.name}</h4>
+                                        <p className="text-xs text-gray-500 line-clamp-2">{dish.description}</p>
+                                    </div>
+                                    <div className="mt-3 flex items-center text-xs font-semibold text-orange-600">
+                                        Ver detalhes <ChevronRight className="w-3 h-3 ml-1" />
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="w-full text-center py-8 text-sm text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                Nenhum prato típico encontrado.
+                            </div>
+                        )}
+                    </div>
+                    {/* Gradient Overlays for scroll indication */}
+                    <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-white via-white/80 to-transparent pointer-events-none" />
+                    <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white via-white/50 to-transparent pointer-events-none" />
+                </div>
+            </div>
+
+            {/* Dish Detail Modal */}
+            <AnimatePresence>
+                {selectedDish && (
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setSelectedDish(null)}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl relative z-10"
+                        >
+                            {/* Header Image Placeholder */}
+                            <div className="h-32 bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center p-6 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-8 opacity-20 transform translate-x-1/4 -translate-y-1/4">
+                                    <ChefHat className="w-40 h-40 text-black" />
+                                </div>
+                                <h2 className="text-2xl font-black text-white text-center relative z-10 drop-shadow-md">
+                                    {selectedDish.name}
+                                </h2>
+                                <button
+                                    onClick={() => setSelectedDish(null)}
+                                    className="absolute top-3 right-3 p-2 bg-black/20 hover:bg-black/30 text-white rounded-full transition-colors backdrop-blur-md"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="p-6">
+                                <div className="space-y-6">
+                                    {/* Description */}
+                                    <div>
+                                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sobre o Prato</h3>
+                                        <p className="text-gray-700 leading-relaxed text-sm">
+                                            {selectedDish.description}
+                                        </p>
+                                    </div>
+
+                                    {/* Ingredients */}
+                                    {selectedDish.ingredients && selectedDish.ingredients.length > 0 && (
+                                        <div>
+                                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Ingredientes Principais</h3>
+                                            <div className="flex flex-wrap gap-2">
+                                                {selectedDish.ingredients.map((ing, i) => (
+                                                    <span key={i} className="px-2 py-1 bg-orange-50 text-orange-700 rounded-md text-xs font-medium border border-orange-100">
+                                                        {ing}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* History */}
+                                    {selectedDish.history && (
+                                        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                                            <div className="flex items-start gap-2">
+                                                <Sparkles className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                                                <div>
+                                                    <h3 className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">Origem & História</h3>
+                                                    <p className="text-xs text-amber-900 leading-relaxed italic">
+                                                        "{selectedDish.history}"
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="mt-8">
+                                    <button
+                                        onClick={() => handleSearchDish(selectedDish.name)}
+                                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-200"
+                                    >
+                                        <Search className="w-4 h-4" />
+                                        Buscar restaurantes com este prato
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* Two Boxes Side by Side */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
@@ -397,6 +621,16 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                         <div className="w-px h-6 bg-gray-200"></div>
 
                         <button
+                            onClick={() => setShowDiscoveryMode(true)}
+                            className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">swipe_right</span>
+                            Modo Descoberta
+                        </button>
+
+                        <div className="w-px h-6 bg-gray-200"></div>
+
+                        <button
                             onClick={() => setShowImportModal(true)}
                             className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
                         >
@@ -406,7 +640,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                     </div>
 
                     {/* Restaurant Grid */}
-                    <div className={viewMode === 'grid'
+                    <div id="restaurants-grid" className={viewMode === 'grid'
                         ? "grid grid-cols-1 md:grid-cols-2 gap-6"
                         : "grid grid-cols-1 gap-4"
                     }>
@@ -523,6 +757,21 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                                 </Button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Discovery Mode Overlay */}
+            {showDiscoveryMode && (
+                <div className="fixed inset-0 z-[60] bg-white text-gray-900 flex flex-col animate-in fade-in duration-300">
+                    <div className="flex-1 flex items-center justify-center p-4 bg-gray-100/50 backdrop-blur-sm">
+                        <GastronomyDiscoveryMode
+                            cityName={cityName}
+                            onSave={handleDiscoverySave}
+                            onSchedule={handleDiscoverySchedule}
+                            onClose={() => setShowDiscoveryMode(false)}
+                            existingRestaurants={generatedRestaurants}
+                        />
                     </div>
                 </div>
             )}

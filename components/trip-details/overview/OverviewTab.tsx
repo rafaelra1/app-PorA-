@@ -262,7 +262,7 @@ const MacroTimeline: React.FC<MacroTimelineProps> = ({ cities, hotels = [], onCi
                                     {generatingCityId === city.id && (
                                         <div className="absolute inset-0 bg-black/60 z-20 flex flex-col items-center justify-center gap-2 text-white">
                                             <div className="size-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            <span className="text-xs font-bold animate-pulse">Criando Arte...</span>
+                                            <span className="text-xs font-bold animate-pulse">Gerando imagem mágica...</span>
                                         </div>
                                     )}
 
@@ -361,38 +361,43 @@ const CityAlertsBox: React.FC<{ cities: City[]; tripStartDate: string }> = ({ ci
         isLoadingDetails?: boolean;
     }[]>([]);
 
-    // Generate mock alerts based on cities (in production, this would call Gemini API)
+    // Generate alerts based on cities - delayed to prevent request overload
     React.useEffect(() => {
         if (cities.length === 0) {
             setAlerts([]);
             return;
         }
 
-        setIsLoading(true);
+        // Delay this API call to stagger requests and prevent ERR_INSUFFICIENT_RESOURCES
+        const timeoutId = setTimeout(() => {
+            setIsLoading(true);
 
-        const fetchAlerts = async () => {
-            try {
-                const geminiService = getGeminiService();
-                const citiesData = cities.map(c => ({ name: c.name, country: c.country }));
-                const generatedAlerts = await geminiService.generateTripAlerts(citiesData);
+            const fetchAlerts = async () => {
+                try {
+                    const geminiService = getGeminiService();
+                    const citiesData = cities.map(c => ({ name: c.name, country: c.country }));
+                    const generatedAlerts = await geminiService.generateTripAlerts(citiesData);
 
-                if (generatedAlerts && generatedAlerts.length > 0) {
-                    setAlerts(generatedAlerts.map(alert => ({
-                        ...alert,
-                        city: alert.cities?.join(', '),
-                    })));
-                } else {
+                    if (generatedAlerts && generatedAlerts.length > 0) {
+                        setAlerts(generatedAlerts.map(alert => ({
+                            ...alert,
+                            city: alert.cities?.join(', '),
+                        })));
+                    } else {
+                        setAlerts([]);
+                    }
+                } catch (error) {
+                    console.error('Error generating trip alerts:', error);
                     setAlerts([]);
+                } finally {
+                    setIsLoading(false);
                 }
-            } catch (error) {
-                console.error('Error generating trip alerts:', error);
-                setAlerts([]);
-            } finally {
-                setIsLoading(false);
-            }
-        };
+            };
 
-        fetchAlerts();
+            fetchAlerts();
+        }, 1000); // 1 second delay to let other critical requests complete first
+
+        return () => clearTimeout(timeoutId);
     }, [cities]);
 
     const generateMoreDetails = async (alertId: string) => {
@@ -474,69 +479,69 @@ const CityAlertsBox: React.FC<{ cities: City[]; tripStartDate: string }> = ({ ci
                     </div>
                 </div>
             ) : (
-                <div className="space-y-3">
-                    {alerts.map(alert => (
-                        <div
-                            key={alert.id}
-                            className="bg-gray-50 rounded-xl overflow-hidden transition-all"
-                        >
-                            <div className="flex items-start gap-3 p-3 hover:bg-gray-100 transition-colors">
-                                <div className={`size-10 rounded-xl ${getIconBg(alert.type)} flex items-center justify-center shrink-0`}>
-                                    <span className="material-symbols-outlined text-xl">
-                                        {alert.icon}
-                                    </span>
-                                </div>
-                                <div className="flex-1 min-w-0 py-0.5">
-                                    <div className="flex items-center gap-2 mb-0.5">
-                                        <h5 className="font-semibold text-sm text-text-main">{alert.title}</h5>
-                                        {alert.city && (
-                                            <span className="text-[10px] font-medium px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                                                {alert.city}
+                <div className="relative -mx-5">
+                    <div className="flex gap-4 overflow-x-auto pb-3 px-5 hide-scrollbar scroll-smooth">
+                        {alerts.map(alert => (
+                            <div
+                                key={alert.id}
+                                className="bg-gray-50 rounded-xl overflow-hidden transition-all min-w-[280px] max-w-[320px] shrink-0 flex flex-col"
+                            >
+                                <div className="flex items-start gap-3 p-3 hover:bg-gray-100 transition-colors flex-1">
+                                    <div className={`size-10 rounded-xl ${getIconBg(alert.type)} flex items-center justify-center shrink-0`}>
+                                        <span className="material-symbols-outlined text-xl">
+                                            {alert.icon}
+                                        </span>
+                                    </div>
+                                    <div className="flex-1 min-w-0 py-0.5">
+                                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                            <h5 className="font-semibold text-sm text-text-main">{alert.title}</h5>
+                                            {alert.city && (
+                                                <span className="text-[10px] font-medium px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                                                    {alert.city}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-text-muted leading-relaxed line-clamp-3">{alert.message}</p>
+                                    </div>
+
+                                    {/* AI Info Button */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            alert.details ? toggleExpand(alert.id) : generateMoreDetails(alert.id);
+                                        }}
+                                        disabled={alert.isLoadingDetails}
+                                        className={`p-2 rounded-lg transition-all shrink-0 ${alert.isExpanded
+                                            ? 'bg-primary text-white shadow-sm'
+                                            : 'text-text-muted hover:text-primary hover:bg-primary/10'
+                                            }`}
+                                        title="Gerar explicação detalhada com IA"
+                                    >
+                                        {alert.isLoadingDetails ? (
+                                            <div className="size-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                            <span className="material-symbols-outlined text-xl">
+                                                {alert.isExpanded ? 'expand_less' : 'auto_awesome'}
                                             </span>
                                         )}
-                                    </div>
-                                    <p className="text-xs text-text-muted leading-relaxed">{alert.message}</p>
-
-
+                                    </button>
                                 </div>
 
-                                {/* AI Info Button */}
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        alert.details ? toggleExpand(alert.id) : generateMoreDetails(alert.id);
-                                    }}
-                                    disabled={alert.isLoadingDetails}
-                                    className={`p-2 rounded-lg transition-all shrink-0 ${alert.isExpanded
-                                        ? 'bg-primary text-white shadow-sm'
-                                        : 'text-text-muted hover:text-primary hover:bg-primary/10'
-                                        }`}
-                                    title="Gerar explicação detalhada com IA"
-                                >
-                                    {alert.isLoadingDetails ? (
-                                        <div className="size-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                        <span className="material-symbols-outlined text-xl">
-                                            {alert.isExpanded ? 'expand_less' : 'auto_awesome'}
-                                        </span>
-                                    )}
-                                </button>
+                                {/* Expanded Details */}
+                                {alert.isExpanded && alert.details && (
+                                    <div className="px-3 pb-3">
+                                        <div className="p-3 bg-white rounded-lg border border-gray-100 text-xs text-text-main leading-relaxed whitespace-pre-line max-h-[150px] overflow-y-auto">
+                                            {alert.details.split('\n').map((line, i) => (
+                                                <p key={i} className={line.startsWith('**') ? 'font-bold mb-2' : 'mb-1'}>
+                                                    {line.replace(/\*\*/g, '')}
+                                                </p>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-
-                            {/* Expanded Details */}
-                            {alert.isExpanded && alert.details && (
-                                <div className="px-4 pb-4 ml-12">
-                                    <div className="p-3 bg-white rounded-lg border border-gray-100 text-xs text-text-main leading-relaxed whitespace-pre-line">
-                                        {alert.details.split('\n').map((line, i) => (
-                                            <p key={i} className={line.startsWith('**') ? 'font-bold mb-2' : 'mb-1'}>
-                                                {line.replace(/\*\*/g, '')}
-                                            </p>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             )}
         </Card>

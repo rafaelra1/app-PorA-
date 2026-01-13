@@ -44,6 +44,11 @@ const parseDate = (dateStr: string): Date => {
         const [day, month, year] = dateStr.split('/').map(Number);
         return new Date(year, month - 1, day);
     }
+    // Handle YYYY-MM-DD format as local time (not UTC)
+    if (dateStr.includes('-') && dateStr.length === 10) {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    }
     return new Date(dateStr);
 };
 

@@ -21,6 +21,8 @@ interface WebGLMapProviderProps {
   mapContainerClassName?: string;
 }
 
+import { useGoogleMapsApi } from '../../../hooks/useGoogleMapsApi';
+
 export const WebGLMapProvider: React.FC<WebGLMapProviderProps> = ({
   children,
   mapId,
@@ -31,6 +33,7 @@ export const WebGLMapProvider: React.FC<WebGLMapProviderProps> = ({
   onMapLoad,
   mapContainerClassName = 'w-full h-full',
 }) => {
+  const { isLoaded: isApiLoaded } = useGoogleMapsApi();
   const mapRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [manager, setManager] = useState<WebGLOverlayManager | null>(null);
@@ -38,7 +41,7 @@ export const WebGLMapProvider: React.FC<WebGLMapProviderProps> = ({
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !isApiLoaded) return;
 
     let isMounted = true;
 
@@ -91,7 +94,7 @@ export const WebGLMapProvider: React.FC<WebGLMapProviderProps> = ({
         manager.destroy();
       }
     };
-  }, [mapId, center.lat, center.lng, zoom, tilt, heading, onMapLoad]);
+  }, [mapId, center.lat, center.lng, zoom, tilt, heading, onMapLoad, isApiLoaded]);
 
   const contextValue: WebGLMapContextValue = {
     map,

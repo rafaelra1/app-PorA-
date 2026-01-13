@@ -57,6 +57,8 @@ const WeekView: React.FC<WeekViewProps> = ({ currentDate, onDateClick, onEventCl
       flight: 'bg-violet-100 border-violet-300 text-violet-700',
       train: 'bg-purple-100 border-purple-300 text-purple-700',
       bus: 'bg-indigo-100 border-indigo-300 text-indigo-700',
+      transfer: 'bg-gray-100 border-gray-300 text-gray-700',
+      ferry: 'bg-teal-100 border-teal-300 text-teal-700',
       accommodation: 'bg-emerald-100 border-emerald-300 text-emerald-700',
       meal: 'bg-orange-100 border-orange-300 text-orange-700',
       restaurant: 'bg-amber-100 border-amber-300 text-amber-700',
@@ -69,6 +71,28 @@ const WeekView: React.FC<WeekViewProps> = ({ currentDate, onDateClick, onEventCl
       other: 'bg-gray-100 border-gray-300 text-gray-700',
     };
     return colors[type] || colors.other;
+  };
+
+  const getEventIcon = (type: CalendarEvent['type']): string => {
+    const icons: Record<string, string> = {
+      trip: 'luggage',
+      flight: 'flight',
+      train: 'train',
+      bus: 'directions_bus',
+      transfer: 'local_taxi',
+      ferry: 'directions_boat',
+      accommodation: 'hotel',
+      meal: 'restaurant',
+      restaurant: 'restaurant_menu',
+      sightseeing: 'photo_camera',
+      culture: 'museum',
+      nature: 'forest',
+      shopping: 'shopping_bag',
+      task: 'check_circle',
+      activity: 'local_activity',
+      other: 'event',
+    };
+    return icons[type] || 'event';
   };
 
   const formatDate = (date: Date): string => {
@@ -99,17 +123,15 @@ const WeekView: React.FC<WeekViewProps> = ({ currentDate, onDateClick, onEventCl
         {weekDays.map((day, index) => (
           <div
             key={index}
-            className={`p-4 text-center border-r border-gray-200 last:border-r-0 ${
-              isToday(day) ? 'bg-primary-light' : ''
-            }`}
+            className={`p-4 text-center border-r border-gray-200 last:border-r-0 ${isToday(day) ? 'bg-primary-light' : ''
+              }`}
           >
             <div className="text-xs font-bold text-text-muted uppercase">
               {daysOfWeek[index]}
             </div>
             <div
-              className={`text-lg font-bold mt-1 ${
-                isToday(day) ? 'text-primary-dark' : 'text-text-main'
-              }`}
+              className={`text-lg font-bold mt-1 ${isToday(day) ? 'text-primary-dark' : 'text-text-main'
+                }`}
             >
               {formatDate(day)}
             </div>
@@ -169,11 +191,16 @@ const WeekView: React.FC<WeekViewProps> = ({ currentDate, onDateClick, onEventCl
                       }}
                     >
                       <div className="flex flex-col h-full overflow-hidden">
-                        <div className="text-xs font-bold truncate">
-                          {event.startTime} {event.title}
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="material-symbols-outlined text-[14px]">
+                            {getEventIcon(event.type)}
+                          </span>
+                          <div className="text-xs font-bold truncate">
+                            {event.startTime} {event.title}
+                          </div>
                         </div>
                         {height > 50 && event.location && (
-                          <div className="text-[10px] opacity-80 truncate mt-1">
+                          <div className="text-[10px] opacity-80 truncate ml-5">
                             {event.location}
                           </div>
                         )}

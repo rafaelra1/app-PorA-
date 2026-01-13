@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback,
 import { Transport, TransportType, TransportStatus } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import { useCalendar } from './CalendarContext';
 import { toISODate, fromISODate } from '../lib/dateUtils';
 
 interface TransportContextType {
@@ -20,6 +21,7 @@ const TransportContext = createContext<TransportContextType | null>(null);
 
 export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { user } = useAuth();
+    const { syncFromTransports, deleteEventsByTransportId } = useCalendar();
     const [transports, setTransports] = useState<Transport[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -106,7 +108,9 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
             if (error) throw error;
 
             if (data) {
+                const newTransport = { ...transport, id: data.id } as Transport;
                 setTransports(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
+                syncFromTransports([newTransport], tripId);
                 return data.id;
             }
             return null;
@@ -117,7 +121,7 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
             setTransports(prev => prev.filter(t => t.id !== tempId));
             return null;
         }
-    }, [user]);
+    }, [user, syncFromTransports]);
 
     const updateTransport = useCallback(async (tripId: string, transport: Transport) => {
         if (!user || !tripId) return;
@@ -147,16 +151,21 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
             }).eq('id', transport.id).eq('trip_id', tripId);
 
             if (error) throw error;
+
+            syncFromTransports([transport], tripId);
         } catch (err: any) {
             console.error('Error updating transport:', err);
             setError(err.message);
             fetchTransports(tripId);
         }
-    }, [user, fetchTransports]);
+    }, [user, fetchTransports, syncFromTransports]);
 
     const deleteTransport = useCallback(async (tripId: string, transportId: string) => {
         if (!user || !tripId) return;
         setTransports(prev => prev.filter(t => t.id !== transportId));
+
+        // Sync Calendar deletion
+        deleteEventsByTransportId(transportId);
 
         try {
             const { error } = await supabase.from('transports').delete().eq('id', transportId).eq('trip_id', tripId);
@@ -166,7 +175,7 @@ export const TransportProvider: React.FC<{ children: ReactNode }> = ({ children 
             setError(err.message);
             fetchTransports(tripId);
         }
-    }, [user, fetchTransports]);
+    }, [user, fetchTransports, deleteEventsByTransportId]);
 
     const migrateFromLocalStorage = useCallback(async (tripId: string, localTransports: Transport[]) => {
         if (!user || !tripId || localTransports.length === 0) return;

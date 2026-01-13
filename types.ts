@@ -323,6 +323,53 @@ export interface JournalEntry {
   expenseId?: string;
 }
 
+// =============================================================================
+// Trip Memories Types (Itinerary-integrated Review System)
+// =============================================================================
+
+export type MemoryType = 'REVIEW' | 'FREE_TEXT';
+
+export interface ReviewContent {
+  title: string;
+  rating: number; // 1-5
+  text: string;
+  tags: string[];
+  photos: string[];
+  transcriptionUrl?: string; // For audio recordings
+}
+
+export interface FreeTextContent {
+  text: string;
+  images: string[];
+}
+
+export interface TripMemory {
+  id: string;
+  linkedItineraryItemId?: string; // Link to ItineraryActivity
+  timestamp: string;
+  date: string;
+  type: MemoryType;
+  content: ReviewContent | FreeTextContent;
+  socialShareImage?: string;
+  author: Participant;
+  location: string;
+}
+
+export interface PendingReviewItem {
+  itineraryItemId: string;
+  title: string;
+  scheduledTime: string; // ISO date-time
+  location: string;
+  type: string; // 'food', 'culture', etc.
+}
+
+export interface MemoryStats {
+  totalPlacesVisited: number;
+  reviewsWritten: number;
+  pendingReviews: number;
+  categoryBreakdown: Record<string, number>; // e.g., { 'food': 5, 'culture': 3 }
+}
+
 export interface NavItem {
   id: string;
   label: string;
@@ -425,6 +472,47 @@ export interface Attraction {
   address?: string;
   openingHours?: string;
   city?: string;
+}
+
+// =============================================================================
+// Discovery Mode Types (Tinder-style Attraction Suggestions)
+// =============================================================================
+
+export type DiscoveryAttractionStatus = 'pending' | 'validating' | 'validated' | 'error';
+
+export interface DiscoveryAttraction {
+  id: string;
+  name: string;
+  description: string;
+  aiReason: string;  // AI-generated reason why this is relevant to the user
+  category: string;
+
+  // Google Places enriched data
+  photos: string[];
+  rating: number;
+  userRatingsTotal: number;
+  address: string;
+  openNow?: boolean;
+  openingHours?: string[];
+  priceLevel?: number; // 0-4 (Free to Very Expensive)
+  placeId?: string;
+  location?: { lat: number; lng: number };
+
+  // Validation state
+  status: DiscoveryAttractionStatus;
+  errorMessage?: string;
+}
+
+export interface DiscoverySession {
+  id: string;
+  cityName: string;
+  country: string;
+  suggestions: DiscoveryAttraction[];
+  currentIndex: number;
+  savedIds: string[];
+  skippedIds: string[];
+  scheduledIds: string[];
+  createdAt: string;
 }
 
 export interface TypicalDish {
@@ -1037,5 +1125,82 @@ export interface TripViabilityAnalysis {
   };
   events: string[];
   tips: string[];
+}
+
+// =============================================================================
+// Bill Splitting / Expense Sharing Types
+// =============================================================================
+
+export type DistributionMethod = 'EQUAL' | 'EXACT' | 'PERCENTAGE' | 'SHARES';
+export type TransactionType = 'EXPENSE' | 'SETTLEMENT';
+export type UserPosition = 'CREDITOR' | 'DEBTOR' | 'SETTLED';
+
+export interface TripParticipant {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  netBalance: number; // Positive = to receive, Negative = to pay
+}
+
+export interface Payer {
+  userId: string;
+  amountPaid: number;
+}
+
+export interface SplitDetail {
+  userId: string;
+  owedShare: number;
+  isInvolved: boolean;
+  // For PERCENTAGE method
+  percentage?: number;
+  // For SHARES method
+  shares?: number;
+}
+
+export interface Transaction {
+  id: string;
+  tripId: string;
+  type: TransactionType;
+  description: string;
+  date: string; // ISO datetime
+  categoryId?: string;
+
+  // Amount & Currency
+  amountOriginal: number;
+  currencyOriginal: string;
+  exchangeRateToBase?: number; // Rate to trip's base currency
+  amountInBase?: number; // Calculated: amountOriginal * exchangeRateToBase
+
+  // Split Logic
+  distributionMethod: DistributionMethod;
+  payers: Payer[]; // Who paid (supports multiple payers)
+  splitBreakdown: SplitDetail[]; // Who owes what
+
+  // Metadata
+  notes?: string;
+  receiptUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string; // User ID
+}
+
+export interface DebtRelation {
+  from: string; // User ID who owes
+  to: string; // User ID who is owed
+  amount: number;
+}
+
+export interface FinancialSummary {
+  totalSpend: number;
+  userPosition: UserPosition;
+  userBalanceValue: number;
+  debtsGraph: DebtRelation[];
+}
+
+export interface TripBillContext {
+  tripId: string;
+  name: string;
+  baseCurrency: string;
+  participants: TripParticipant[];
 }
 

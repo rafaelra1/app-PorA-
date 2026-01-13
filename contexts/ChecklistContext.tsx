@@ -184,18 +184,30 @@ export const ChecklistProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
     }, [tasks]);
 
+    const contextValue = React.useMemo(() => ({
+        tasks,
+        isLoading,
+        isSyncing,
+        addTask,
+        toggleTask,
+        updateTask,
+        deleteTask,
+        deleteTasksByPattern,
+        refreshTasks
+    }), [
+        tasks,
+        isLoading,
+        isSyncing,
+        addTask,
+        toggleTask,
+        updateTask,
+        deleteTask,
+        deleteTasksByPattern,
+        refreshTasks
+    ]);
+
     return (
-        <ChecklistContext.Provider value={{
-            tasks,
-            isLoading,
-            isSyncing,
-            addTask,
-            toggleTask,
-            updateTask,
-            deleteTask,
-            deleteTasksByPattern,
-            refreshTasks
-        }}>
+        <ChecklistContext.Provider value={contextValue}>
             {children}
         </ChecklistContext.Provider>
     );

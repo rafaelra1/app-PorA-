@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase';
 class StorageService {
   private readonly BUCKET_NAME = 'trip-images';
   private readonly MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-  private readonly ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  private readonly ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'];
 
   /**
    * Initialize storage bucket (call once on app startup or first use)

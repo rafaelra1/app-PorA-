@@ -601,6 +601,18 @@ Retorne APENAS um JSON com o seguinte formato, contendo um array "restaurants":
 }
 `,
 
+  typicalDishes: (city: string) => `
+Você é um especialista em gastronomia local e cultural de ${city}.
+Liste os 5 a 10 pratos mais tradicionais e típicos desta cidade/região.
+Para cada prato, forneça:
+- Nome em português (e original se aplicável)
+- Breve descrição apetitosa (max 2 frases)
+- Ingredientes principais (lista curta)
+- Breve história cultural ou origem (1 frase)
+
+Retorne APENAS um array JSON. Schema: [{ "name": string, "description": string, "ingredients": string[], "history": string }].
+`,
+
   gastronomyGuide: (city: string) => `
 Você é um especialista em gastronomia local de ${city}. Crie um guia prático "Guia Gastronômico Local" para ajudar viajantes a aproveitarem melhor as experiências culinárias.
 
@@ -960,6 +972,55 @@ REGRAS:
 - Dicas devem ser práticas e específicas para o período
 - Responda em Português do Brasil
 `,
+  attractionSuggestions: (cityName: string, country: string, existingAttractions: string[]) => `
+Você é um guia de viagem especializado. Sugira 12 atrações turísticas imperdíveis em ${cityName}, ${country}.
+
+IMPORTANTE: 
+- Evite estas atrações já adicionadas pelo usuário: ${existingAttractions.join(', ') || 'nenhuma'}
+- Inclua uma mistura de: pontos turísticos famosos, lugares escondidos (hidden gems), experiências culturais
+- Seja específico com nomes reais de lugares
+
+Para cada atração, forneça:
+- name: Nome exato do lugar (como aparece no Google Maps)
+- description: Descrição curta (1-2 frases)
+- category: Uma categoria (Museu, Parque, Monumento, Igreja, Mercado, Mirante, Praia, etc.)
+- aiReason: Por que esta atração é perfeita para o viajante (personalize, seja criativo)
+
+Responda APENAS com um JSON array válido:
+[
+  {
+    "name": "Nome do Lugar",
+    "description": "Descrição curta",
+    "category": "Categoria",
+    "aiReason": "Perfeito para você porque..."
+  }
+    "aiReason": "Perfeito para você porque..."
+  }
+]`,
+  topAttractions: (cityName: string) => `
+Você é um curador de viagens especialista. Liste as 8 atrações turísticas "Top Tier" (as mais famosas e imperdíveis) de ${cityName}.
+
+Para cada atração, forneça:
+- name: Nome exato
+- description: Descrição curta e envolvente (max 2 frases)
+- tags: 3 etiquetas curtas com informações chave (ex: "Tempo: 2h", "Tipo: Museu", "Entrada: Pago", "Vibe: Romântico")
+- history_trivia: Uma curiosidade histórica fascinante ou "Por que é imperdível?" (max 2 frases)
+- category: Categoria principal (ex: Monumento, Natureza, Museu)
+
+Retorne APENAS um JSON array válido:
+[
+  {
+    "name": "Nome",
+    "description": "Descrição",
+    "tags": [
+      { "label": "Tempo", "value": "2h" },
+      { "label": "Tipo", "value": "Museu" },
+      { "label": "Entrada", "value": "Pago" }
+    ],
+    "history_trivia": "Curiosidade...",
+    "category": "Categoria"
+  }
+]`,
 };
 
 // =============================================================================
@@ -1183,6 +1244,24 @@ export class GeminiService {
   }
 
   /**
+   * Generate curated attraction suggestions for Discovery Mode
+   */
+  async generateAttractionSuggestions(
+    cityName: string,
+    country: string,
+    existingAttractions: string[]
+  ): Promise<any[]> {
+    try {
+      const prompt = PROMPTS.attractionSuggestions(cityName, country, existingAttractions);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely(text, []);
+    } catch (error) {
+      console.error('Error generating attraction suggestions:', error);
+      throw new Error('Failed to generate attraction suggestions');
+    }
+  }
+
+  /**
    * Generate a comprehensive city guide with attractions, gastronomy, and tips
    */
   async generateCityGuide(cityName: string, country: string): Promise<CityGuide> {
@@ -1223,14 +1302,14 @@ export class GeminiService {
     console.log(`Generating image for prompt: ${prompt}`);
 
     try {
-      // Try Gemini Imagen 3 first
+      // Try Gemini Imagen 3 first with retries
       const imagenUrl = await this.generateWithImagenAPI(prompt, options);
       if (imagenUrl) {
         console.log('Image generated successfully with Gemini Imagen');
         return imagenUrl;
       }
     } catch (error) {
-      console.warn('Gemini Imagen failed, falling back to Unsplash:', error);
+      console.warn('Gemini Imagen failed after retries, falling back to Unsplash:', error);
     }
 
     // Fallback to Unsplash
@@ -1245,46 +1324,61 @@ export class GeminiService {
     options: ImageGenerationOptions = {}
   ): Promise<string | null> {
     try {
-      // Build enhanced prompt for better quality
+      const maxRetries = 3;
+      let lastError;
+
+      // Clean up prompt for extraction if needed
+      let cityName = '';
+      if (prompt.startsWith('City of')) {
+        cityName = prompt.replace('City of ', '').split(',')[0];
+      }
+
+      // Build enhanced prompt
       const enhancedPrompt = this.buildEnhancedImagePrompt(prompt, options);
 
-      // Gemini Imagen 3 endpoint
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict`;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // ALWAYS use server proxy for Image Generation to avoid CORS and Key issues
+          // The proxy handles the secure communication with Google's API
+          // Ensure we use the relative path so Vite proxies it to the backend (port 3001)
+          const proxyUrl = '/api/gemini/imagen'; // Relative path is key
 
-      const requestBody = {
-        instances: [
-          {
-            prompt: enhancedPrompt
+          const response = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: enhancedPrompt,
+              aspectRatio: options.aspectRatio,
+              negativePrompt: 'blurry, low quality, distorted, ugly, watermark, text, signature, grainy, deformed'
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.warn(`Imagen proxy error (attempt ${attempt}):`, errorData);
+            throw new Error(`Imagen API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
           }
-        ],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: options.aspectRatio || '16:9',
-          negativePrompt: 'blurry, low quality, distorted, ugly, watermark, text',
-          safetySetting: 'block_some',
-          personGeneration: 'allow_adult'
+
+          const data = await response.json();
+
+          if (data.predictions && data.predictions[0]?.bytesBase64Encoded) {
+            const base64Image = data.predictions[0].bytesBase64Encoded;
+            return `data:image/png;base64,${base64Image}`;
+          }
+
+          throw new Error('No image data in response');
+
+        } catch (error) {
+          console.warn(`Imagen attempt ${attempt} failed:`, error);
+          lastError = error;
+          if (attempt < maxRetries) {
+            const delay = Math.pow(2, attempt - 1) * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
         }
-      };
-
-      const response = await fetch(`${endpoint}?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Imagen API error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
-
-      // Extract base64 image from response
-      if (data.predictions && data.predictions[0]?.bytesBase64Encoded) {
-        const base64Image = data.predictions[0].bytesBase64Encoded;
-        return `data:image/png;base64,${base64Image}`;
-      }
+      throw lastError || new Error('Failed to generate image after retries');
 
       return null;
     } catch (error) {
@@ -1300,19 +1394,25 @@ export class GeminiService {
     let enhancedPrompt = prompt;
 
     // Extract city name if present
-    if (prompt.startsWith('City of')) {
-      const cityName = prompt.replace('City of ', '').split(',')[0];
-      enhancedPrompt = `Professional travel photography of ${cityName}, iconic landmarks, vibrant atmosphere, golden hour lighting, ultra-detailed, high-resolution, professional composition`;
+    const cityMatch = prompt.match(/Cinematic travel photography of (.+?)(,|$)/i) || prompt.match(/City of (.+?)(,|$)/i);
+
+    if (cityMatch) {
+      const cityName = cityMatch[1];
+      // Updated to match the specific "National Geographic style" request
+      enhancedPrompt = `A breathtaking, cinematic travel photograph of ${cityName}. Wide angle landscape, golden hour light, featuring iconic landmarks and local culture. High resolution, detailed, vibrant colors, National Geographic style. No text.`;
+    } else if (prompt.includes(',')) {
+      // Heuristic: if it looks like "Paris, France" or similar simple string
+      enhancedPrompt = `A breathtaking, cinematic travel photograph of ${prompt}. Wide angle landscape, golden hour light, featuring iconic landmarks and local culture. High resolution, detailed, vibrant colors, National Geographic style. No text.`;
     } else {
-      // General enhancement
-      enhancedPrompt = `${prompt}, professional photography, high quality, detailed, vibrant colors, beautiful composition`;
+      // General enhancement fallback
+      enhancedPrompt = `A breathtaking, cinematic travel photograph of ${prompt}. Wide angle landscape, golden hour light, featuring iconic landmarks and local culture. High resolution, detailed, vibrant colors, National Geographic style. No text.`;
     }
 
-    // Add size-specific quality hints
+    // Add size-specific quality hints (appended to keep technical specs at end)
     if (options.imageSize === '4K') {
-      enhancedPrompt += ', ultra high resolution, 4K quality, extremely detailed';
+      enhancedPrompt += ' 8k ultra hd';
     } else if (options.imageSize === '2K') {
-      enhancedPrompt += ', high resolution, 2K quality, sharp details';
+      enhancedPrompt += ' 4k high definition';
     }
 
     return enhancedPrompt;
@@ -1332,14 +1432,16 @@ export class GeminiService {
     const keywords = `${query},landmark,city,travel`;
 
     try {
-      // Try Unsplash first
-      const unsplashUrl = `https://source.unsplash.com/800x600/?${encodeURIComponent(keywords)}&sig=${generateRandomSig()}`;
+      // Try LoremFlickr (reliable placeholder)
+      // Format: /width/height/comma,separated,keywords/all
+      const formattedKeywords = keywords.split(',').map(k => encodeURIComponent(k.trim())).join(',');
+      const loremFlickrUrl = `https://loremflickr.com/800/600/${formattedKeywords}/all`;
 
-      // Verify if Unsplash is accessible
-      const unsplashCheck = await fetch(unsplashUrl, { method: 'HEAD' });
-      if (unsplashCheck.ok) {
-        console.log('Using Unsplash fallback');
-        return unsplashUrl;
+      // Verify if LoremFlickr is accessible (HEAD request)
+      const check = await fetch(loremFlickrUrl, { method: 'HEAD' });
+      if (check.ok) {
+        console.log('Using LoremFlickr fallback');
+        return loremFlickrUrl;
       }
     } catch (error) {
       console.warn('Unsplash fallback failed:', error);
@@ -1371,8 +1473,8 @@ export class GeminiService {
       const pexelsApiKey = import.meta.env.VITE_PEXELS_API_KEY;
 
       if (!pexelsApiKey) {
-        // Use direct image URL pattern (limited functionality)
-        return `https://images.pexels.com/photos/0/pexels-photo.jpeg?auto=compress&cs=tinysrgb&w=800&h=600`;
+        // No API key, skip Pexels and fall back to local placeholder
+        return null;
       }
 
       const response = await fetch(
@@ -1432,7 +1534,10 @@ export class GeminiService {
     `.trim();
 
     // Convert to base64 data URL
-    const base64 = btoa(svg);
+    // Convert to base64 data URL with UTF-8 support
+    const base64 = typeof window !== 'undefined'
+      ? window.btoa(unescape(encodeURIComponent(svg)))
+      : Buffer.from(svg).toString('base64');
     return `data:image/svg+xml;base64,${base64}`;
   }
 
@@ -2125,6 +2230,45 @@ Create a new image that maintains the essence of the original but applies the re
       return data.restaurants || [];
     } catch (error) {
       console.error('Error importing restaurant list:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate typical regional dishes for a city
+   */
+  async generateTypicalDishes(city: string): Promise<Array<{
+    name: string;
+    description: string;
+    ingredients: string[];
+    history: string;
+  }> | null> {
+    try {
+      const prompt = PROMPTS.typicalDishes(city);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely(text, null);
+    } catch (error) {
+      console.error('Error generating typical dishes:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate top tier attractions for the highlights carousel
+   */
+  async generateTopAttractions(cityName: string): Promise<Array<{
+    name: string;
+    description: string;
+    tags: { label: string; value: string }[];
+    history_trivia: string;
+    category: string;
+  }> | null> {
+    try {
+      const prompt = PROMPTS.topAttractions(cityName);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely(text, null);
+    } catch (error) {
+      console.error('Error generating top attractions:', error);
       return null;
     }
   }

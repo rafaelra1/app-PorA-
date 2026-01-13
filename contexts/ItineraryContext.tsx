@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo } 
 import { supabase } from '../lib/supabase';
 import { ItineraryActivity } from '../types';
 import { useAuth } from './AuthContext';
+import { useCalendar } from './CalendarContext';
 
 interface ItineraryContextType {
     activities: ItineraryActivity[];
@@ -22,6 +23,7 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { user } = useAuth();
+    const { syncFromActivities, deleteEventsByActivityId } = useCalendar();
 
     const fetchActivities = useCallback(async (tripId: string) => {
         if (!user) return;
@@ -36,6 +38,8 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 .order('time', { ascending: true });
 
             if (error) throw error;
+
+            console.log('📥 Fetched activities from Supabase:', data ? data.length : 0, 'items');
 
             // Transform data to match ItineraryActivity interface
             const validActivities: ItineraryActivity[] = (data || []).map(item => ({
@@ -72,10 +76,18 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         try {
             // Prepare the data to insert, only including fields that exist in the table
+            // Ensure date is in YYYY-MM-DD format before sending to Supabase
+            // If date is DD/MM/YYYY, convert it. If it's already YYYY-MM-DD, keep it.
+            let dbDate = activity.date;
+            if (activity.date && activity.date.includes('/')) {
+                const [d, m, y] = activity.date.split('/');
+                dbDate = `${y}-${m}-${d}`;
+            }
+
             const insertData: any = {
                 trip_id: tripId,
                 day: activity.day,
-                date: activity.date,
+                date: dbDate,
                 time: activity.time,
                 title: activity.title,
                 type: activity.type,
@@ -110,6 +122,11 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 id: data.id
             } : a));
 
+            if (data) {
+                console.log('✅ Activity saved to Supabase with ID:', data.id);
+                syncFromActivities([{ ...activity, id: data.id }], tripId);
+            }
+
             return data.id;
         } catch (err: any) {
             console.error('Error adding activity:', err);
@@ -118,7 +135,7 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setActivities(prev => prev.filter(a => a.id !== tempId));
             return null;
         }
-    }, [user]);
+    }, [user, syncFromActivities]);
 
     const updateActivity = useCallback(async (tripId: string, activity: ItineraryActivity) => {
         if (!user) return;
@@ -127,11 +144,18 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setActivities(prev => prev.map(a => a.id === activity.id ? activity : a));
 
         try {
+            // Ensure date is YYYY-MM-DD
+            let dbDate = activity.date;
+            if (activity.date && activity.date.includes('/')) {
+                const [d, m, y] = activity.date.split('/');
+                dbDate = `${y}-${m}-${d}`;
+            }
+
             const { error } = await supabase
                 .from('itinerary_activities')
                 .update({
                     day: activity.day,
-                    date: activity.date,
+                    date: dbDate,
                     time: activity.time,
                     title: activity.title,
                     location: activity.location,
@@ -146,13 +170,16 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 .eq('trip_id', tripId);
 
             if (error) throw error;
+
+            // Sync with calendar
+            syncFromActivities([activity], tripId);
         } catch (err: any) {
             console.error('Error updating activity:', err);
             setError(err.message);
             // Ideally rollback here, but for simplicity assuming success or refresh
             fetchActivities(tripId);
         }
-    }, [user, fetchActivities]);
+    }, [user, fetchActivities, syncFromActivities]);
 
     const deleteActivity = useCallback(async (tripId: string, activityId: string) => {
         if (!user) return;
@@ -160,6 +187,9 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Optimistic Update
         const previousActivities = [...activities];
         setActivities(prev => prev.filter(a => a.id !== activityId));
+
+        // Sync Calendar deletion
+        deleteEventsByActivityId(activityId);
 
         try {
             const { error } = await supabase
@@ -175,7 +205,7 @@ export const ItineraryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             // Rollback
             setActivities(previousActivities);
         }
-    }, [user, activities]);
+    }, [user, activities, deleteEventsByActivityId]);
 
     const migrateFromLocalStorage = useCallback(async (tripId: string) => {
         const localData = localStorage.getItem(`porai_trip_${tripId}_itinerary_activities`);

@@ -18,7 +18,7 @@ export interface Vehicle3DOptions {
  */
 export class Vehicle3D {
   public group: THREE.Group;
-  private vehicleMesh: THREE.Group | THREE.Mesh;
+  private vehicleMesh: THREE.Object3D;
   private type: VehicleType;
   private trail?: THREE.Line;
   private trailPoints: THREE.Vector3[] = [];
@@ -90,21 +90,15 @@ export class Vehicle3D {
     type: VehicleType,
     color: number,
     scale: number
-  ): THREE.Mesh {
+  ): THREE.Object3D {
     let geometry: THREE.BufferGeometry;
     let material: THREE.Material;
 
-    switch (type) {
-      case 'flight':
-        geometry = this.createAirplaneGeometry(scale);
-        material = new THREE.MeshPhongMaterial({
-          color,
-          emissive: color,
-          emissiveIntensity: 0.3,
-          flatShading: true,
-        });
-        break;
+    if (type === 'flight') {
+      return this.createAirplane(scale, color);
+    }
 
+    switch (type) {
       case 'car':
         geometry = this.createCarGeometry(scale);
         material = new THREE.MeshPhongMaterial({
@@ -157,10 +151,16 @@ export class Vehicle3D {
   }
 
   /**
-   * Cria geometria de avião
+   * Cria avião como Group
    */
-  private createAirplaneGeometry(scale: number): THREE.BufferGeometry {
+  private createAirplane(scale: number, color: number): THREE.Group {
     const group = new THREE.Group();
+    const material = new THREE.MeshPhongMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.3,
+      flatShading: true,
+    });
 
     // Fuselagem
     const bodyGeometry = new THREE.CylinderGeometry(
@@ -169,8 +169,9 @@ export class Vehicle3D {
       20 * scale,
       8
     );
-    const body = new THREE.Mesh(bodyGeometry);
+    const body = new THREE.Mesh(bodyGeometry, material);
     body.rotation.z = Math.PI / 2;
+    body.castShadow = true;
 
     // Asas
     const wingGeometry = new THREE.BoxGeometry(
@@ -178,7 +179,8 @@ export class Vehicle3D {
       2 * scale,
       8 * scale
     );
-    const wings = new THREE.Mesh(wingGeometry);
+    const wings = new THREE.Mesh(wingGeometry, material);
+    wings.castShadow = true;
 
     // Cauda
     const tailGeometry = new THREE.ConeGeometry(
@@ -186,23 +188,13 @@ export class Vehicle3D {
       10 * scale,
       4
     );
-    const tail = new THREE.Mesh(tailGeometry);
+    const tail = new THREE.Mesh(tailGeometry, material);
     tail.position.set(0, 5 * scale, -10 * scale);
     tail.rotation.x = -Math.PI / 2;
+    tail.castShadow = true;
 
     group.add(body, wings, tail);
-
-    // Combinar geometrias
-    const finalGeometry = new THREE.BufferGeometry();
-    const merged = new THREE.Geometry();
-    group.children.forEach((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.updateMatrix();
-        merged.merge(new THREE.Geometry().fromBufferGeometry(child.geometry), child.matrix);
-      }
-    });
-
-    return new THREE.BufferGeometry().fromGeometry(merged);
+    return group;
   }
 
   /**
@@ -355,6 +347,24 @@ export class Vehicle3D {
     if (this.vehicleMesh instanceof THREE.Mesh) {
       const material = this.vehicleMesh.material as THREE.MeshPhongMaterial;
       material.color.setHex(color);
+    } else if (this.vehicleMesh instanceof THREE.Group) {
+      this.vehicleMesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          // Check if material is array or single
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => {
+              if (mat instanceof THREE.MeshPhongMaterial || mat instanceof THREE.MeshBasicMaterial || mat instanceof THREE.MeshStandardMaterial) {
+                mat.color.setHex(color);
+              }
+            })
+          } else {
+            const mat = child.material;
+            if (mat instanceof THREE.MeshPhongMaterial || mat instanceof THREE.MeshBasicMaterial || mat instanceof THREE.MeshStandardMaterial) {
+              mat.color.setHex(color);
+            }
+          }
+        }
+      });
     }
   }
 

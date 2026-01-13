@@ -51,21 +51,21 @@ const HolidayBadge: React.FC<HolidayBadgeProps> = ({
   // Color configurations based on holiday type
   const colors = holiday.type === 'nacional'
     ? {
-        bg: 'bg-emerald-50',
-        bgDark: 'bg-emerald-100',
-        border: 'border-emerald-200',
-        text: 'text-emerald-700',
-        dot: 'bg-emerald-500',
-        icon: 'text-emerald-600'
-      }
+      bg: 'bg-emerald-50',
+      bgDark: 'bg-emerald-100',
+      border: 'border-emerald-200',
+      text: 'text-emerald-700',
+      dot: 'bg-emerald-500',
+      icon: 'text-emerald-600'
+    }
     : {
-        bg: 'bg-amber-50',
-        bgDark: 'bg-amber-100',
-        border: 'border-amber-200',
-        text: 'text-amber-700',
-        dot: 'bg-amber-500',
-        icon: 'text-amber-600'
-      };
+      bg: 'bg-amber-50',
+      bgDark: 'bg-amber-100',
+      border: 'border-amber-200',
+      text: 'text-amber-700',
+      dot: 'bg-amber-500',
+      icon: 'text-amber-600'
+    };
 
   // Simple indicator (dot only)
   if (!showName && !showPopover) {
@@ -92,9 +92,9 @@ const HolidayBadge: React.FC<HolidayBadgeProps> = ({
           <div className={`absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 ${config.popover} ${colors.bgDark} ${colors.text} rounded-lg shadow-lg border ${colors.border} whitespace-nowrap animate-in fade-in zoom-in-95 duration-200`}>
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">event</span>
-              <div>
-                <p className="font-bold">{holiday.name}</p>
-                <p className={`${config.text} opacity-75 capitalize`}>
+              <div className="flex flex-col">
+                <p className="font-bold leading-tight">{holiday.name}</p>
+                <p className={`${config.text} opacity-75 capitalize leading-tight`}>
                   Feriado {holiday.type}
                 </p>
               </div>

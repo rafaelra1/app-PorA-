@@ -6,11 +6,13 @@ import {
   CalendarViewMode,
   Trip,
   ItineraryActivity,
-  Transport
+  Transport,
+  HotelReservation
 } from '../types';
 import { useAuth } from './AuthContext';
 import { BRAZILIAN_HOLIDAYS } from '../constants';
 import { supabase } from '../lib/supabase';
+import { fromISODate } from '../lib/dateUtils';
 
 interface CalendarContextValue {
   // State
@@ -39,8 +41,16 @@ interface CalendarContextValue {
   syncFromTrips: (trips: Trip[]) => void;
   syncFromActivities: (activities: ItineraryActivity[], tripId: string) => void;
   syncFromTransports: (transports: Transport[], tripId: string) => void;
+  syncFromAccommodations: (accommodations: HotelReservation[], tripId: string) => void;
   syncHolidays: () => void;
   syncActivitiesFromSupabase: (tripId: string) => Promise<void>;
+  syncAccommodationsFromSupabase: (tripId: string) => Promise<void>;
+  syncTransportsFromSupabase: (tripId: string) => Promise<void>;
+
+  // Deletion functions
+  deleteEventsByActivityId: (activityId: string) => Promise<void>;
+  deleteEventsByTransportId: (transportId: string) => Promise<void>;
+  deleteEventsByAccommodationId: (accommodationId: string) => Promise<void>;
 
   // Loading
   isLoading: boolean;
@@ -134,13 +144,48 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     return labels[type] || 'Transporte';
   }, []);
 
+  const mapTransportType = useCallback((type: string): CalendarEvent['type'] => {
+    const typeMap: Record<string, CalendarEvent['type']> = {
+      flight: 'flight',
+      train: 'train',
+      bus: 'bus',
+      ferry: 'ferry',
+      transfer: 'transfer',
+      car: 'transport', // 'car' not in CalendarEventType, mapping to generic transport
+    };
+    return typeMap[type] || 'transport';
+  }, []);
+
   const loadEvents = useCallback(() => {
     try {
       setIsLoading(true);
       const stored = localStorage.getItem(`porai_calendar_events_${user?.id || 'guest'}`);
       if (stored) {
         const parsed = JSON.parse(stored);
-        setEvents(parsed);
+
+        // Deduplicate events by ID
+        const uniqueEvents = parsed.filter((event: CalendarEvent, index: number, self: CalendarEvent[]) =>
+          index === self.findIndex((t) => t.id === event.id)
+        );
+
+        // Deduplicate Trip Events (Ghost cleanup)
+        // Keep only the most recently updated event for each trip start/end if multiple exist
+        const cleanedEvents: CalendarEvent[] = [];
+        const seenTripEvents = new Set<string>();
+
+        uniqueEvents.forEach((event: CalendarEvent) => {
+          if (event.type === 'trip') {
+            // Create a unique key for trip events based on tripId and title (Start vs End)
+            const key = `${event.tripId}-${event.title}`;
+            if (seenTripEvents.has(key)) return;
+            seenTripEvents.add(key);
+            cleanedEvents.push(event);
+          } else {
+            cleanedEvents.push(event);
+          }
+        });
+
+        setEvents(cleanedEvents);
       }
     } catch (error) {
       console.error('Error loading calendar events:', error);
@@ -291,59 +336,19 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     }).filter(applyFilters);
   }, [events, parseDate, applyFilters]);
 
-  // Sync from trips - create events for trip start/end
   const syncFromTrips = useCallback((trips: Trip[]) => {
     setEvents(prev => {
-      const tripEvents: CalendarEvent[] = [];
-      const now = new Date().toISOString();
+      // Remove ALL existing trip start/end events (Embarque/Retorno) for the trips being synced
+      // We no longer create these events as per user preference
+      const tripIds = new Set(trips.map(t => t.id));
+      const filteredEvents = prev.filter(e =>
+        !(e.type === 'trip' && tripIds.has(e.tripId))
+      );
 
-      trips.forEach(trip => {
-        // Check if events already exist for this trip
-        const existingTripEvents = prev.filter(e => e.tripId === trip.id && e.type === 'trip');
-
-        if (existingTripEvents.length === 0) {
-          // Departure event
-          tripEvents.push({
-            id: `trip_start_${trip.id}`,
-            title: `Embarque: ${trip.title || trip.destination}`,
-            description: `Início da viagem para ${trip.destination}`,
-            startDate: trip.startDate,
-            startTime: '08:00',
-            endTime: '10:00',
-            allDay: false,
-            type: 'trip',
-            tripId: trip.id,
-            color: '#3b82f6',
-            location: trip.destination,
-            completed: false,
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          // Return event
-          tripEvents.push({
-            id: `trip_end_${trip.id}`,
-            title: `Retorno: ${trip.title || trip.destination}`,
-            description: `Fim da viagem em ${trip.destination}`,
-            startDate: trip.endDate,
-            startTime: '18:00',
-            endTime: '20:00',
-            allDay: false,
-            type: 'trip',
-            tripId: trip.id,
-            color: '#10b981',
-            location: trip.destination,
-            completed: false,
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
-      });
-
-      if (tripEvents.length > 0) {
-        const updated = [...prev, ...tripEvents];
-        saveEvents(updated);
-        return updated;
+      // Simply save the filtered events without adding new trip start/end events
+      if (filteredEvents.length !== prev.length) {
+        saveEvents(filteredEvents);
+        return filteredEvents;
       }
       return prev;
     });
@@ -424,10 +429,11 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
           title: `${getTransportLabel(transport.type)}: ${transport.operator} ${transport.reference}`,
           description: transport.route,
           startDate: transport.departureDate,
+          endDate: transport.arrivalDate,
           startTime: transport.departureTime,
           endTime: transport.arrivalTime,
           allDay: false,
-          type: 'activity', // Map transport types to generic activity or specific if available in CalendarEventType
+          type: mapTransportType(transport.type),
           tripId: tripId,
           transportId: transport.id,
           location: transport.departureLocation,
@@ -463,6 +469,102 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
       return prev;
     });
   }, [getTransportLabel, saveEvents]);
+
+  // Sync from accommodations
+  const syncFromAccommodations = useCallback((accommodations: HotelReservation[], tripId: string) => {
+    setEvents(prev => {
+      let currentEvents = [...prev];
+      const now = new Date().toISOString();
+      let hasChanges = false;
+
+      accommodations.forEach(acc => {
+        // Check-in Event
+        const checkInId = `acc_checkin_${acc.id}`;
+        const existingCheckInIndex = currentEvents.findIndex(e => e.id === checkInId);
+
+        const checkInEvent: CalendarEvent = {
+          id: checkInId,
+          title: `Check-in: ${acc.name}`,
+          description: acc.address,
+          startDate: acc.checkIn, // Assumes DD/MM/YYYY or YYYY-MM-DD
+          startTime: acc.checkInTime || '14:00',
+          endTime: calculateEndTime(acc.checkInTime || '14:00', 60),
+          allDay: false,
+          type: 'accommodation',
+          tripId: tripId,
+          accommodationId: acc.id,
+          location: acc.address,
+          completed: acc.status === 'confirmed',
+          createdAt: existingCheckInIndex >= 0 ? currentEvents[existingCheckInIndex].createdAt : now,
+          updatedAt: now,
+        };
+
+        if (existingCheckInIndex >= 0) {
+          // Update existing
+          const existing = currentEvents[existingCheckInIndex];
+          if (
+            existing.title !== checkInEvent.title ||
+            existing.startTime !== checkInEvent.startTime ||
+            existing.startDate !== checkInEvent.startDate ||
+            existing.description !== checkInEvent.description ||
+            existing.completed !== checkInEvent.completed
+          ) {
+            currentEvents[existingCheckInIndex] = checkInEvent;
+            hasChanges = true;
+          }
+        } else {
+          // Add new
+          currentEvents.push(checkInEvent);
+          hasChanges = true;
+        }
+
+        // Check-out Event
+        const checkOutId = `acc_checkout_${acc.id}`;
+        const existingCheckOutIndex = currentEvents.findIndex(e => e.id === checkOutId);
+
+        const checkOutEvent: CalendarEvent = {
+          id: checkOutId,
+          title: `Check-out: ${acc.name}`,
+          description: acc.address,
+          startDate: acc.checkOut,
+          startTime: acc.checkOutTime || '11:00',
+          endTime: calculateEndTime(acc.checkOutTime || '11:00', 60),
+          allDay: false,
+          type: 'accommodation',
+          tripId: tripId,
+          accommodationId: acc.id,
+          location: acc.address,
+          completed: acc.status === 'confirmed',
+          createdAt: existingCheckOutIndex >= 0 ? currentEvents[existingCheckOutIndex].createdAt : now,
+          updatedAt: now,
+        };
+
+        if (existingCheckOutIndex >= 0) {
+          // Update existing
+          const existing = currentEvents[existingCheckOutIndex];
+          if (
+            existing.title !== checkOutEvent.title ||
+            existing.startTime !== checkOutEvent.startTime ||
+            existing.startDate !== checkOutEvent.startDate ||
+            existing.description !== checkOutEvent.description
+          ) {
+            currentEvents[existingCheckOutIndex] = checkOutEvent;
+            hasChanges = true;
+          }
+        } else {
+          // Add new
+          currentEvents.push(checkOutEvent);
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        saveEvents(currentEvents);
+        return currentEvents;
+      }
+      return prev;
+    });
+  }, [calculateEndTime, saveEvents]);
 
   // Sync holidays from BRAZILIAN_HOLIDAYS constant
   const syncHolidays = useCallback(() => {
@@ -510,6 +612,13 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
   const syncActivitiesFromSupabase = useCallback(async (tripId: string) => {
     if (!user) return;
 
+    // Skip sync for temporary/invalid trip IDs (not a valid UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!tripId || !uuidRegex.test(tripId)) {
+      console.warn('syncActivitiesFromSupabase: Skipping invalid tripId:', tripId);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('itinerary_activities')
@@ -548,6 +657,141 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     }
   }, [user, syncFromActivities]);
 
+  // Sync accommodations directly from Supabase
+  const syncAccommodationsFromSupabase = useCallback(async (tripId: string) => {
+    if (!user) return;
+
+    // Skip sync for temporary/invalid trip IDs (not a valid UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!tripId || !uuidRegex.test(tripId)) {
+      console.warn('syncAccommodationsFromSupabase: Skipping invalid tripId:', tripId);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('accommodations')
+        .select('*')
+        .eq('trip_id', tripId)
+        .order('check_in', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching accommodations from Supabase:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const accommodations: HotelReservation[] = data.map(row => ({
+          id: row.id,
+          name: row.name,
+          address: row.address,
+          image: row.image,
+          rating: Number(row.rating),
+          nights: row.nights,
+          checkIn: fromISODate(row.check_in),
+          checkInTime: row.check_in_time,
+          checkOut: fromISODate(row.check_out),
+          checkOutTime: row.check_out_time,
+          confirmation: row.confirmation_code,
+          status: row.status as 'confirmed' | 'pending' | 'cancelled',
+          stars: Number(row.stars),
+          type: row.type as 'hotel' | 'home',
+          cityId: row.city_id
+        }));
+
+        syncFromAccommodations(accommodations, tripId);
+      }
+    } catch (err) {
+      console.error('Error syncing accommodations from Supabase:', err);
+    }
+  }, [user, syncFromAccommodations]);
+
+  // Sync transports directly from Supabase
+  const syncTransportsFromSupabase = useCallback(async (tripId: string) => {
+    if (!user) return;
+
+    // Skip sync for temporary/invalid trip IDs (not a valid UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!tripId || !uuidRegex.test(tripId)) {
+      console.warn('syncTransportsFromSupabase: Skipping invalid tripId:', tripId);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('transports')
+        .select('*')
+        .eq('trip_id', tripId)
+        .order('departure_date', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching transports from Supabase:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const transports: Transport[] = data.map(row => ({
+          id: row.id,
+          type: row.type,
+          operator: row.operator,
+          reference: row.reference,
+          departureLocation: row.departure_location,
+          departureCity: row.departure_city,
+          departureDate: fromISODate(row.departure_date),
+          departureTime: row.departure_time,
+          arrivalLocation: row.arrival_location,
+          arrivalCity: row.arrival_city,
+          arrivalDate: fromISODate(row.arrival_date),
+          arrivalTime: row.arrival_time,
+          duration: row.duration,
+          class: row.class,
+          seat: row.seat,
+          vehicle: row.vehicle,
+          status: row.status,
+          confirmation: row.reference,
+          route: `${row.departure_city || row.departure_location} → ${row.arrival_city || row.arrival_location}`
+        }));
+
+        syncFromTransports(transports, tripId);
+      }
+    } catch (err) {
+      console.error('Error syncing transports from Supabase:', err);
+    }
+  }, [user, syncFromTransports]);
+
+  // Deletion logic
+  const deleteEventsByActivityId = useCallback(async (activityId: string) => {
+    setEvents(prev => {
+      const updated = prev.filter(e => e.activityId !== activityId);
+      if (updated.length !== prev.length) {
+        saveEvents(updated);
+      }
+      return updated;
+    });
+  }, [saveEvents]);
+
+  const deleteEventsByTransportId = useCallback(async (transportId: string) => {
+    setEvents(prev => {
+      // Deleting by transportId or ID reference (since we generate IDs like transport_ID)
+      const updated = prev.filter(e => e.transportId !== transportId && e.id !== `transport_${transportId}`);
+      if (updated.length !== prev.length) {
+        saveEvents(updated);
+      }
+      return updated;
+    });
+  }, [saveEvents]);
+
+  const deleteEventsByAccommodationId = useCallback(async (accommodationId: string) => {
+    setEvents(prev => {
+      // Deleting checkin/checkout events
+      const updated = prev.filter(e => e.accommodationId !== accommodationId && !e.id.includes(accommodationId));
+      if (updated.length !== prev.length) {
+        saveEvents(updated);
+      }
+      return updated;
+    });
+  }, [saveEvents]);
+
   const value = useMemo(() => ({
     events,
     selectedDate,
@@ -566,8 +810,14 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     syncFromTrips,
     syncFromActivities,
     syncFromTransports,
+    syncFromAccommodations,
     syncHolidays,
     syncActivitiesFromSupabase,
+    syncAccommodationsFromSupabase,
+    syncTransportsFromSupabase,
+    deleteEventsByActivityId,
+    deleteEventsByTransportId,
+    deleteEventsByAccommodationId,
     isLoading,
   }), [
     events,
@@ -587,8 +837,14 @@ export const CalendarProvider: React.FC<CalendarProviderProps> = ({ children }) 
     syncFromTrips,
     syncFromActivities,
     syncFromTransports,
+    syncFromAccommodations,
     syncHolidays,
     syncActivitiesFromSupabase,
+    syncAccommodationsFromSupabase,
+    syncTransportsFromSupabase,
+    deleteEventsByActivityId,
+    deleteEventsByTransportId,
+    deleteEventsByAccommodationId,
     isLoading,
   ]);
 

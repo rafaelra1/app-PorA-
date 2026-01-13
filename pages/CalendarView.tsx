@@ -29,6 +29,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
     syncFromActivities,
     syncFromTransports,
     syncActivitiesFromSupabase,
+    syncAccommodationsFromSupabase,
+    syncTransportsFromSupabase,
     events
   } = useCalendar();
 
@@ -63,16 +65,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
           // Load itinerary activities from Supabase (new source of truth)
           await syncActivitiesFromSupabase(trip.id);
 
-          // Load transports from localStorage (TransportContext may also use Supabase in future)
-          if (typeof window !== 'undefined') {
-            const storedTransports = window.localStorage.getItem(`porai_trip_${trip.id}_transports`);
-            if (storedTransports) {
-              const parsed = JSON.parse(storedTransports);
-              if (Array.isArray(parsed)) {
-                syncFromTransports(parsed, trip.id);
-              }
-            }
-          }
+          // Load accommodations from Supabase
+          await syncAccommodationsFromSupabase(trip.id);
+
+          // Load transports from Supabase (new source of truth)
+          await syncTransportsFromSupabase(trip.id);
         } catch (e) {
           console.error(`Error syncing data for trip ${trip.id} to calendar`, e);
         }
@@ -80,7 +77,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trips, onViewTrip }) => {
     };
 
     loadItineraryData();
-  }, [trips, syncActivitiesFromSupabase]);
+  }, [trips, syncActivitiesFromSupabase, syncAccommodationsFromSupabase, syncTransportsFromSupabase]);
 
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate();

@@ -3,6 +3,8 @@ import ItineraryMap3D, { ItineraryStop } from '../../maps/webgl/integrations/Iti
 import { ItineraryActivity, HotelReservation, Transport, City } from '../../../types';
 import { Card } from '../../ui/Base';
 
+import { useGoogleMapsApi } from '../../../hooks/useGoogleMapsApi';
+
 interface TripMapExplorerProps {
     activities: ItineraryActivity[];
     hotels: HotelReservation[];
@@ -16,10 +18,13 @@ const TripMapExplorer: React.FC<TripMapExplorerProps> = ({
     transports,
     cities
 }) => {
+    const { isLoaded } = useGoogleMapsApi();
     const [resolvedStops, setResolvedStops] = useState<ItineraryStop[]>([]);
     const [isResolving, setIsResolving] = useState(true);
 
     useEffect(() => {
+        if (!isLoaded) return;
+
         const resolveStops = async () => {
             setIsResolving(true);
             const stops: ItineraryStop[] = [];
@@ -100,10 +105,10 @@ const TripMapExplorer: React.FC<TripMapExplorerProps> = ({
             setIsResolving(false);
         };
 
-        if (window.google) {
+        if (isLoaded) {
             resolveStops();
         }
-    }, [activities, hotels, transports, cities]);
+    }, [activities, hotels, transports, cities, isLoaded]);
 
     const mapTypeToTransportMode = (type: string): any => {
         switch (type) {
