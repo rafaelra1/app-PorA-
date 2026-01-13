@@ -1309,10 +1309,10 @@ export class GeminiService {
         return imagenUrl;
       }
     } catch (error) {
-      console.warn('Gemini Imagen failed after retries, falling back to Unsplash:', error);
+      console.warn('Gemini Imagen failed after retries, falling back to Pollinations.ai:', error);
     }
 
-    // Fallback to Unsplash
+    // Fallback to Pollinations.ai (direct URL, no CORS issues)
     return this.generateFallbackImage(prompt);
   }
 
@@ -1419,35 +1419,24 @@ export class GeminiService {
   }
 
   /**
-   * Fallback image generation using backend proxy to avoid CORS
+   * Fallback image generation using direct public URL (no CORS issues)
+   * Uses Pollinations.ai for AI-generated images from prompts
    */
-  private async generateFallbackImage(prompt: string): Promise<string> {
+  private generateFallbackImage(prompt: string): string {
     // Extract city name from prompt "City of {name}, {country}" or use raw prompt
     let query = prompt;
     if (prompt.startsWith('City of')) {
       query = prompt.replace('City of ', '').split(',')[0];
     }
 
-    const keywords = `${query},landmark,travel`;
+    // Build a descriptive prompt for Pollinations.ai
+    const imagePrompt = `${query} landmark travel photography, cinematic, golden hour, National Geographic style`;
+    const encodedPrompt = encodeURIComponent(imagePrompt);
 
-    try {
-      // Use backend proxy to fetch Unsplash image (avoids CORS)
-      const response = await fetch(`/api/fallback-image?query=${encodeURIComponent(keywords)}`);
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.url) {
-          console.log('Using Unsplash fallback via proxy');
-          return data.url;
-        }
-      }
-    } catch (error) {
-      console.warn('Backend fallback proxy failed:', error);
-    }
-
-    // Final fallback: colored placeholder with icon
-    console.log('Using local placeholder fallback');
-    return this.generateLocalPlaceholder(query);
+    // Return direct URL - browser will load this in <img> tag without CORS issues
+    const fallbackUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1280&height=720&nologo=true`;
+    console.log('Using Pollinations.ai fallback:', fallbackUrl);
+    return fallbackUrl;
   }
 
   /**

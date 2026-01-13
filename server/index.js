@@ -2,8 +2,15 @@ import { GoogleGenAI } from "@google/genai";
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load .env.local first (Vite convention), then .env as fallback
+dotenv.config({ path: join(__dirname, '..', '.env.local') });
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,10 +45,7 @@ app.post('/api/gemini/imagen', async (req, res) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
-      contents: contents,
-      config: {
-        responseMimeType: 'application/json'
-      }
+      contents: contents
     });
 
     if (!response.candidates || response.candidates.length === 0) {
