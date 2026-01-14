@@ -40,12 +40,18 @@ interface ImageData {
 // Constants
 // =============================================================================
 
-const GEMINI_DIRECT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+// Gemini 3 Models - Direct API URLs (used when not using proxy)
+const GEMINI_TEXT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+const GEMINI_IMAGE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent';
+
+// Proxy URLs (used in production to protect API key)
 const API_PROXY_URL = '/api/gemini';
+const API_PROXY_V3_URL = '/api/gemini/v3';
+const API_IMAGE_PROXY_URL = '/api/gemini/imagen';
 
 // Use proxy in production to protect API key
 const USE_PROXY = import.meta.env.PROD || import.meta.env.VITE_USE_API_PROXY === 'true';
-const API_BASE_URL = USE_PROXY ? API_PROXY_URL : GEMINI_DIRECT_URL;
+const API_BASE_URL = USE_PROXY ? API_PROXY_URL : GEMINI_TEXT_URL;
 
 const MIME_TYPES = {
   JPEG: 'image/jpeg',
@@ -1305,7 +1311,7 @@ export class GeminiService {
   }
 
   /**
-   * Generate an AI image using Gemini Imagen 3
+   * Generate an AI image using Gemini 3 Pro Image
    */
   async generateImage(
     prompt: string,
@@ -1314,14 +1320,14 @@ export class GeminiService {
     console.log(`Generating image for prompt: ${prompt}`);
 
     try {
-      // Try Gemini Imagen 3 first with retries
+      // Try Gemini 3 Pro Image first with retries
       const imagenUrl = await this.generateWithImagenAPI(prompt, options);
       if (imagenUrl) {
-        console.log('Image generated successfully with Gemini Imagen');
+        console.log('Image generated successfully with Gemini 3 Pro Image');
         return imagenUrl;
       }
     } catch (error) {
-      console.warn('Gemini Imagen failed after retries, falling back to Pollinations.ai:', error);
+      console.warn('Gemini 3 Pro Image failed after retries, falling back to Pollinations.ai:', error);
     }
 
     // Fallback to Pollinations.ai (direct URL, no CORS issues)
@@ -1329,7 +1335,7 @@ export class GeminiService {
   }
 
   /**
-   * Generate image using Gemini Imagen 3 API
+   * Generate image using Gemini 3 Pro Image API
    */
   private async generateWithImagenAPI(
     prompt: string,
@@ -1360,22 +1366,24 @@ export class GeminiService {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               prompt: enhancedPrompt,
-              aspectRatio: options.aspectRatio,
+              aspectRatio: options.aspectRatio || '16:9',
+              imageSize: options.imageSize || '2K',
               negativePrompt: 'blurry, low quality, distorted, ugly, watermark, text, signature, grainy, deformed'
             }),
           });
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.warn(`Imagen proxy error (attempt ${attempt}):`, errorData);
-            throw new Error(`Imagen API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+            console.warn(`Gemini 3 Image proxy error (attempt ${attempt}):`, errorData);
+            throw new Error(`Gemini 3 Image API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
           }
 
           const data = await response.json();
 
           if (data.predictions && data.predictions[0]?.bytesBase64Encoded) {
             const base64Image = data.predictions[0].bytesBase64Encoded;
-            return `data:image/png;base64,${base64Image}`;
+            const mimeType = data.predictions[0].mimeType || 'image/png';
+            return `data:${mimeType};base64,${base64Image}`;
           }
 
           throw new Error('No image data in response');
@@ -1591,7 +1599,7 @@ export class GeminiService {
 Be specific and detailed for accurate recreation.`;
 
       const analysisRequest = {
-        model: "gemini-2.0-flash-exp",
+        model: "gemini-3-flash-preview",
         contents: [{
           parts: [
             { text: analysisPrompt },
@@ -2115,7 +2123,7 @@ Create a new image that maintains the essence of the original but applies the re
           debugInfo: index === 0 ? {
             prompt: prompt,
             rawResponse: text,
-            model: 'gemini-2.5-flash'
+            model: 'gemini-3-flash-preview'
           } : undefined
         };
 

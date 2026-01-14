@@ -65,7 +65,7 @@ app.post('/api/gemini', async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: modelName || "gemini-1.5-flash",
+      model: modelName || "gemini-3-flash-preview",
       generationConfig: config
     });
 
@@ -123,10 +123,10 @@ app.post('/api/gemini', async (req, res) => {
   }
 });
 
-// Imagen API proxy endpoint (Updated to use Gemini 2.5 Flash Image via SDK)
+// Gemini 3 Pro Image Generation endpoint
 app.post('/api/gemini/imagen', async (req, res) => {
   try {
-    const { prompt, aspectRatio } = req.body;
+    const { prompt, aspectRatio, imageSize, useGoogleSearch } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -137,30 +137,38 @@ app.post('/api/gemini/imagen', async (req, res) => {
     }
 
     console.log('📸 Generating image with prompt:', prompt.substring(0, 100) + '...');
-    console.log('🤖 Model: gemini-2.5-flash-image');
+    console.log('🤖 Model: gemini-3-pro-image-preview');
+    console.log('📐 Aspect Ratio:', aspectRatio || '16:9', '| Size:', imageSize || '2K');
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // Add "generate an image" context to the prompt mostly for safety/clarity
-    // The specific model usage is what triggers image generation
+    // Use Gemini 3 Pro Image for high-quality image generation
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-pro-image-preview",
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+      }
+    });
+
     const contents = [
       { role: "user", parts: [{ text: prompt }] }
     ];
 
     const response = await model.generateContent({ contents });
 
-    if (!response.candidates || response.candidates.length === 0) {
+    if (!response.response?.candidates || response.response.candidates.length === 0) {
       throw new Error('No candidates returned from Gemini');
     }
 
-    const parts = response.candidates[0].content.parts;
+    const parts = response.response.candidates[0].content.parts;
     let base64Image = null;
+    let imageMimeType = 'image/png';
 
     // Search for image data in the response parts
     for (const part of parts) {
       if (part.inlineData && part.inlineData.data) {
         base64Image = part.inlineData.data;
+        imageMimeType = part.inlineData.mimeType || 'image/png';
         break;
       }
     }
@@ -172,7 +180,7 @@ app.post('/api/gemini/imagen', async (req, res) => {
         console.warn('⚠️ Model returned text instead of image:', textPart.text);
 
         // Check for common policy violation messages
-        if (textPart.text.includes('policy') || textPart.text.includes('violates')) {
+        if (textPart.text.includes('policy') || textPart.text.includes('violates') || textPart.text.includes('cannot')) {
           return res.status(400).json({
             error: 'Image generation blocked by safety policy',
             details: textPart.text
@@ -182,17 +190,17 @@ app.post('/api/gemini/imagen', async (req, res) => {
       throw new Error('No image data found in response');
     }
 
-    console.log('✅ Image generated successfully via SDK');
+    console.log('✅ Image generated successfully with Gemini 3 Pro Image');
 
     // Return in the format expected by the frontend
-    // Use the exact structure the frontend expects or specific predictions format
     res.json({
       predictions: [
         {
           bytesBase64Encoded: base64Image,
-          mimeType: 'image/png'
+          mimeType: imageMimeType
         }
-      ]
+      ],
+      groundingMetadata: response.response.candidates[0].groundingMetadata
     });
 
   } catch (error) {
@@ -210,6 +218,84 @@ app.post('/api/gemini/imagen', async (req, res) => {
     }
 
     res.status(500).json({ error: 'Internal server error', message: error.message });
+  }
+});
+
+// Gemini 3 with Thinking Level support
+app.post('/api/gemini/v3', async (req, res) => {
+  try {
+    const { prompt, image, tools, responseMimeType, thinkingLevel, mediaResolution, model: modelName } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'API key not configured' });
+    }
+
+    console.log('🧠 V3 Request - Thinking Level:', thinkingLevel || 'default');
+
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+    // Build generation config with thinking level
+    const generationConfig = {};
+    if (thinkingLevel) {
+      generationConfig.thinkingConfig = { thinkingLevel };
+    }
+    if (responseMimeType) {
+      generationConfig.responseMimeType = responseMimeType;
+    }
+
+    const model = genAI.getGenerativeModel({
+      model: modelName || "gemini-3-flash-preview",
+      generationConfig
+    });
+
+    // Build request parts
+    const parts = [{ text: prompt }];
+
+    if (image) {
+      // Ensure clean base64
+      const cleanData = image.data && image.data.includes('base64,')
+        ? image.data.split('base64,')[1]
+        : image.data;
+
+      if (cleanData) {
+        parts.push({
+          inlineData: {
+            mimeType: image.mimeType,
+            data: cleanData
+          }
+        });
+      }
+    }
+
+    const contents = [{ role: 'user', parts }];
+
+    console.log('📝 V3 Proxying request to model:', modelName || 'gemini-3-flash-preview');
+
+    const result = await model.generateContent({ contents });
+    const response = await result.response;
+
+    // Return compatible structure
+    res.json({
+      candidates: [
+        {
+          content: {
+            parts: [{ text: response.text() }]
+          },
+          thoughtsText: response.candidates?.[0]?.content?.parts?.find(p => p.thought)?.text
+        }
+      ]
+    });
+
+  } catch (error) {
+    console.error('❌ V3 Proxy error:', error);
+    res.status(error.status || 500).json({
+      error: 'Gemini V3 Proxy Error',
+      message: error.message
+    });
   }
 });
 
@@ -231,6 +317,39 @@ app.get('/api/fallback-image', async (req, res) => {
   } catch (error) {
     console.error('❌ Fallback image error:', error);
     res.status(500).json({ error: 'Failed to fetch fallback image' });
+  }
+});
+
+// Generic Image Proxy to bypass CORS/403
+app.get('/api/proxy-image', async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    const decodedUrl = decodeURIComponent(url);
+    console.log('🔄 Proxying image:', decodedUrl);
+
+    const response = await fetch(decodedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+    res.setHeader('Content-Type', contentType);
+    res.send(Buffer.from(buffer));
+
+  } catch (error) {
+    console.error('❌ Proxy Image Error:', error);
+    res.status(500).json({ error: 'Failed to proxy image' });
   }
 });
 

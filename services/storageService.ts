@@ -108,10 +108,13 @@ class StorageService {
     path: string
   ): Promise<string | null> {
     try {
-      // Download image
-      const response = await fetch(imageUrl);
+      // Download image via proxy to avoid CORS/403
+      // Use relative path so Vite directs it to backend
+      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+      const response = await fetch(proxyUrl);
+
       if (!response.ok) {
-        console.error('Failed to fetch image from URL:', imageUrl);
+        console.error('Failed to fetch image from URL via proxy:', imageUrl);
         return null;
       }
 
