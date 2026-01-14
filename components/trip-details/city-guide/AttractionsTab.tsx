@@ -13,6 +13,7 @@ import DiscoveryMode from './DiscoveryMode';
 import { getGeminiService } from '../../../services/geminiService';
 import { googlePlacesService } from '../../../services/googlePlacesService';
 import discoveryService from '../../../services/discoveryService';
+import { getCategoryIconConfig, isCategoryIconsConfigured } from '../../../config/categoryIcons';
 
 // Import animations
 import '../../../styles/discovery-mode.css';
@@ -472,9 +473,29 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                     className="min-w-[200px] max-w-[200px] bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group/card snap-start"
                                 >
                                     <div>
-                                        <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-500 mb-3 group-hover/card:scale-110 transition-transform">
-                                            <Ticket className="w-5 h-5" />
-                                        </div>
+                                        {(() => {
+                                            const iconConfig = getCategoryIconConfig(attr.category);
+                                            const useCustomIcon = isCategoryIconsConfigured();
+                                            return (
+                                                <div className={`w-10 h-10 bg-${iconConfig.fallbackColor}-50 rounded-full flex items-center justify-center mb-3 group-hover/card:scale-110 transition-transform overflow-hidden`}>
+                                                    {useCustomIcon ? (
+                                                        <img
+                                                            src={iconConfig.iconUrl}
+                                                            alt={iconConfig.name}
+                                                            className="w-8 h-8 object-contain"
+                                                            onError={(e) => {
+                                                                // Fallback to Ticket icon if image fails to load
+                                                                const target = e.target as HTMLImageElement;
+                                                                target.style.display = 'none';
+                                                                target.parentElement?.classList.add('fallback-icon');
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <Ticket className={`w-5 h-5 text-${iconConfig.fallbackColor}-500`} />
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                         <h4 className="font-bold text-gray-800 leading-tight mb-1">{attr.name}</h4>
                                         <p className="text-xs text-gray-500 line-clamp-2">{attr.description}</p>
                                     </div>

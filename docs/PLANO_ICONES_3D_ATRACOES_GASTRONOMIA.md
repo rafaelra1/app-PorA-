@@ -11,9 +11,76 @@ O componente `AttractionsTab.tsx` exibe a seção "Destaques Imperdíveis da Cid
 </div>
 ```
 
-## Solução Proposta
+---
 
-Gerar um **ícone 3D personalizado** para cada atração quando a lista é carregada.
+# ABORDAGEM 1: Ícones Pré-Definidos por Categoria (IMPLEMENTADO ✅)
+
+A solução mais simples: usar ícones 3D pré-criados, organizados por categoria, armazenados no Supabase Storage.
+
+## Como Funciona
+
+1. Faça upload dos ícones no Supabase Storage
+2. O sistema mapeia a categoria da atração para o ícone correspondente
+3. Se o ícone não existir, exibe o fallback (Ticket icon)
+
+## Passo a Passo: Configurar Ícones no Supabase
+
+### 1. Criar o Bucket no Supabase
+
+1. Acesse seu projeto no [Supabase Dashboard](https://supabase.com/dashboard)
+2. Vá em **Storage** > **New Bucket**
+3. Nome do bucket: `category-icons`
+4. Marque: **Public bucket** ✅
+5. Clique em **Create bucket**
+
+### 2. Upload dos Ícones
+
+Faça upload de 12 arquivos PNG (os ícones 3D) com estes nomes exatos:
+
+| Arquivo | Categoria |
+|---------|-----------|
+| `adventure.png` | Aventura, trilhas, escalada |
+| `relaxation.png` | Praias, resorts, relaxamento |
+| `cultural.png` | Museus, galerias, arte |
+| `culinary.png` | Restaurantes, gastronomia |
+| `nature-wildlife.png` | Parques, jardins, natureza |
+| `urban-exploration.png` | Cidade, compras, mercados |
+| `water-sports.png` | Surf, mergulho, esportes aquáticos |
+| `entertainment.png` | Teatro, shows, cinema |
+| `wellness-spa.png` | Spa, massagem, bem-estar |
+| `historical.png` | Histórico, castelos, monumentos |
+| `nightlife.png` | Vida noturna, bares, baladas |
+| `family-fun.png` | Família, parques temáticos |
+
+### 3. Verificar Configuração
+
+O sistema usa a variável de ambiente `VITE_SUPABASE_URL` para construir a URL dos ícones:
+
+```
+{VITE_SUPABASE_URL}/storage/v1/object/public/category-icons/adventure.png
+```
+
+Se `VITE_SUPABASE_URL` não estiver configurado, o sistema usa o ícone de fallback (Ticket).
+
+### Arquivos Modificados
+
+- **`config/categoryIcons.ts`** - Mapeamento de categorias para ícones
+- **`AttractionsTab.tsx`** - Renderização condicional do ícone
+
+### Mapeamento de Categorias
+
+O arquivo `config/categoryIcons.ts` contém expressões regulares que mapeiam categorias em português/inglês:
+
+```typescript
+// Exemplo: 'historical' captura várias categorias
+patterns: /históric|historic|antig|ancient|ruína|ruin|palácio|palace|castelo|castle|igreja|church/i
+```
+
+---
+
+# ABORDAGEM 2: Geração por IA (Alternativa Futura)
+
+Solução avançada: gerar ícones personalizados por IA para cada atração individual.
 
 ---
 
