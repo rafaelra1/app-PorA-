@@ -10,7 +10,7 @@ import { formatDate, parseDisplayDate } from '../../../lib/dateUtils';
 import { generateItineraryFromDocuments, identifyItineraryGaps } from '../../../services/itineraryGenerationService';
 import { googleCalendarService } from '../../../services/googleCalendarService';
 import { useNotifications } from '../../../contexts/NotificationContext';
-import MiniCalendar from './MiniCalendar';
+import DayCarousel from './DayCarousel';
 import {
     DndContext,
     closestCenter,
@@ -760,26 +760,23 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                 </div>
             </div>
 
-            {/* Mobile Search (Below bar on small screens if needed, but for now hidden on mobile or just wrapped) */}
+            {/* Day Carousel - Quick navigation between days */}
+            {tripStartDate && tripEndDate && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 mb-4">
+                    <DayCarousel
+                        tripStartDate={tripStartDate}
+                        tripEndDate={tripEndDate}
+                        activities={customActivities}
+                        selectedDay={expandedDay}
+                        onDayClick={handleCalendarDayClick}
+                        cities={cities}
+                    />
+                </div>
+            )}
 
-            {/* Two-column layout: Calendar sidebar + Main content */}
-            <div className="flex gap-6">
-                {/* Mini Calendar Sidebar - Hidden on mobile */}
-                {tripStartDate && tripEndDate && (
-                    <div className="hidden lg:block w-64 shrink-0">
-                        <MiniCalendar
-                            tripStartDate={tripStartDate}
-                            tripEndDate={tripEndDate}
-                            activities={customActivities}
-                            selectedDay={expandedDay}
-                            onDayClick={handleCalendarDayClick}
-                        />
-                    </div>
-                )}
-
-                {/* Main Content */}
-                <div className="flex-1 min-w-0 space-y-4">
-                    <DndContext
+            {/* Main Content */}
+            <div className="space-y-4">
+                <DndContext
                         sensors={sensors}
                         collisionDetection={closestCenter}
                         onDragEnd={handleDragEnd}
@@ -911,15 +908,14 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                     );
                 })}
 
-                    </DndContext>
+                </DndContext>
 
-                    {/* Empty State if no days generated */}
-                    {itineraryData.length === 0 && (
-                        <div className="text-center py-12">
-                            <p className="text-text-muted">Nenhum dia de itinerário gerado.</p>
-                        </div>
-                    )}
-                </div>
+                {/* Empty State if no days generated */}
+                {itineraryData.length === 0 && (
+                    <div className="text-center py-12">
+                        <p className="text-text-muted">Nenhum dia de itinerário gerado.</p>
+                    </div>
+                )}
             </div>
 
             {/* Add/Edit Activity Modal */}
