@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ItineraryDay, Activity, ItineraryActivity, ItineraryActivityType, HotelReservation, Transport } from '../../../types';
 import { Button, Card, Skeleton, SkeletonText } from '../../ui/Base';
 import { getGeminiService } from '../../../services/geminiService';
@@ -10,6 +10,7 @@ import { formatDate, parseDisplayDate } from '../../../lib/dateUtils';
 import { generateItineraryFromDocuments, identifyItineraryGaps } from '../../../services/itineraryGenerationService';
 import { googleCalendarService } from '../../../services/googleCalendarService';
 import { useNotifications } from '../../../contexts/NotificationContext';
+import MiniCalendar from './MiniCalendar';
 import {
     DndContext,
     closestCenter,
@@ -547,10 +548,24 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     };
 
     const [expandedDay, setExpandedDay] = useState<number | null>(1);
+    const dayRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
     // Toggle day expansion
     const toggleDay = (dayNumber: number) => {
         setExpandedDay(prev => prev === dayNumber ? null : dayNumber);
+    };
+
+    // Handle calendar day click - expand and scroll to day
+    const handleCalendarDayClick = (dayNumber: number) => {
+        setExpandedDay(dayNumber);
+
+        // Scroll to the day card with smooth animation
+        setTimeout(() => {
+            const dayElement = dayRefs.current.get(dayNumber);
+            if (dayElement) {
+                dayElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 100);
     };
 
     // =============================================================================
@@ -672,9 +687,9 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     }
 
     return (
-        <div className="animate-in fade-in duration-300 space-y-4 pb-20">
+        <div className="animate-in fade-in duration-300 pb-20">
             {/* Filter Bar */}
-            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100 sticky top-0 z-20 backdrop-blur-sm">
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100 sticky top-0 z-20 backdrop-blur-sm mb-4">
                 {/* Filters */}
                 <div className="flex gap-2 overflow-x-auto hide-scrollbar w-full md:w-auto px-1">
                     {filterTabs.map(tab => (
@@ -747,12 +762,29 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
 
             {/* Mobile Search (Below bar on small screens if needed, but for now hidden on mobile or just wrapped) */}
 
-            <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-            >
-                {filteredItinerary.map((day) => {
+            {/* Two-column layout: Calendar sidebar + Main content */}
+            <div className="flex gap-6">
+                {/* Mini Calendar Sidebar - Hidden on mobile */}
+                {tripStartDate && tripEndDate && (
+                    <div className="hidden lg:block w-64 shrink-0">
+                        <MiniCalendar
+                            tripStartDate={tripStartDate}
+                            tripEndDate={tripEndDate}
+                            activities={customActivities}
+                            selectedDay={expandedDay}
+                            onDayClick={handleCalendarDayClick}
+                        />
+                    </div>
+                )}
+
+                {/* Main Content */}
+                <div className="flex-1 min-w-0 space-y-4">
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                    >
+                        {filteredItinerary.map((day) => {
                     const isExpanded = expandedDay === day.day;
                     const hasActivities = day.itineraryActivities.length > 0;
                     const conflicts = detectConflicts(day.itineraryActivities);
@@ -760,6 +792,9 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                     return (
                         <div
                             key={day.day}
+                            ref={(el) => {
+                                if (el) dayRefs.current.set(day.day, el);
+                            }}
                             className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300 animate-slide-up"
                             style={{ animationDelay: `${day.day * 100}ms` }}
                         >
@@ -876,16 +911,16 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                     );
                 })}
 
-            </DndContext>
+                    </DndContext>
 
-            {/* Empty State if no days generated */}
-            {
-                itineraryData.length === 0 && (
-                    <div className="text-center py-12">
-                        <p className="text-text-muted">Nenhum dia de itinerário gerado.</p>
-                    </div>
-                )
-            }
+                    {/* Empty State if no days generated */}
+                    {itineraryData.length === 0 && (
+                        <div className="text-center py-12">
+                            <p className="text-text-muted">Nenhum dia de itinerário gerado.</p>
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {/* Add/Edit Activity Modal */}
             <AddActivityModal
