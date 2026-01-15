@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { Trip, Transport, TransportType } from '../../../types';
+import { Trip, Transport, TransportType, City } from '../../../types';
 import { useTransport } from '../../../contexts/TransportContext'; // To be connected
 import TransportCard from './TransportCard';
 import { useLocalStorage } from '../../../hooks/useLocalStorage'; // Start with local storage for migration check
@@ -8,6 +8,7 @@ import { Skeleton } from '../../ui/Base';
 
 interface TransportViewProps {
     trip: Trip;
+    cities?: City[]; // Made optional to avoid immediate break, but intended to be passed
     onAddClick?: () => void;
     onEditClick?: (transport: Transport) => void;
     onDeleteClick?: (id: string) => void;
@@ -16,11 +17,13 @@ interface TransportViewProps {
 
 const TransportView: React.FC<TransportViewProps> = ({
     trip,
+    cities = [],
     onAddClick,
     onEditClick,
     onDeleteClick,
     isLoading
 }) => {
+    // ... hooks ...
     const {
         transports,
         fetchTransports,
@@ -92,9 +95,40 @@ const TransportView: React.FC<TransportViewProps> = ({
         displayedTransports.reverse();
     }
 
+    // Logic for alerts
+    const hasMissingDates = !trip.startDate || !trip.endDate;
+    const hasMissingTransports = cities.length > 1 && transports.length === 0;
 
     return (
         <div className="space-y-6">
+            {/* Alerts Section */}
+            {(hasMissingDates || hasMissingTransports) && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+                    <div className="p-2 bg-amber-100 rounded-full shrink-0">
+                        <span className="material-symbols-outlined text-amber-600 text-xl">warning</span>
+                    </div>
+                    <div className="flex-1">
+                        <h4 className="font-bold text-amber-800 text-sm mb-1">Atenção ao Planejamento</h4>
+                        <div className="text-sm text-amber-700 space-y-1">
+                            {hasMissingDates && (
+                                <p>• As datas da viagem ainda não foram definidas. Defina o período para organizar melhor seus deslocamentos.</p>
+                            )}
+                            {hasMissingTransports && (
+                                <p>• Você adicionou cidades ao roteiro mas ainda não definiu como ir de uma para outra. Adicione os transportes entre elas.</p>
+                            )}
+                        </div>
+                    </div>
+                    {!hasMissingDates && (
+                        <button
+                            onClick={onAddClick}
+                            className="bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                        >
+                            Resolver
+                        </button>
+                    )}
+                </div>
+            )}
+
             <div className="flex flex-col gap-4">
                 {/* Controls Bar */}
                 <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100">

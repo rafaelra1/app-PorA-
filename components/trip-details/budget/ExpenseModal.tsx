@@ -188,7 +188,7 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -320,8 +320,8 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                             key={method}
                                             onClick={() => setDistributionMethod(method)}
                                             className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${distributionMethod === method
-                                                    ? 'bg-indigo-600 text-white'
-                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                ? 'bg-indigo-600 text-white'
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                                 }`}
                                         >
                                             {method === 'EQUAL' && 'Igual'}
@@ -388,8 +388,8 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                     key={cat.id}
                                     onClick={() => setCategoryId(cat.id)}
                                     className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all ${categoryId === cat.id
-                                            ? 'bg-indigo-50 border-indigo-300 text-indigo-600'
-                                            : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                        ? 'bg-indigo-50 border-indigo-300 text-indigo-600'
+                                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                                         }`}
                                 >
                                     <span className="material-symbols-outlined">{cat.icon}</span>

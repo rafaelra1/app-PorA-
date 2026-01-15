@@ -70,10 +70,12 @@ export const generateAutoTasks = (startDate?: string, context: any = {}): Prepar
 
             if (startDate) {
                 const date = new Date(startDate);
-                // Simple logic: most things 7 days before, simpler for MVP
-                // In reality each rule could have a 'daysBeforeTrip' offset
-                date.setDate(date.getDate() - 7);
-                deadline = date.toISOString().split('T')[0];
+                if (!isNaN(date.getTime())) {
+                    // Simple logic: most things 7 days before, simpler for MVP
+                    // In reality each rule could have a 'daysBeforeTrip' offset
+                    date.setDate(date.getDate() - 7);
+                    deadline = date.toISOString().split('T')[0];
+                }
             }
 
             return {

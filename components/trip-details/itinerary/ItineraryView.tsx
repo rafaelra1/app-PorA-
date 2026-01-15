@@ -90,6 +90,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     const [selectedDay, setSelectedDay] = useState(1);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingActivity, setEditingActivity] = useState<ItineraryActivity | null>(null);
+    const [viewMode, setViewMode] = useState<'list' | 'grid'>('list'); // Add View Mode state
     const [deletingActivityId, setDeletingActivityId] = useState<string | null>(null);
     const [isSyncingDocs, setIsSyncingDocs] = useState(false);
     const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
@@ -558,6 +559,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     // =============================================================================
     const [filterType, setFilterType] = useState<'tudo' | 'reservas' | 'restaurantes' | 'vida_noturna' | 'passeios' | 'compras' | 'outros'>('tudo');
     const [searchQuery, setSearchQuery] = useState('');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc'); // Add Sort Order state
 
     const getCategoryForType = (type: ItineraryActivityType): 'reservas' | 'restaurantes' | 'vida_noturna' | 'passeios' | 'compras' | 'outros' => {
         // Reservas (Logistics)
@@ -579,7 +581,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     };
 
     const filteredItinerary = useMemo(() => {
-        return itineraryData.map(day => {
+        const result = itineraryData.map(day => {
             const filteredActivities = day.itineraryActivities.filter(activity => {
                 // Type Filter
                 if (filterType !== 'tudo') {
@@ -604,7 +606,15 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                 itineraryActivities: filteredActivities
             };
         }).filter(day => day.itineraryActivities.length > 0 || filterType === 'tudo');
-    }, [itineraryData, filterType, searchQuery]);
+
+
+
+        // Apply Sorting
+        if (sortOrder === 'desc') {
+            return [...result].reverse();
+        }
+        return result;
+    }, [itineraryData, filterType, searchQuery, sortOrder]);
 
     const filterTabs = [
         { id: 'tudo', label: 'Tudo' },
@@ -708,17 +718,37 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                     <div className="w-px h-6 bg-gray-200 mx-1"></div>
 
                     {/* Sort */}
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200/50 hover:bg-gray-50 text-xs font-bold text-text-muted transition-all shadow-sm">
-                        <span className="material-symbols-outlined text-base">swap_vert</span>
+                    <button
+                        onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm ${sortOrder === 'desc'
+                            ? 'bg-purple-50 border-purple-200 text-purple-700'
+                            : 'bg-white border-gray-200/50 hover:bg-gray-50 text-text-muted'
+                            }`}
+                    >
+                        <span className="material-symbols-outlined text-base">
+                            {sortOrder === 'asc' ? 'arrow_downward' : 'arrow_upward'}
+                        </span>
                         <span className="hidden sm:inline">Data</span>
                     </button>
 
                     {/* View Toggle */}
                     <div className="flex bg-white rounded-xl border border-gray-200 p-0.5 shadow-sm">
-                        <button className="p-1 rounded-lg bg-gray-100 text-text-main transition-all shadow-sm">
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={`p-1 rounded-lg transition-all shadow-sm ${viewMode === 'list'
+                                ? 'bg-gray-100 text-text-main'
+                                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                                }`}
+                        >
                             <span className="material-symbols-outlined text-lg">list</span>
                         </button>
-                        <button className="p-1 rounded-lg text-gray-400 hover:text-gray-600 transition-all">
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={`p-1 rounded-lg transition-all shadow-sm ${viewMode === 'grid'
+                                ? 'bg-gray-100 text-text-main'
+                                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                                }`}
+                        >
                             <span className="material-symbols-outlined text-lg">grid_view</span>
                         </button>
                     </div>
@@ -798,85 +828,87 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                             </div>
 
                             {/* Accordion Body */}
-                            <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                                <div className="overflow-hidden">
-                                    <div className="p-5 pt-0 border-t border-gray-100">
-                                        <div className="space-y-3 mt-4">
-                                            {hasActivities ? (
-                                                <SortableContext
-                                                    items={day.itineraryActivities.map(a => a.id)}
-                                                    strategy={verticalListSortingStrategy}
-                                                >
-                                                    {day.itineraryActivities.map((activity) => {
-                                                        const config = activityTypeConfig[activity.type];
-                                                        const hour = parseInt(activity.time.split(':')[0]);
-                                                        const period = hour < 12 ? 'Manhã' : hour < 18 ? 'Tarde' : 'Noite';
+                            <div className={`transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                <div className={`p-5 pt-0 border-t border-gray-100 mt-4 ${viewMode === 'grid'
+                                    ? 'grid grid-cols-1 md:grid-cols-2 gap-4'
+                                    : 'space-y-4'
+                                    }`}>
+                                    <div className={hasActivities ? "contents" : "w-full col-span-full"}>
+                                        {hasActivities ? (
+                                            <SortableContext
+                                                items={day.itineraryActivities.map(a => a.id)}
+                                                strategy={verticalListSortingStrategy}
+                                            >
+                                                {day.itineraryActivities.map((activity) => {
+                                                    const hour = parseInt(activity.time.split(':')[0]);
+                                                    const period = hour < 12 ? 'Manhã' : hour < 18 ? 'Tarde' : 'Noite';
 
-                                                        return (
+                                                    return (
+                                                        <div key={activity.id} className={viewMode === 'grid' ? 'h-full' : ''}>
                                                             <ItineraryActivityItem
-                                                                key={activity.id}
                                                                 activity={activity}
-                                                                dayCity={day.city}
-                                                                config={config}
-                                                                period={period}
-                                                                onToggleComplete={toggleActivityComplete}
-                                                                onDetails={openDetailsModal}
-                                                                onReview={handleJournalEntry}
-                                                                onGenerateImage={generateActivityImage}
+                                                                config={activityTypeConfig[activity.type]}
                                                                 onEdit={openEditModal}
                                                                 onDelete={handleRemoveActivity}
+                                                                onToggleComplete={toggleActivityComplete}
+                                                                onGenerateImage={generateActivityImage}
+                                                                onDetails={openDetailsModal}
+                                                                onReview={handleJournalEntry}
+                                                                isConflict={conflicts.has(activity.id)}
+                                                                period={period}
                                                                 deletingActivityId={deletingActivityId}
                                                                 setDeletingActivityId={setDeletingActivityId}
-                                                                isConflict={conflicts.has(activity.id)}
                                                             />
-                                                        );
-                                                    })}
-                                                </SortableContext>
-                                            ) : (
-                                                <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                                    <div className="size-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-gray-300">
-                                                        <span className="material-symbols-outlined text-2xl">event_busy</span>
-                                                    </div>
-                                                    <p className="text-sm text-text-muted font-medium">Nenhuma atividade planejada</p>
-                                                    <div className="flex flex-col gap-2 mt-3 items-center">
-                                                        <button
-                                                            onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
-                                                            className="px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-text-main hover:bg-gray-50 transition-all shadow-sm"
-                                                        >
-                                                            Manual
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleFillGaps(day.day, day.date)}
-                                                            className="px-4 py-1.5 rounded-xl bg-purple-50 text-purple-600 text-xs font-bold hover:bg-purple-100 transition-all flex items-center gap-1.5"
-                                                        >
-                                                            <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                                                            Sugerir com IA
-                                                        </button>
-                                                    </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </SortableContext>
+                                        ) : (
+                                            <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200 w-full">
+                                                <div className="size-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-gray-300">
+                                                    <span className="material-symbols-outlined text-2xl">event_busy</span>
                                                 </div>
-                                            )}
-
-                                            {/* Add Activity Button (Bottom of list) */}
-                                            {hasActivities && (
-                                                <button
-                                                    onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
-                                                    className="w-full flex items-center justify-center gap-2 p-3 mt-2 rounded-xl border border-dashed border-gray-300 text-gray-500 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all group"
-                                                >
-                                                    <div className="size-6 rounded-full bg-gray-100 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                                                        <span className="material-symbols-outlined text-sm">add</span>
-                                                    </div>
-                                                    <span className="text-xs font-bold">Adicionar atividade no Dia {day.day}</span>
-                                                </button>
-                                            )}
-                                        </div>
+                                                <p className="text-sm text-text-muted font-medium">Nenhuma atividade planejada</p>
+                                                <div className="flex flex-col gap-2 mt-3 items-center">
+                                                    <button
+                                                        onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
+                                                        className="px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-text-main hover:bg-gray-50 transition-all shadow-sm"
+                                                    >
+                                                        Manual
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleFillGaps(day.day, day.date)}
+                                                        className="px-4 py-1.5 rounded-xl bg-purple-50 text-purple-600 text-xs font-bold hover:bg-purple-100 transition-all flex items-center gap-1.5"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                                                        Sugerir com IA
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
+
+                                    {/* Add Activity Button (Bottom of list, spans full width in grid) */}
+                                    {hasActivities && (
+                                        <div className="col-span-full">
+                                            <button
+                                                onClick={() => onOpenAddActivityModal ? onOpenAddActivityModal(day.day, day.date) : setIsAddModalOpen(true)}
+                                                className="w-full flex items-center justify-center gap-2 p-3 mt-2 rounded-xl border border-dashed border-gray-300 text-gray-500 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all group"
+                                            >
+                                                <div className="size-6 rounded-full bg-gray-100 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
+                                                    <span className="material-symbols-outlined text-sm">add</span>
+                                                </div>
+                                                <span className="text-xs font-bold">Adicionar atividade no Dia {day.day}</span>
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
                     );
                 })}
 
-            </DndContext>
+            </DndContext >
 
             {/* Empty State if no days generated */}
             {

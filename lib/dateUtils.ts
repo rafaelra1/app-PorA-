@@ -261,3 +261,25 @@ export function fromISODate(dateStr: string): string {
 
     return '';
 }
+
+/**
+ * Extract a valid time string (HH:MM) from a potentially messy string
+ * @param timeStr - Raw time string (e.g. "a partir de 14:00")
+ * @returns Clean time string (HH:MM) or null if invalid
+ */
+export function sanitizeTime(timeStr: string | null | undefined): string | null {
+    if (!timeStr) return null;
+
+    // Pattern looking for HH:MM (optional seconds) in the string
+    // Matches 00-23 for hours and 00-59 for minutes
+    const match = timeStr.match(/([0-1]?[0-9]|2[0-3]):([0-5][0-9])/);
+
+    if (match) {
+        // Pad hours with 0 if needed (e.g. 9:00 -> 09:00)
+        const hours = match[1].padStart(2, '0');
+        const minutes = match[2];
+        return `${hours}:${minutes}`;
+    }
+
+    return null;
+}

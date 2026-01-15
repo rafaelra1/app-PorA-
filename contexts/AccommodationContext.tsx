@@ -3,7 +3,7 @@ import { HotelReservation } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { useCalendar } from './CalendarContext';
-import { toISODate, fromISODate } from '../lib/dateUtils';
+import { toISODate, fromISODate, sanitizeTime } from '../lib/dateUtils';
 
 interface AccommodationContextType {
     accommodations: HotelReservation[];
@@ -87,9 +87,9 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
                 rating: accommodation.rating,
                 nights: accommodation.nights,
                 check_in: toISODate(accommodation.checkIn),
-                check_in_time: accommodation.checkInTime,
+                check_in_time: sanitizeTime(accommodation.checkInTime),
                 check_out: toISODate(accommodation.checkOut),
-                check_out_time: accommodation.checkOutTime,
+                check_out_time: sanitizeTime(accommodation.checkOutTime),
                 confirmation_code: accommodation.confirmation,
                 status: accommodation.status,
                 type: accommodation.type
@@ -129,9 +129,9 @@ export const AccommodationProvider: React.FC<{ children: ReactNode }> = ({ child
                 rating: accommodation.rating,
                 nights: accommodation.nights,
                 check_in: toISODate(accommodation.checkIn),
-                check_in_time: accommodation.checkInTime,
+                check_in_time: sanitizeTime(accommodation.checkInTime),
                 check_out: toISODate(accommodation.checkOut),
-                check_out_time: accommodation.checkOutTime,
+                check_out_time: sanitizeTime(accommodation.checkOutTime),
                 confirmation_code: accommodation.confirmation,
                 status: accommodation.status,
                 type: accommodation.type,

@@ -32,7 +32,7 @@ import { getGeminiService } from '../services/geminiService';
 
 // Existing Trip Details Components
 import TripDetailsHeader from '../components/trip-details/TripDetailsHeader';
-import TripSidebar from '../components/trip-details/TripSidebar';
+import { TripNavigationSidebar } from '../components/trip-details/navigation';
 import ItineraryView from '../components/trip-details/itinerary/ItineraryView';
 import CitiesView from '../components/trip-details/cities/CitiesView';
 import DocumentsView from '../components/trip-details/documents/DocumentsView';
@@ -70,6 +70,9 @@ import { useChecklist, ChecklistProvider } from '../contexts/ChecklistContext';
 import { TaskChecklist } from '../components/trip-details/city-guide/TaskChecklist';
 import TripMapExplorer from '../components/trip-details/maps/TripMapExplorer';
 import MediaView from '../components/trip-details/media/MediaView';
+import { MagazineView } from '../components/trip-details/magazine';
+import PreTripInfoView from '../components/trip-details/info/PreTripInfoView';
+import AccommodationView from '../components/trip-details/logistics/AccommodationView';
 
 interface TripDetailsProps {
   trip: Trip;
@@ -783,21 +786,33 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
 
   // RENDER CONTENT HELPERS
   const renderTripDetailContent = () => {
-    // Show CityGuide if a city is selected
-    if (activeSubTab === 'cities' && selectedCity) {
+    // Show CityGuide if a city is selected or if we are in cities tab (default to first city)
+    let targetCity = selectedCity;
+
+    if (activeSubTab.startsWith('city-')) {
+      const cityId = activeSubTab.replace('city-', '');
+      targetCity = cities.find(c => c.id === cityId) || null;
+    } else if (activeSubTab === 'cities') {
+      targetCity = selectedCity || cities[0];
+    }
+
+    if ((activeSubTab === 'cities' || activeSubTab.startsWith('city-')) && targetCity) {
+      // Ensure we have the guide for this city if not already loaded
+      // This might need a useEffect, but for specific structure here we assume CityGuideLayout might handle or we let it load
+      // Ideally explicit selection should happen. For now, we render.
+
       return (
         <CityGuideLayout
-          selectedCity={selectedCity}
+          selectedCity={targetCity}
           allCities={cities}
           activeCityTab={activeCityTab}
-          onBack={() => { setSelectedCity(null); setCityGuide(null); }}
-
+          onBack={() => { setSelectedCity(null); setActiveSubTab('overview'); }}
           onTabChange={setActiveCityTab}
           onCityChange={handleOpenCityDetail}
         >
           {activeCityTab === 'info' && (
             <InfoTab
-              city={selectedCity}
+              city={targetCity}
               cityGuide={cityGuide}
               groundingInfo={groundingInfo}
               groundingLinks={groundingLinks}
@@ -807,31 +822,46 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
               isGeneratingEditorial={false}
               onTabChange={setActiveCityTab}
               accommodations={hotels.filter(h =>
-                (h.cityId === selectedCity.id) ||
-                (!h.cityId && (h.address.toLowerCase().includes(selectedCity.name.toLowerCase()) || h.name.toLowerCase().includes(selectedCity.name.toLowerCase())))
+                (h.cityId === targetCity.id) ||
+                (!h.cityId && (h.address.toLowerCase().includes(targetCity.name.toLowerCase()) || h.name.toLowerCase().includes(targetCity.name.toLowerCase())))
               )}
-              transports={transports.filter(t => (t.arrivalCity?.toLowerCase().includes(selectedCity.name.toLowerCase()) || t.arrivalLocation?.toLowerCase().includes(selectedCity.name.toLowerCase())))}
+              transports={transports.filter(t => (t.arrivalCity?.toLowerCase().includes(targetCity.name.toLowerCase()) || t.arrivalLocation?.toLowerCase().includes(targetCity.name.toLowerCase())))}
               onAddAccommodation={() => {
-                // Pre-fill hotel name with city name if empty (optional but nice)
-                setTargetCityId(selectedCity.id);
+                setTargetCityId(targetCity.id);
                 setIsAddAccommodationModalOpen(true);
               }}
               onAddTransport={() => {
                 setIsAddTransportModalOpen(true);
               }}
               onViewAccommodation={() => {
-                setActiveSubTab('logistics');
+                setActiveSubTab('accommodation');
                 setAccommodationFilter('all');
               }}
               onViewTransport={() => {
-                setActiveSubTab('logistics');
+                setActiveSubTab('transport');
               }}
             />
           )}
-          {activeCityTab === 'attractions' && <AttractionsTab key={selectedCity?.name || 'attractions'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} attractionSearch={attractionSearch} genAspectRatio={genAspectRatio} genSize={genSize} onSearchChange={setAttractionSearch} onAspectRatioChange={setGenAspectRatio} onSizeChange={setGenSize} onAttractionClick={setSelectedAttraction} onAddManual={() => { }} onShowMap={() => setIsMapModalOpen(true)} onSuggestAI={() => { }} isSuggestingAI={false} onTabChange={(tab) => setActiveCityTab(tab)} tripStartDate={trip.startDate} tripEndDate={trip.endDate} onAddToItinerary={handleAddItineraryActivity} cityName={selectedCity?.name} />}
-          {activeCityTab === 'gastronomy' && <GastronomyTab key={selectedCity?.name || 'gastronomy'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} cityName={selectedCity?.name} onTabChange={(tab) => setActiveCityTab(tab)} onAddToItinerary={handleAddItineraryActivity} tripStartDate={trip.startDate} tripEndDate={trip.endDate} />}
+          {activeCityTab === 'attractions' && <AttractionsTab key={targetCity.name || 'attractions'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} attractionSearch={attractionSearch} genAspectRatio={genAspectRatio} genSize={genSize} onSearchChange={setAttractionSearch} onAspectRatioChange={setGenAspectRatio} onSizeChange={setGenSize} onAttractionClick={setSelectedAttraction} onAddManual={() => { }} onShowMap={() => setIsMapModalOpen(true)} onSuggestAI={() => { }} isSuggestingAI={false} onTabChange={(tab) => setActiveCityTab(tab)} tripStartDate={trip.startDate} tripEndDate={trip.endDate} onAddToItinerary={handleAddItineraryActivity} cityName={targetCity.name} />}
+          {activeCityTab === 'gastronomy' && <GastronomyTab key={targetCity.name || 'gastronomy'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} cityName={targetCity.name} onTabChange={(tab) => setActiveCityTab(tab)} onAddToItinerary={handleAddItineraryActivity} tripStartDate={trip.startDate} tripEndDate={trip.endDate} />}
           {activeCityTab === 'tips' && <TipsTab cityGuide={cityGuide} />}
         </CityGuideLayout>
+      );
+    } else if (activeSubTab === 'cities' && !cities.length) {
+      return (
+        <div className="flex flex-col items-center justify-center p-16 text-center">
+          <div className="size-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+            <span className="material-symbols-outlined text-gray-300 text-4xl">location_city</span>
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Nenhuma cidade adicionada</h3>
+          <p className="text-gray-500 max-w-sm mb-8">Adicione cidades ao seu roteiro para acessar guias, atrações e dicas locais.</p>
+          <button
+            onClick={() => setIsAddCityModalOpen(true)}
+            className="px-6 py-3 bg-primary text-white rounded-xl font-bold shadow-md hover:bg-primary-dark transition-all"
+          >
+            Adicionar Primeira Cidade
+          </button>
+        </div>
       );
     }
 
@@ -889,34 +919,47 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             cities={cities}
           />
         );
-      case 'logistics':
+      case 'pre_trip_info':
         return (
-          <LogisticsView
+          <PreTripInfoView
+            trip={trip}
+            cities={cities}
+          />
+        );
+      case 'accommodation':
+        return (
+          <AccommodationView
             trip={trip}
             hotels={hotels}
-            transports={transports}
-            onAddAccommodation={() => {
-              setSelectedAccommodation(null);
-              setIsAddAccommodationModalOpen(true);
-            }}
+            onAddAccommodation={() => setIsAddAccommodationModalOpen(true)}
             onEditAccommodation={(hotel) => {
               setSelectedAccommodation(hotel);
               setIsAddAccommodationModalOpen(true);
             }}
             onDeleteAccommodation={handleDeleteAccommodation}
-            onAddTransport={() => setIsAddTransportModalOpen(true)}
-            onEditTransport={handleEditTransport}
-            onDeleteTransport={handleDeleteTransport}
-            accommodationFilter={accommodationFilter}
-            setAccommodationFilter={setAccommodationFilter}
-            accommodationViewMode={accommodationViewMode}
-            setAccommodationViewMode={setAccommodationViewMode}
-            accommodationSortOrder={accommodationSortOrder}
-            setAccommodationSortOrder={setAccommodationSortOrder}
-            isLoadingHotels={isLoadingHotels}
-            isLoadingTransports={isLoadingTransports}
+            filter={accommodationFilter}
+            onFilterChange={setAccommodationFilter}
+            viewMode={accommodationViewMode}
+            onViewModeChange={setAccommodationViewMode}
+            sortOrder={accommodationSortOrder}
+            onSortOrderChange={setAccommodationSortOrder}
+            isLoading={isLoadingHotels}
           />
         );
+      case 'transport':
+        return (
+          <TransportView
+            trip={trip}
+            transports={transports}
+            cities={cities}
+            onAddClick={() => setIsAddTransportModalOpen(true)}
+            onEditClick={handleEditTransport}
+            onDeleteClick={handleDeleteTransport}
+            isLoading={isLoadingTransports}
+          />
+        );
+      case 'logistics': // Fallback for legacy state
+        return null;
       case 'docs':
         return <DocumentsView documents={extraDocuments} docsFilter={docsFilter} onFilterChange={setDocsFilter} onAddDocument={() => setIsAddDocumentModalOpen(true)} travelers={trip.participants} onDeleteDocument={handleDeleteDocument} />;
       case 'budget':
@@ -944,6 +987,14 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         );
       case 'memories':
         return <JournalView tripId={trip.id} tripTitle={trip.title || trip.destination} tripStartDate={trip.startDate} />;
+      case 'magazine':
+        return (
+          <MagazineView
+            trip={trip}
+            cities={cities}
+            itineraryActivities={itineraryActivities}
+          />
+        );
       default: return null;
     }
   };
@@ -962,29 +1013,35 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-white animate-in fade-in slide-in-from-right-4 duration-500">
       {/* Header */}
-      <div className="shrink-0 p-6 md:p-8 pb-0 bg-white">
+      <div className="shrink-0 bg-white border-b border-gray-100">
         <TripDetailsHeader trip={trip} onBack={onBack} onEdit={onEdit} onShare={() => setIsShareModalOpen(true)} />
       </div>
 
-      {/* Navegação Horizontal */}
-      <TripSidebar
-        activeTab={activeSubTab}
-        onTabChange={setActiveSubTab}
-        tripStats={tripStats}
-      />
+      {/* Main Layout: Sidebar + Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Nova Navegação Lateral (vertical) */}
+        <TripNavigationSidebar
+          activeTab={activeSubTab}
+          onTabChange={setActiveSubTab}
+          tripStats={tripStats}
+          cities={cities}
+          onCitySelect={handleOpenCityDetail}
+          selectedCityId={selectedCity?.id}
+        />
 
-      {/* Conteúdo Principal */}
-      <div className="flex-1 overflow-y-auto relative scroll-smooth bg-white [&::-webkit-scrollbar]:hidden">
-        {/* Content */}
-        <div
-          className="p-6 md:p-8 pt-4 pb-32 space-y-8"
-          role="tabpanel"
-          id={`panel-${activeSubTab}`}
-          aria-labelledby={`tab-${activeSubTab}`}
-          tabIndex={0}
-        >
-          {renderTripDetailContent()}
-        </div>
+        {/* Conteúdo Principal */}
+        <main className="flex-1 overflow-y-auto relative scroll-smooth bg-white [&::-webkit-scrollbar]:hidden">
+          {/* Content */}
+          <div
+            className="p-6 md:p-8 pt-4 pb-12 space-y-6"
+            role="tabpanel"
+            id={`panel-${activeSubTab}`}
+            aria-labelledby={`tab-${activeSubTab}`}
+            tabIndex={0}
+          >
+            {renderTripDetailContent()}
+          </div>
+        </main>
       </div>
 
       {/* Modals */}

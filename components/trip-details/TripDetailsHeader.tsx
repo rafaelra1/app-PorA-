@@ -133,7 +133,7 @@ const TripDetailsHeader: React.FC<TripDetailsHeaderProps> = ({ trip, onBack, onE
     const parallaxOffset = Math.min(scrollY * 0.3, 30);
 
     return (
-        <div className="relative w-full h-[250px] shadow-xl z-50 rounded-3xl overflow-hidden animate-fade-in group">
+        <div className="relative w-full h-[280px] z-50 overflow-hidden animate-fade-in group">
             {/* Background Image with Parallax */}
             <img
                 src={trip.coverImage}
@@ -149,14 +149,7 @@ const TripDetailsHeader: React.FC<TripDetailsHeaderProps> = ({ trip, onBack, onE
             <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent pointer-events-none"></div>
 
             {/* Top Bar Actions */}
-            <div className="absolute top-6 left-6 right-6 flex justify-between items-start z-30">
-                <button
-                    onClick={onBack}
-                    className="flex items-center justify-center size-10 rounded-full bg-white/20 backdrop-blur-md text-white hover:bg-white/30 transition-all border border-white/20 active:scale-95"
-                >
-                    <Icon name="arrow_back" className="text-white" />
-                </button>
-
+            <div className="absolute top-6 left-6 right-6 flex justify-end items-start z-30">
                 {/* Right Side Actions */}
                 <div className="flex gap-3">
                     {/* Edit Button */}
@@ -180,7 +173,7 @@ const TripDetailsHeader: React.FC<TripDetailsHeaderProps> = ({ trip, onBack, onE
 
             {/* Content Area */}
             <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8 z-20">
-                <div className="flex flex-col gap-6 max-w-5xl mx-auto">
+                <div className="flex flex-col gap-6 max-w-5xl">
 
                     {/* Badges Row */}
                     <div className="flex flex-wrap gap-3 items-center">

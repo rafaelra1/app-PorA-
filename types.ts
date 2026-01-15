@@ -47,7 +47,7 @@ export interface UserPreferences {
 }
 
 // Tab types for TripDetails navigation
-export type SubTab = 'overview' | 'checklist' | 'itinerary' | 'map' | 'cities' | 'logistics' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories' | 'media';
+export type SubTab = 'overview' | 'pre_trip_info' | 'checklist' | 'itinerary' | 'map' | 'cities' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories' | 'media' | 'magazine';
 export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map';
 export type DocsFilter = 'Tudo' | 'Reservas' | 'Pessoais' | 'Outros';
 export type ReservationType = 'hotel' | 'flight' | 'car' | 'insurance' | 'activity' | 'train' | 'bus' | 'transfer' | 'ferry' | 'other';

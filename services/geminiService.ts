@@ -1027,6 +1027,108 @@ Retorne APENAS um JSON array válido:
     "category": "Categoria"
   }
 ]`,
+
+  // -------------------------------------------------------------------------
+  // Magazine View Prompts
+  // -------------------------------------------------------------------------
+
+  /**
+   * Generates the editorial content for a single day's "magazine spread".
+   * @param dayContext - structured object with trip context and day activities
+   */
+  magazineSpread: (dayContext: {
+    destination: string;
+    country: string;
+    dayNumber: number;
+    date: string;
+    city: string;
+    weather: string;
+    travelerProfile: string;
+    interests: string[];
+    activities: Array<{
+      id: string;
+      time: string;
+      title: string;
+      location: string;
+      type: string;
+      duration?: string;
+      cost?: string;
+    }>;
+  }) => `Você é um editor de uma revista de viagens premium como Condé Nast Traveler ou Travel + Leisure.
+Sua tarefa é transformar um itinerário de viagem em uma narrativa editorial envolvente.
+
+PRINCÍPIOS:
+- Escreva como se estivesse contando para um amigo, não como um guia turístico
+- Use verbos sensoriais (sentir, saborear, contemplar, respirar)
+- Conecte momentos - cada atividade deve fluir naturalmente para a próxima
+- Seja específico - "o café com leite cremoso" não "o café"
+- Inclua detalhes que só quem foi saberia
+- Evite clichês turísticos ("imperdível", "cartão postal", "encantador")
+
+TOM: Sofisticado mas caloroso. Como uma amiga bem-viajada contando sobre sua última aventura em um jantar.
+
+CONTEXTO DA VIAGEM:
+- Destino: ${dayContext.city}, ${dayContext.country}
+- Data: ${dayContext.date} (Dia ${dayContext.dayNumber})
+- Perfil do Viajante: ${dayContext.travelerProfile}
+- Interesses: ${dayContext.interests.join(', ')}
+- Clima previsto: ${dayContext.weather}
+
+ATIVIDADES PLANEJADAS:
+${dayContext.activities.map((a, i) => `${i + 1}. [${a.time}] ${a.title} (${a.type}) - ${a.location}${a.duration ? ` - ${a.duration}` : ''}${a.cost ? ` - ${a.cost}` : ''}`).join('\n')}
+
+---
+
+GERE O CONTEÚDO EDITORIAL (Retorne APENAS JSON válido, sem markdown):
+{
+  "headline": "Frase cativante de max 8 palavras que captura a essência do dia",
+  "subheadline": "Complemento do headline, max 12 palavras",
+  "introNarrative": "2-3 parágrafos evocativos (~150 palavras) sobre o que esperar do dia. Conecte as atividades em uma narrativa fluida.",
+  "closingThought": "1 parágrafo reflexivo (~50 palavras) para encerrar o dia de forma memorável.",
+  "mood": "adventurous | relaxing | cultural | gastronomic | romantic | urban | nature",
+  "sections": [
+    {
+      "timeOfDay": "morning | afternoon | evening | night",
+      "title": "Título criativo para o período (ex: 'Manhã: O despertar lisboeta')",
+      "narrative": "Texto curto (2-3 frases) conectando as atividades deste período"
+    }
+  ],
+  "activities": [
+    {
+      "id": "ID da atividade original",
+      "description": "Descrição evocativa e sensorial da atividade (3-4 frases)",
+      "whyWeChoseThis": "Frase explicando porque esta atividade é especial para o perfil do viajante",
+      "proTip": "Dica prática valiosa (opcional)",
+      "photoSpot": "Sugestão para melhor foto (opcional)",
+      "perfectFor": ["tipos de viajantes ideais para esta atividade"]
+    }
+  ],
+  "insiderTips": [
+    {
+      "icon": "emoji apropriado",
+      "title": "Título curto da dica",
+      "content": "Dica prática com personalidade (max 2 frases)",
+      "source": "Dica de local | Nossa experiência | Guia especializado"
+    }
+  ],
+  "localPhrases": [
+    {
+      "phrase": "Frase útil no idioma local",
+      "translation": "Tradução em português",
+      "pronunciation": "Pronúncia aproximada (opcional)"
+    }
+  ],
+  "estimatedCost": "Custo estimado do dia formatado (ex: €45-60 por pessoa)",
+  "walkingDistance": "Distância estimada de caminhada (ex: ~8km)"
+}
+
+REGRAS:
+1. NÃO invente dados. Use APENAS as atividades fornecidas.
+2. Mantenha fidelidade aos horários e locais.
+3. Gere 3-4 dicas internas (insiderTips) relevantes.
+4. Gere 2-3 frases locais úteis (localPhrases) se o idioma for diferente do português.
+5. O mood deve refletir a combinação predominante de atividades.
+6. Retorne APENAS o JSON, sem texto adicional.`,
 };
 
 // =============================================================================
@@ -2515,7 +2617,72 @@ Create a new image that maintains the essence of the original but applies the re
       return null;
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Magazine View Methods
+  // -------------------------------------------------------------------------
+
+  /**
+   * Generate editorial content for a magazine-style day spread.
+   * Returns structured JSON with headline, narratives, tips, and activity descriptions.
+   */
+  async generateMagazineContent(dayContext: {
+    destination: string;
+    country: string;
+    dayNumber: number;
+    date: string;
+    city: string;
+    weather: string;
+    travelerProfile: string;
+    interests: string[];
+    activities: Array<{
+      id: string;
+      time: string;
+      title: string;
+      location: string;
+      type: string;
+      duration?: string;
+      cost?: string;
+    }>;
+  }): Promise<{
+    headline: string;
+    subheadline: string;
+    introNarrative: string;
+    closingThought: string;
+    mood: string;
+    sections: Array<{ timeOfDay: string; title: string; narrative: string }>;
+    activities: Array<{
+      id: string;
+      description: string;
+      whyWeChoseThis: string;
+      proTip?: string;
+      photoSpot?: string;
+      perfectFor: string[];
+    }>;
+    insiderTips: Array<{ icon: string; title: string; content: string; source?: string }>;
+    localPhrases: Array<{ phrase: string; translation: string; pronunciation?: string }>;
+    estimatedCost: string;
+    walkingDistance: string;
+  } | null> {
+    try {
+      const prompt = PROMPTS.magazineSpread(dayContext);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+
+      const result = parseJsonSafely(text, null);
+
+      if (!result || !result.headline) {
+        console.error('Failed to parse magazine content result');
+        return null;
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error generating magazine content:', error);
+      return null;
+    }
+  }
 }
+
 
 // =============================================================================
 // Singleton Instance
