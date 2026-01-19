@@ -727,7 +727,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
             {/* Filter Bar */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100 sticky top-0 z-20 backdrop-blur-sm">
                 {/* Filters */}
-                <div className="flex gap-2 overflow-x-auto hide-scrollbar w-full md:w-auto px-1">
+                <div className="flex gap-2 overflow-x-auto hide-scrollbar w-full md:w-auto px-3 md:px-1">
                     {filterTabs.map(tab => (
                         <button
                             key={tab.id}
@@ -866,7 +866,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                                     </div>
                                     <div>
                                         <h3 className="font-bold text-lg text-text-main">{day.date}</h3>
-                                        <p className="text-sm text-text-muted flex items-center gap-1">
+                                        <p className="text-sm text-gray-600 flex items-center gap-1">
                                             {day.city ? (
                                                 <>
                                                     <span className="material-symbols-outlined text-sm text-primary">location_on</span>

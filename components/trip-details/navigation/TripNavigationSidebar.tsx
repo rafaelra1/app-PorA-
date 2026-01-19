@@ -156,7 +156,7 @@ export const TripNavigationSidebar: React.FC<TripNavigationSidebarProps> = ({
                     onClick={() => setIsMobileOpen(true)}
                     aria-label="Abrir menu de navegação"
                     className="
-            fixed bottom-6 left-6 z-30
+            fixed bottom-20 left-4 z-30
             w-14 h-14 rounded-full
             bg-gradient-to-br from-violet-500 to-purple-600
             text-white shadow-lg

@@ -139,7 +139,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             // Preserve or initialize these fields
             headline: existing?.headline || `Explore as maravilhas de ${dest.name}`,
             image: existing?.image || dest.image || `https://source.unsplash.com/800x600/?${encodeURIComponent(dest.name + ' city')}`,
-            editorialContent: dest.editorialContent || existing?.editorialContent,
+            editorialContent: existing?.editorialContent || dest.editorialContent,
           };
         });
 
