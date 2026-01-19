@@ -19,8 +19,7 @@ interface TripStats {
     documents?: number;
     expenses?: number;
     activities?: number;
-    checklistComplete?: number;
-    checklistTotal?: number;
+
 }
 
 interface TripNavigationSidebarProps {
@@ -78,34 +77,14 @@ export const TripNavigationSidebar: React.FC<TripNavigationSidebarProps> = ({
                         }));
                     }
                     break;
-                case 'logistics':
-                    enhanced.badge = (tripStats.hotels || 0) + (tripStats.transports || 0);
-                    // Update children badges
-                    if (enhanced.children) {
-                        enhanced.children = enhanced.children.map((child) => {
-                            if (child.id === 'accommodation') {
-                                return { ...child, badge: tripStats.hotels };
-                            }
-                            if (child.id === 'transport') {
-                                return { ...child, badge: tripStats.transports };
-                            }
-                            return child;
-                        });
-                    }
-                    break;
+
                 case 'docs':
                     enhanced.badge = tripStats.documents;
                     break;
                 case 'budget':
                     enhanced.badge = tripStats.expenses;
                     break;
-                case 'checklist':
-                    if (tripStats.checklistTotal && tripStats.checklistTotal > 0) {
-                        enhanced.progress = Math.round(
-                            ((tripStats.checklistComplete || 0) / tripStats.checklistTotal) * 100
-                        );
-                    }
-                    break;
+
             }
 
             return enhanced;

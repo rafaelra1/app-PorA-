@@ -345,7 +345,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
 
     if (tasksToInsert.length > 0) {
         const { error: insertError } = await supabase
-            .from('checklist_tasks')
+            .from('trip_checklist_items')
             .insert(tasksToInsert.map(task => ({
                 id: task.id,
                 trip_id: task.trip_id,
@@ -353,7 +353,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
                 category: task.category,
                 priority: task.priority,
                 rule_id: task.rule_id,
-                completed: task.is_completed, // DB uses 'completed'
+                is_completed: task.is_completed, // DB uses 'is_completed'
                 due_date: task.due_date
             })));
 
@@ -372,7 +372,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
     if (tasksToRemove.length > 0) {
         const idsToRemove = tasksToRemove.map(t => t.id);
         const { error: deleteError } = await supabase
-            .from('checklist_tasks')
+            .from('trip_checklist_items')
             .delete()
             .in('id', idsToRemove);
 
@@ -386,7 +386,7 @@ export const syncSmartTasks = async (tripId: string, trip: Trip): Promise<void> 
 // Fetch tasks from Supabase and update local cache
 export const fetchRemoteTasks = async (tripId: string): Promise<Task[]> => {
     const { data, error } = await supabase
-        .from('checklist_tasks')
+        .from('trip_checklist_items')
         .select('*')
         .eq('trip_id', tripId);
 
@@ -397,7 +397,7 @@ export const fetchRemoteTasks = async (tripId: string): Promise<Task[]> => {
 
     if (data) {
         if (data.length > 0) {
-            console.log('DEBUG: checklist_tasks raw row:', data[0]);
+            console.log('DEBUG: trip_checklist_items raw row:', data[0]);
         }
         // Map DB record (text) to Task object (title)
         const mappedTasks: Task[] = (data as any[]).map(row => ({
@@ -407,7 +407,7 @@ export const fetchRemoteTasks = async (tripId: string): Promise<Task[]> => {
             category: row.category,
             priority: row.priority,
             rule_id: row.rule_id,
-            is_completed: row.completed, // DB 'completed' -> Interface 'is_completed'
+            is_completed: row.is_completed, // DB 'is_completed' -> Interface 'is_completed'
             is_urgent: row.priority === 'blocking', // Derive is_urgent from priority
             due_date: row.due_date,
             created_at: row.created_at,
@@ -427,20 +427,20 @@ const processAction = async (action: PendingAction): Promise<void> => {
 
     switch (type) {
         case 'ADD': {
-            // Explicitly map fields to match schema 'checklist_tasks'
+            // Explicitly map fields to match schema 'trip_checklist_items'
             const dbPayload = {
                 id: payload.id,
                 trip_id: payload.trip_id,
                 text: payload.title, // Map title to text
                 category: payload.category || 'other',
                 priority: payload.priority || 'recommended',
-                completed: payload.is_completed || false, // DB uses 'completed'
+                is_completed: payload.is_completed || false, // DB uses 'is_completed'
                 due_date: payload.due_date,
                 rule_id: payload.rule_id
             };
 
             const { error: addError } = await supabase
-                .from('checklist_tasks')
+                .from('trip_checklist_items')
                 .insert(dbPayload);
             if (addError) throw addError;
             break;
@@ -452,12 +452,12 @@ const processAction = async (action: PendingAction): Promise<void> => {
             if (payload.title !== undefined) dbUpdates.text = payload.title;
             if (payload.category !== undefined) dbUpdates.category = payload.category;
             if (payload.priority !== undefined) dbUpdates.priority = payload.priority;
-            if (payload.is_completed !== undefined) dbUpdates.completed = payload.is_completed; // DB uses 'completed'
+            if (payload.is_completed !== undefined) dbUpdates.is_completed = payload.is_completed; // DB uses 'is_completed'
             if (payload.due_date !== undefined) dbUpdates.due_date = payload.due_date;
             if (payload.rule_id !== undefined) dbUpdates.rule_id = payload.rule_id;
 
             const { error: updateError } = await supabase
-                .from('checklist_tasks')
+                .from('trip_checklist_items')
                 .update(dbUpdates)
                 .eq('id', payload.id);
             if (updateError) throw updateError;
@@ -466,7 +466,7 @@ const processAction = async (action: PendingAction): Promise<void> => {
 
         case 'DELETE':
             const { error: deleteError } = await supabase
-                .from('checklist_tasks')
+                .from('trip_checklist_items')
                 .delete()
                 .eq('id', payload.id);
             if (deleteError) throw deleteError;

@@ -33,6 +33,20 @@ export function useLocalStorage<T>(
         }
     });
 
+    // Re-sync state when key changes (e.g., switching cities)
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        try {
+            const item = window.localStorage.getItem(key);
+            const newValue = item ? JSON.parse(item) : initialValue;
+            setStoredValue(newValue);
+        } catch (error) {
+            console.error(`Error re-reading localStorage key "${key}":`, error);
+            setStoredValue(initialValue);
+        }
+    }, [key]);
+
     // Return a wrapped version of useState's setter function that
     // persists the new value to localStorage
     const setValue = useCallback(

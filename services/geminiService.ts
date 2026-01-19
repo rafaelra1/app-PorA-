@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
-import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo, DocumentAnalysisResult, FieldWithConfidence, BatchAnalysisResult, DebugInfo, TripContext, EnhancedTripContext, ChecklistAnalysisResult, TripViabilityAnalysis, TravelPeriod } from '../types';
+import { ItineraryDay, CityGuide, Attraction, ImageGenerationOptions, GroundingInfo, DocumentAnalysisResult, FieldWithConfidence, BatchAnalysisResult, DebugInfo, TripContext, EnhancedTripContext, ChecklistAnalysisResult, TripViabilityAnalysis, TravelPeriod, TypicalDish } from '../types';
+import { PreTripBriefingData } from '../types/preTripBriefing';
 
 // =============================================================================
 // Types & Interfaces
@@ -1129,7 +1130,126 @@ REGRAS:
 4. Gere 2-3 frases locais úteis (localPhrases) se o idioma for diferente do português.
 5. O mood deve refletir a combinação predominante de atividades.
 6. Retorne APENAS o JSON, sem texto adicional.`,
+
+  cityBriefing: (city: string, country: string) => `Você é um consultor de viagens especializado em preparar viajantes brasileiros.
+Gere um guia de briefing pré-viagem COMPLETO e DETALHADO para ${city}, ${country}.
+
+IMPORTANTE: Todas as informações devem ser REAIS, PRECISAS e ATUALIZADAS para viajantes BRASILEIROS.
+
+Retorne APENAS um JSON com esta estrutura EXATA:
+{
+  "destination": "${city}",
+  "tripDuration": "${country}",
+  "season": "Estação atual ou típica",
+  "hookMessage": "Frase cativante sobre o que o viajante brasileiro precisa saber sobre ${city}",
+  "quickFacts": [
+    { "label": "FUSO", "value": "Diferença com Brasil", "subValue": "GMT+X", "icon": "schedule" },
+    { "label": "MOEDA", "value": "Nome da moeda", "subValue": "Cotação aprox.", "icon": "euro", "actionLabel": "Conversor" },
+    { "label": "IDIOMA", "value": "Idioma local", "subValue": "Dica", "icon": "translate" },
+    { "label": "TOMADA", "value": "Tipo X", "subValue": "Voltagem", "icon": "power" },
+    { "label": "CLIMA", "value": "Temp média", "subValue": "Chuva %", "icon": "thermostat" },
+    { "label": "TELEFONE", "value": "+XX", "subValue": "Chip/eSIM", "icon": "call" },
+    { "label": "TRÂNSITO", "value": "Mão direita/esquerda", "subValue": "Nota", "icon": "directions_car" },
+    { "label": "ÁGUA", "value": "Potável/Não", "subValue": "Dica", "icon": "water_drop" }
+  ],
+  "differences": [
+    {
+      "id": "categoria-id",
+      "title": "Título da Categoria",
+      "icon": "emoji",
+      "items": ["Diferença 1", "Diferença 2", {"term": "Termo local", "description": "equivalente brasileiro"}]
+    }
+  ],
+  "culture": {
+    "dos": [{ "text": "O que fazer" }],
+    "donts": [{ "text": "O que evitar" }],
+    "greetings": [{ "context": "Contexto", "description": "Como cumprimentar" }]
+  },
+  "entry": {
+    "visaPolicy": {
+      "title": "Visto para Brasileiros",
+      "description": "Regras de entrada para turistas brasileiros",
+      "isVisaFree": true
+    },
+    "documents": [
+      { "name": "Documento necessário", "required": true, "note": "Nota opcional" }
+    ],
+    "vaccines": {
+      "mandatory": ["Vacinas obrigatórias"],
+      "recommended": ["Vacinas recomendadas"]
+    }
+  },
+  "money": {
+    "exchangeRate": {
+      "currencyCode": "XXX",
+      "currencyName": "Nome da moeda",
+      "rate": 5.50,
+      "lastUpdated": "Aproximado"
+    },
+    "dailyBudget": {
+      "economic": "€50-80",
+      "moderate": "€100-150",
+      "comfortable": "€200+"
+    },
+    "referencePrices": [
+      { "item": "Item", "priceEuro": "€X", "priceReal": "R$ X" }
+    ],
+    "paymentMethods": [
+      { "method": "Método de pagamento", "accepted": true, "note": "Nota" }
+    ],
+    "tips": "Informação sobre gorjetas"
+  },
+  "safety": {
+    "safetyLevel": {
+      "status": "safe",
+      "label": "NÍVEL DE SEGURANÇA",
+      "description": "Descrição da segurança geral"
+    },
+    "numbers": [
+      { "label": "Emergência", "number": "Número" },
+      { "label": "Embaixada Brasil", "number": "Número" }
+    ],
+    "precautions": ["Precaução 1", "Precaução 2"],
+    "health": {
+      "system": "Como funciona o sistema de saúde para turistas",
+      "pharmacies": "Informação sobre farmácias"
+    }
+  },
+  "phrases": [
+    {
+      "category": "Categoria",
+      "phrases": [
+        { "original": "Frase no idioma local", "meaning": "Significado em português" }
+      ]
+    }
+  ],
+  "apps": [
+    {
+      "name": "Nome do App",
+      "category": "Categoria",
+      "description": "Porque é útil em ${city}",
+      "icon": "material_icon_name"
+    }
+  ],
+  "weather": {
+    "summary": "Resumo do clima típico",
+    "forecast": [],
+    "packingList": ["Item 1", "Item 2", "Item 3"]
+  }
+}
+
+REGRAS IMPORTANTES:
+1. Use dados REAIS e ATUALIZADOS para ${city}, ${country}
+2. Foco no público BRASILEIRO - compare com realidade brasileira
+3. Inclua pelo menos 4 categorias em "differences"
+4. Liste 5-6 "dos" e "donts" culturais
+5. Apps devem ser relevantes especificamente para ${city}
+6. Frases úteis no idioma local de ${city}
+7. Preços de referência realistas
+8. safetyLevel.status deve ser: "safe", "caution" ou "danger"
+9. Retorne APENAS o JSON, sem markdown`,
 };
+
 
 // =============================================================================
 // GeminiService Class
@@ -1279,6 +1399,23 @@ export class GeminiService {
     } catch (error) {
       console.error('Error generating itinerary:', error);
       throw new Error('Failed to generate itinerary');
+    }
+  }
+
+  /**
+   * Generate AI-powered city briefing data for pre-trip preparation
+   */
+  async generateCityBriefing(city: string, country: string): Promise<PreTripBriefingData | null> {
+    try {
+      console.log(`🌍 Generating AI briefing for ${city}, ${country}...`);
+      const prompt = PROMPTS.cityBriefing(city, country);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      const result = parseJsonSafely<PreTripBriefingData>(text, null as unknown as PreTripBriefingData);
+      console.log(`✅ AI briefing generated for ${city}`);
+      return result;
+    } catch (error) {
+      console.error('Error generating city briefing:', error);
+      return null;
     }
   }
 
@@ -1437,6 +1574,20 @@ export class GeminiService {
   }
 
   /**
+   * Generate a 3D icon for a typical dish
+   */
+  async generateDishIcon(dishName: string): Promise<string | null> {
+    try {
+      const prompt = `Create a single large centered icon representing ${dishName}. The icon should be on a pure white background. The icon is rendered in a friendly, modern 3D style, featuring smooth gradients, soft shadows, and appetizing colors that accurately represent the dish's appearance.`;
+
+      return await this.generateImage(prompt, { aspectRatio: '1:1', imageSize: '1K' });
+    } catch (error) {
+      console.error('Error generating dish icon:', error);
+      return null;
+    }
+  }
+
+  /**
    * Generate image using Gemini 3 Pro Image API
    */
   private async generateWithImagenAPI(
@@ -1452,6 +1603,8 @@ export class GeminiService {
       if (prompt.startsWith('City of')) {
         cityName = prompt.replace('City of ', '').split(',')[0];
       }
+
+
 
       // Build enhanced prompt
       const enhancedPrompt = this.buildEnhancedImagePrompt(prompt, options);
@@ -2414,12 +2567,7 @@ Create a new image that maintains the essence of the original but applies the re
   /**
    * Generate typical regional dishes for a city
    */
-  async generateTypicalDishes(city: string): Promise<Array<{
-    name: string;
-    description: string;
-    ingredients: string[];
-    history: string;
-  }> | null> {
+  async generateTypicalDishes(city: string): Promise<TypicalDish[] | null> {
     try {
       const prompt = PROMPTS.typicalDishes(city);
       const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');

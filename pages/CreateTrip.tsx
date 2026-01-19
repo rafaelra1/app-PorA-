@@ -12,7 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { tripSchema } from '../lib/validations/schemas';
 import { useToast } from '../contexts/ToastContext';
 import { useAutosaveDraft } from '../hooks/useAutosaveDraft';
-import { useTrips } from '../contexts/TripContext';
+import { useTrips } from '@/contexts/TripContext';
 import { useUI } from '../contexts/UIContext';
 
 const GOOGLE_MAPS_LIBRARIES: ("places")[] = ["places"];

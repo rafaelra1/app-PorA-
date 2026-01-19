@@ -20,13 +20,22 @@ export const TRIP_NAV_QUESTIONS: NavQuestion[] = [
         iconColor: 'text-violet-500',
     },
     {
-        id: 'pre_trip_info',
+        id: 'briefing',
         question: 'O que preciso saber antes?',
-        shortLabel: 'Alertas',
-        description: 'Avisos e informações locais',
+        shortLabel: 'Briefing',
+        description: 'Dicas culturais e práticas',
         icon: 'lightbulb',
-        gradient: 'from-amber-400 to-orange-500',
+        gradient: 'from-yellow-400 to-amber-500',
         iconColor: 'text-amber-500',
+    },
+    {
+        id: 'pre_trip',
+        question: 'O que preciso fazer antes?',
+        shortLabel: 'Preparativos',
+        description: 'Timeline e tarefas essenciais',
+        icon: 'pending_actions',
+        gradient: 'from-amber-400 to-orange-500',
+        iconColor: 'text-amber-600',
     },
     {
         id: 'itinerary',
@@ -92,15 +101,7 @@ export const TRIP_NAV_QUESTIONS: NavQuestion[] = [
         gradient: 'from-green-500 to-emerald-600',
         iconColor: 'text-green-500',
     },
-    {
-        id: 'checklist',
-        question: 'O que tenho que fazer?',
-        shortLabel: 'Checklist',
-        description: 'Tarefas pré-viagem',
-        icon: 'checklist',
-        gradient: 'from-indigo-500 to-blue-600',
-        iconColor: 'text-indigo-500',
-    },
+
     {
         id: 'media',
         question: 'O que pesquisar sobre o destino?',

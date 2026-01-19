@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Icon } from '../ui/Base';
 import { EmptyState } from '../ui/EmptyState';
-import { useTrips } from '../../contexts/TripContext'; // Updated import path to match context location
+import { useTrips } from '@/contexts/TripContext'; // Updated import path to match context location
 
 interface MyTripsViewProps {
     onSelectTrip: (tripId: string) => void;

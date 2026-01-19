@@ -1,13 +1,16 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Trip, HotelReservation, Transport } from '../../../types';
+import { Trip, HotelReservation, Transport, City } from '../../../types';
 import TransportView from '../transport/TransportView';
 import { Skeleton } from '../../ui/Base';
+import CityStatusBar from '../shared/CityStatusBar';
+import CityTransitionsBar from '../shared/CityTransitionsBar';
 
 interface LogisticsViewProps {
     trip: Trip;
     hotels: HotelReservation[];
     transports: Transport[];
+    cities?: City[];
     // Accommodation handlers
     onAddAccommodation: () => void;
     onEditAccommodation: (hotel: HotelReservation) => void;
@@ -57,8 +60,31 @@ const LogisticsView: React.FC<LogisticsViewProps> = ({
         displayedHotels = [...displayedHotels].reverse();
     }
 
+    // Convert detailedDestinations to City format for the status bars
+    const cities: City[] = React.useMemo(() => {
+        const destCities = trip.detailedDestinations?.map((dest, idx) => ({
+            id: dest.id || `city-${idx}`,
+            name: dest.name,
+            country: dest.country || '',
+            arrivalDate: dest.startDate || '',
+            departureDate: dest.endDate || '',
+            nights: 0,
+            headline: '',
+            image: dest.image || '',
+        })) || [];
+        return destCities;
+    }, [trip.detailedDestinations]);
+
     const renderAccommodationContent = () => (
         <div className="space-y-6">
+            {/* City Status Bar */}
+            {cities.length > 0 && (
+                <CityStatusBar
+                    cities={cities}
+                    hotels={hotels}
+                />
+            )}
+
             {/* Controls Bar */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-gray-50/50 p-1.5 rounded-2xl border border-gray-100">
                 {/* Filters */}
@@ -299,13 +325,23 @@ const LogisticsView: React.FC<LogisticsViewProps> = ({
             {activeSection === 'accommodation' ? (
                 renderAccommodationContent()
             ) : (
-                <TransportView
-                    trip={trip}
-                    onAddClick={onAddTransport}
-                    onEditClick={onEditTransport}
-                    onDeleteClick={onDeleteTransport}
-                    isLoading={isLoadingTransports}
-                />
+                <div className="space-y-6">
+                    {/* City Transitions Bar */}
+                    {cities.length > 1 && (
+                        <CityTransitionsBar
+                            cities={cities}
+                            transports={transports}
+                        />
+                    )}
+                    <TransportView
+                        trip={trip}
+                        cities={cities}
+                        onAddClick={onAddTransport}
+                        onEditClick={onEditTransport}
+                        onDeleteClick={onDeleteTransport}
+                        isLoading={isLoadingTransports}
+                    />
+                </div>
             )}
         </div>
     );

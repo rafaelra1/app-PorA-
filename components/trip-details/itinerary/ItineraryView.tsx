@@ -6,6 +6,7 @@ import { getGeminiService } from '../../../services/geminiService';
 import AddActivityModal from '../modals/AddActivityModal';
 import ActivityDetailsModal from '../modals/ActivityDetailsModal';
 import { JournalEntryModal } from '../modals/JournalEntryModal';
+import { ActivityNotesModal } from '../modals/ActivityNotesModal';
 import { formatDate, parseDisplayDate } from '../../../lib/dateUtils';
 import { generateItineraryFromDocuments, identifyItineraryGaps } from '../../../services/itineraryGenerationService';
 import { googleCalendarService } from '../../../services/googleCalendarService';
@@ -31,6 +32,7 @@ import {
     verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { ItineraryActivityItem } from './ItineraryActivityItem';
+import { DateCarousel } from './DateCarousel';
 
 interface ItineraryViewProps {
     itinerary: ItineraryDay[];
@@ -87,7 +89,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     onAddActivity,
     isLoading,
 }) => {
-    const [selectedDay, setSelectedDay] = useState(1);
+    const [selectedDay, setSelectedDay] = useState<number | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingActivity, setEditingActivity] = useState<ItineraryActivity | null>(null);
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list'); // Add View Mode state
@@ -318,6 +320,36 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
         console.log('Saving journal entry:', entry, 'for activity:', selectedActivityForJournal);
         // TODO: Persist to Supabase or Context
         setJournalModalOpen(false);
+    };
+
+    // Notes Modal State
+    const [activityNotesModalOpen, setActivityNotesModalOpen] = useState(false);
+    const [selectedActivityForNotes, setSelectedActivityForNotes] = useState<ItineraryActivity | null>(null);
+
+    const handleOpenNotes = (activity: ItineraryActivity) => {
+        setSelectedActivityForNotes(activity);
+        setActivityNotesModalOpen(true);
+    };
+
+    const handleSaveNotes = (notes: string) => {
+        if (!selectedActivityForNotes) return;
+
+        const updatedActivity = { ...selectedActivityForNotes, notes };
+
+        // Update via prop if available
+        if (onUpdateActivity) {
+            onUpdateActivity(updatedActivity);
+        }
+
+        // Update local state
+        setItineraryData(prev => prev.map(day => ({
+            ...day,
+            itineraryActivities: day.itineraryActivities.map(act =>
+                act.id === updatedActivity.id ? updatedActivity : act
+            )
+        })));
+
+        setActivityNotesModalOpen(false);
     };
 
     // Generate itinerary days from trip dates with integrated data
@@ -554,6 +586,13 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
         setExpandedDay(prev => prev === dayNumber ? null : dayNumber);
     };
 
+    // Auto-expand selected day from carousel
+    useEffect(() => {
+        if (selectedDay !== null) {
+            setExpandedDay(selectedDay);
+        }
+    }, [selectedDay]);
+
     // =============================================================================
     // Filter Logic
     // =============================================================================
@@ -581,31 +620,33 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
     };
 
     const filteredItinerary = useMemo(() => {
-        const result = itineraryData.map(day => {
-            const filteredActivities = day.itineraryActivities.filter(activity => {
-                // Type Filter
-                if (filterType !== 'tudo') {
-                    if (getCategoryForType(activity.type) !== filterType) return false;
-                }
+        const result = itineraryData
+            .filter(day => selectedDay === null || day.day === selectedDay)
+            .map(day => {
+                const filteredActivities = day.itineraryActivities.filter(activity => {
+                    // Type Filter
+                    if (filterType !== 'tudo') {
+                        if (getCategoryForType(activity.type) !== filterType) return false;
+                    }
 
-                // Search Filter
-                if (searchQuery) {
-                    const query = searchQuery.toLowerCase();
-                    const matchesTitle = activity.title.toLowerCase().includes(query);
-                    const matchesLocation = activity.location?.toLowerCase().includes(query);
-                    const matchesNotes = activity.notes?.toLowerCase().includes(query);
+                    // Search Filter
+                    if (searchQuery) {
+                        const query = searchQuery.toLowerCase();
+                        const matchesTitle = activity.title.toLowerCase().includes(query);
+                        const matchesLocation = activity.location?.toLowerCase().includes(query);
+                        const matchesNotes = activity.notes?.toLowerCase().includes(query);
 
-                    if (!matchesTitle && !matchesLocation && !matchesNotes) return false;
-                }
+                        if (!matchesTitle && !matchesLocation && !matchesNotes) return false;
+                    }
 
-                return true;
-            });
+                    return true;
+                });
 
-            return {
-                ...day,
-                itineraryActivities: filteredActivities
-            };
-        }).filter(day => day.itineraryActivities.length > 0 || filterType === 'tudo');
+                return {
+                    ...day,
+                    itineraryActivities: filteredActivities
+                };
+            }).filter(day => day.itineraryActivities.length > 0 || filterType === 'tudo');
 
 
 
@@ -614,7 +655,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
             return [...result].reverse();
         }
         return result;
-    }, [itineraryData, filterType, searchQuery, sortOrder]);
+    }, [itineraryData, filterType, searchQuery, sortOrder, selectedDay]);
 
     const filterTabs = [
         { id: 'tudo', label: 'Tudo' },
@@ -775,6 +816,23 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                 </div>
             </div>
 
+            {/* Date Carousel */}
+            <div className="z-30 bg-white/95 backdrop-blur-sm border-b border-gray-100 shadow-sm -mx-4 px-4 pt-2 mb-2">
+                <DateCarousel
+                    days={itineraryData.map(d => {
+                        // Ensure date is in YYYY-MM-DD for constructor
+                        const isoDate = d.date.includes('/') ? parseDisplayDate(d.date) : d.date;
+                        return {
+                            day: d.day,
+                            date: isoDate,
+                            weekday: new Date(isoDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+                        };
+                    })}
+                    selectedDay={selectedDay}
+                    onSelectDay={setSelectedDay}
+                />
+            </div>
+
             {/* Mobile Search (Below bar on small screens if needed, but for now hidden on mobile or just wrapped) */}
 
             <DndContext
@@ -851,7 +909,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                                                                 onEdit={openEditModal}
                                                                 onDelete={handleRemoveActivity}
                                                                 onToggleComplete={toggleActivityComplete}
-                                                                onGenerateImage={generateActivityImage}
+                                                                onEditNotes={handleOpenNotes}
                                                                 onDetails={openDetailsModal}
                                                                 onReview={handleJournalEntry}
                                                                 isConflict={conflicts.has(activity.id)}
@@ -936,6 +994,22 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                 title={selectedActivityForDetails?.title || ''}
                 location={selectedActivityForDetails?.location}
                 type={selectedActivityForDetails ? activityTypeConfig[selectedActivityForDetails.type]?.label : ''}
+                image={selectedActivityForDetails?.image}
+                activityId={selectedActivityForDetails?.id}
+                onGenerateImage={generateActivityImage}
+                onUpdateImage={(id, imageUrl) => {
+                    // Update the activity image and persist
+                    if (onUpdateActivity && selectedActivityForDetails) {
+                        onUpdateActivity({ ...selectedActivityForDetails, image: imageUrl });
+                    }
+                    // Also update local state
+                    setItineraryData(prev => prev.map(day => ({
+                        ...day,
+                        itineraryActivities: day.itineraryActivities.map(act =>
+                            act.id === id ? { ...act, image: imageUrl } : act
+                        )
+                    })));
+                }}
             />
 
             {/* Journal Modal */}
@@ -944,6 +1018,14 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                 onClose={() => setJournalModalOpen(false)}
                 activity={selectedActivityForJournal}
                 onSave={handleSaveJournalEntry}
+            />
+            {/* Notes Modal */}
+            <ActivityNotesModal
+                isOpen={activityNotesModalOpen}
+                onClose={() => setActivityNotesModalOpen(false)}
+                title={selectedActivityForNotes?.title || ''}
+                initialNotes={selectedActivityForNotes?.notes}
+                onSave={handleSaveNotes}
             />
         </div >
     );

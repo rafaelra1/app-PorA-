@@ -154,10 +154,6 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     const [isLoadingTopAttractions, setIsLoadingTopAttractions] = useState(false);
     const [selectedTopAttraction, setSelectedTopAttraction] = useState<TopAttraction | null>(null);
 
-    // Visitor Guide State
-    const [visitorGuideContent, setVisitorGuideContent] = useState<string | null>(null);
-    const [isGeneratingVisitorGuide, setIsGeneratingVisitorGuide] = useState(false);
-
     // Store real images fetched from Google Places
     const [realImages, setRealImages] = useState<Record<string, string>>({});
 
@@ -168,38 +164,41 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
         }
     }, [importedAttractions]);
 
-    // Fetch Top Attractions on mount
-    useEffect(() => {
-        const loadTopAttractions = async () => {
-            if (topAttractions.length === 0 && !isLoadingTopAttractions && cityName) {
-                setIsLoadingTopAttractions(true);
-                try {
-                    const service = getGeminiService();
-                    const attractions = await service.generateTopAttractions(cityName);
-                    if (attractions) {
-                        setTopAttractions(attractions);
-                    }
-                } catch (e) {
-                    console.error('Error loading top attractions:', e);
-                } finally {
-                    setIsLoadingTopAttractions(false);
-                }
-            }
-        };
-        loadTopAttractions();
-    }, [cityName]);
+    // Chat Box State
+    const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([
+        { role: 'model', text: `Olá! Sou seu guia turístico em ${cityName}. Pergunte-me sobre ingressos, horários, ou a história dos pontos turísticos!` }
+    ]);
+    const [chatInput, setChatInput] = useState('');
+    const [isChatLoading, setIsChatLoading] = useState(false);
+    const chatEndRef = React.useRef<HTMLDivElement>(null);
 
-    // Handler for generating visitor guide
-    const handleGenerateVisitorGuide = async () => {
-        setIsGeneratingVisitorGuide(true);
+    // Auto-scroll to bottom of chat
+    React.useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
+
+    const handleSendChatMessage = async () => {
+        if (!chatInput.trim()) return;
+
+        const userMsg = chatInput;
+        setChatInput('');
+        setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+        setIsChatLoading(true);
+
         try {
             const service = getGeminiService();
-            const content = await service.generateVisitorGuide(cityName);
-            setVisitorGuideContent(content);
+            // Convert chat history format for service
+            const history = chatMessages.map(m => ({ role: m.role, content: m.text }));
+
+            // Pass simple trip context with city name to ensure relevant answers
+            const response = await service.chat(userMsg, history, { destination: cityName });
+
+            setChatMessages(prev => [...prev, { role: 'model', text: response }]);
         } catch (error) {
-            console.error('Error generating visitor guide:', error);
+            console.error('Error in chat:', error);
+            setChatMessages(prev => [...prev, { role: 'model', text: 'Desculpe, tive um problema ao processar sua pergunta. Tente novamente.' }]);
         } finally {
-            setIsGeneratingVisitorGuide(false);
+            setIsChatLoading(false);
         }
     };
 
@@ -345,7 +344,13 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     }, [filteredAttractions, cityName, realImages]);
 
     const handleImportWrapper = (attractions: Attraction[]) => {
-        setImportedAttractions(attractions);
+        setImportedAttractions(prev => {
+            // Filter out duplicates based on name
+            const newAttractions = attractions.filter(
+                newAttr => !prev.some(existing => existing.name.toLowerCase() === newAttr.name.toLowerCase())
+            );
+            return [...prev, ...newAttractions];
+        });
         setHasImported(true); // Reveal the list
     };
 
@@ -629,43 +634,66 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                 {/* Left Column (1/3): Visitor Guide */}
                 < div className="lg:col-span-1 space-y-4" >
                     {/* Visitor Guide Widget */}
-                    < div className="bg-blue-50 rounded-3xl p-5 border border-blue-100 shadow-sm relative overflow-hidden" >
+                    {/* Attractions Chat Widget */}
+                    <div className="bg-blue-50 rounded-3xl p-5 border border-blue-100 shadow-sm relative overflow-hidden flex flex-col h-[400px]">
                         {/* Decorator */}
-                        < div className="absolute top-0 right-0 p-4 opacity-10" >
+                        <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
                             <span className="material-symbols-outlined text-6xl text-blue-600">tour</span>
-                        </div >
+                        </div>
 
-                        <div className="relative z-10">
+                        <div className="relative z-10 flex-none">
                             <div className="flex items-center justify-between mb-3">
-                                <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-blue-600">info</span> Guia do Visitante
+                                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-blue-600">forum</span> Chat do Visitante
                                 </h3>
-                                <span className="text-[10px] font-bold text-blue-600 bg-white px-2 py-0.5 rounded-full shadow-sm">AI Dicas</span>
+                                <span className="text-[10px] font-bold text-blue-600 bg-white px-2 py-0.5 rounded-full shadow-sm">Gemini 3 Flash</span>
                             </div>
+                        </div>
 
-                            {visitorGuideContent ? (
-                                <div
-                                    className="prose prose-sm max-w-none text-text-muted leading-relaxed mb-3"
-                                    dangerouslySetInnerHTML={{ __html: visitorGuideContent }}
-                                />
-                            ) : (
-                                <>
-                                    <p className="font-bold text-sm text-text-main mb-1">Antes de sair</p>
-                                    <p className="text-xs text-text-muted line-clamp-2 mb-3">
-                                        Ingressos, melhor horário, transporte e tudo que você precisa saber.
-                                    </p>
-                                </>
+                        {/* Chat Area */}
+                        <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-3 scrollbar-thin scrollbar-thumb-blue-200 scrollbar-track-transparent">
+                            {chatMessages.map((msg, idx) => (
+                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${msg.role === 'user'
+                                        ? 'bg-blue-600 text-white rounded-tr-none'
+                                        : 'bg-white text-gray-700 shadow-sm rounded-tl-none border border-blue-100'
+                                        }`}>
+                                        {msg.text}
+                                    </div>
+                                </div>
+                            ))}
+                            {isChatLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-white text-gray-500 shadow-sm rounded-2xl rounded-tl-none border border-blue-100 px-3 py-2 text-xs flex items-center gap-1">
+                                        <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                        <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                        <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                    </div>
+                                </div>
                             )}
+                            <div ref={chatEndRef} />
+                        </div>
 
+                        {/* Input Area */}
+                        <div className="relative mt-auto flex gap-2">
+                            <input
+                                type="text"
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()}
+                                placeholder="Pergunte sobre atrações..."
+                                className="flex-1 bg-white border border-blue-200 text-gray-700 text-xs rounded-xl px-3 py-2 focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder:text-gray-400"
+                                disabled={isChatLoading}
+                            />
                             <button
-                                onClick={handleGenerateVisitorGuide}
-                                disabled={isGeneratingVisitorGuide}
-                                className="w-full py-1.5 bg-white rounded-xl text-xs font-bold text-blue-600 hover:bg-blue-100 transition-colors shadow-sm disabled:opacity-50"
+                                onClick={handleSendChatMessage}
+                                disabled={!chatInput.trim() || isChatLoading}
+                                className="bg-blue-600 text-white p-2 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center flex-shrink-0"
                             >
-                                {isGeneratingVisitorGuide ? 'Gerando...' : visitorGuideContent ? 'Atualizar Dicas' : 'Gerar com IA'}
+                                <span className="material-symbols-outlined text-sm">send</span>
                             </button>
                         </div>
-                    </div >
+                    </div>
 
                     {/* Navigation Boxes Row */}
                     < div className="grid grid-cols-3 gap-2" >

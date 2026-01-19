@@ -25,7 +25,7 @@ import {
   Participant
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { useTrips } from '../contexts/TripContext';
+import { useTrips } from '@/contexts/TripContext';
 import { fetchExpenses, createExpense, deleteExpense } from '../services/expenseService';
 import { fetchJournalEntries, createJournalEntry, deleteJournalEntry } from '../services/journalService';
 import { getGeminiService } from '../services/geminiService';
@@ -67,12 +67,13 @@ import { Button } from '../components/ui/Base';
 import AddActivityModal from '../components/trip-details/modals/AddActivityModal';
 import { useChecklist, ChecklistProvider } from '../contexts/ChecklistContext';
 
-import { TaskChecklist } from '../components/trip-details/city-guide/TaskChecklist';
+
 import TripMapExplorer from '../components/trip-details/maps/TripMapExplorer';
 import MediaView from '../components/trip-details/media/MediaView';
 import { MagazineView } from '../components/trip-details/magazine';
-import PreTripInfoView from '../components/trip-details/info/PreTripInfoView';
+import SmartPreTripGuide from '../components/trip-details/pre-trip/PreTripGuide';
 import AccommodationView from '../components/trip-details/logistics/AccommodationView';
+import PreTripBriefingView from '../components/trip-details/pre-trip/briefing/PreTripBriefingView';
 
 interface TripDetailsProps {
   trip: Trip;
@@ -866,12 +867,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
     }
 
     switch (activeSubTab) {
-      case 'checklist':
-        return (
-          <div className="max-w-4xl mx-auto pb-20">
-            <TaskChecklist tripId={trip.id} startDate={trip.startDate} cityName={cities[0]?.name} />
-          </div>
-        );
+
       case 'overview':
         return (
           <OverviewTab
@@ -919,12 +915,9 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             cities={cities}
           />
         );
-      case 'pre_trip_info':
+      case 'pre_trip':
         return (
-          <PreTripInfoView
-            trip={trip}
-            cities={cities}
-          />
+          <SmartPreTripGuide />
         );
       case 'accommodation':
         return (
@@ -950,7 +943,6 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
         return (
           <TransportView
             trip={trip}
-            transports={transports}
             cities={cities}
             onAddClick={() => setIsAddTransportModalOpen(true)}
             onEditClick={handleEditTransport}
@@ -958,8 +950,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             isLoading={isLoadingTransports}
           />
         );
-      case 'logistics': // Fallback for legacy state
-        return null;
+
       case 'docs':
         return <DocumentsView documents={extraDocuments} docsFilter={docsFilter} onFilterChange={setDocsFilter} onAddDocument={() => setIsAddDocumentModalOpen(true)} travelers={trip.participants} onDeleteDocument={handleDeleteDocument} />;
       case 'budget':
@@ -995,6 +986,8 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             itineraryActivities={itineraryActivities}
           />
         );
+      case 'briefing':
+        return <PreTripBriefingView trip={trip} cities={cities} />;
       default: return null;
     }
   };

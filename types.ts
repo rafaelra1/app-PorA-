@@ -47,7 +47,7 @@ export interface UserPreferences {
 }
 
 // Tab types for TripDetails navigation
-export type SubTab = 'overview' | 'pre_trip_info' | 'checklist' | 'itinerary' | 'map' | 'cities' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories' | 'media' | 'magazine';
+export type SubTab = 'overview' | 'pre_trip' | 'briefing' | 'itinerary' | 'map' | 'cities' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories' | 'media' | 'magazine';
 export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map';
 export type DocsFilter = 'Tudo' | 'Reservas' | 'Pessoais' | 'Outros';
 export type ReservationType = 'hotel' | 'flight' | 'car' | 'insurance' | 'activity' | 'train' | 'bus' | 'transfer' | 'ferry' | 'other';
@@ -524,7 +524,9 @@ export interface DiscoverySession {
 export interface TypicalDish {
   name: string;
   description: string;
-  image: string;
+  ingredients?: string[];
+  history?: string;
+  image?: string;
   aiImage?: string;
   isGenerating?: boolean;
 }

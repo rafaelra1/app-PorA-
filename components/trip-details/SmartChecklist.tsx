@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useChecklist } from '../../contexts/ChecklistContext';
-import { useTrips } from '../../contexts/TripContext';
+import { useTrips } from '@/contexts/TripContext';
 import { Task, TaskCategory, TaskPriorityLevel } from '../../types/checklist';
 import { Trip, PreparationTask, TripContext, EnhancedTripContext, ChecklistTask, PlanningGap } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';

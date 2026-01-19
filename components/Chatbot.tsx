@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { getGeminiService } from '../services/geminiService';
-import { useTrips } from '../contexts/TripContext';
+import { useTrips } from '@/contexts/TripContext';
 import { MessageCircle, X, Send, Bot, RefreshCw, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 

@@ -22,7 +22,7 @@ const DocumentProcessing = lazy(() => import('./pages/DocumentProcessing'));
 const CreateTrip = lazy(() => import('./pages/CreateTrip'));
 const Chatbot = lazy(() => import('./components/Chatbot'));
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { TripProvider, useTrips } from './contexts/TripContext';
+import { TripProvider, useTrips } from '@/contexts/TripContext';
 import { UIProvider, useUI } from './contexts/UIContext';
 import { AIProvider } from './contexts/AIContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';

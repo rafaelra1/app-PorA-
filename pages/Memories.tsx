@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useItinerary } from '../contexts/ItineraryContext';
-import { useTrips } from '../contexts/TripContext';
+import { useTrips } from '@/contexts/TripContext';
 import { PageContainer, PageHeader, Button } from '../components/ui/Base';
 import { EmptyState } from '../components/ui/EmptyState';
 import {

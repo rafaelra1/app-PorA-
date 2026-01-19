@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Base';
 import { EmptyState } from '../../ui/EmptyState';
 import { Trip, ItineraryActivity, City, HotelReservation, Transport } from '../../../types';
 import { useToast } from '../../../contexts/ToastContext';
+import { shareService, TripMember } from '../../../services/shareService';
 
 // =============================================================================
 // Types & Interfaces
@@ -18,16 +19,6 @@ interface ShareTripModalProps {
     activities?: ItineraryActivity[];
     hotels?: HotelReservation[];
     transports?: Transport[];
-}
-
-interface InvitedPerson {
-    id: string;
-    name: string;
-    email: string;
-    role: 'Visualizador' | 'Editor';
-    status: 'Pendente' | 'Aceito';
-    initials: string;
-    avatar?: string;
 }
 
 interface TripHighlight {
@@ -261,11 +252,13 @@ const HighlightsCarousel: React.FC<HighlightsCarouselProps> = ({ highlights, onV
 );
 
 interface InvitedPersonItemProps {
-    person: InvitedPerson;
+    person: TripMember;
     onRemove: (id: string) => void;
+    currentUserId?: string;
+    isOwner?: boolean;
 }
 
-const InvitedPersonItem: React.FC<InvitedPersonItemProps> = ({ person, onRemove }) => (
+const InvitedPersonItem: React.FC<InvitedPersonItemProps> = ({ person, onRemove, isOwner }) => (
     <div className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors">
         <div className="flex items-center gap-3">
             {person.avatar ? (
@@ -281,19 +274,23 @@ const InvitedPersonItem: React.FC<InvitedPersonItemProps> = ({ person, onRemove 
             </div>
         </div>
         <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${person.status === 'Aceito'
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${person.status === 'accepted'
                 ? 'bg-green-100 text-green-700'
-                : 'bg-amber-100 text-amber-700'
+                : person.status === 'rejected'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-amber-100 text-amber-700'
                 }`}>
-                {person.status}
+                {person.status === 'accepted' ? 'Aceito' : person.status === 'rejected' ? 'Rejeitado' : 'Pendente'}
             </span>
-            <button
-                onClick={() => onRemove(person.id)}
-                className="p-1 text-text-muted hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                aria-label="Remover convidado"
-            >
-                <span className="material-symbols-outlined text-sm">delete</span>
-            </button>
+            {isOwner && (
+                <button
+                    onClick={() => onRemove(person.id)}
+                    className="p-1 text-text-muted hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                    aria-label="Remover convidado"
+                >
+                    <span className="material-symbols-outlined text-sm">delete</span>
+                </button>
+            )}
         </div>
     </div>
 );
@@ -354,20 +351,54 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
     transports = []
 }) => {
     const { showToast } = useToast();
-    const [privacyMode, setPrivacyMode] = useState<PrivacyMode>('public');
+    const [privacyMode, setPrivacyMode] = useState<PrivacyMode>((trip as any).is_public ? 'public' : 'private');
     const [inviteEmail, setInviteEmail] = useState('');
     const [emailError, setEmailError] = useState('');
-    const [invitedPeople, setInvitedPeople] = useState<InvitedPerson[]>([]);
+    const [invitedPeople, setInvitedPeople] = useState<TripMember[]>([]);
     const [copiedLink, setCopiedLink] = useState(false);
     const [isExportingImage, setIsExportingImage] = useState(false);
     const [isExportingPdf, setIsExportingPdf] = useState(false);
     const [isPublishing, setIsPublishing] = useState(false);
+    const [isLoadingMembers, setIsLoadingMembers] = useState(false);
 
     const previewCardRef = useRef<HTMLDivElement>(null);
     const publicToken = useMemo(() => generatePublicToken(), []);
 
     const shareLink = `https://porai.app/s/${publicToken}`;
     const isPrivate = privacyMode === 'private';
+
+    // Fetch members when modal is open
+    useEffect(() => {
+        if (isOpen && trip.id) {
+            fetchMembers();
+        }
+    }, [isOpen, trip.id]);
+
+    const fetchMembers = async () => {
+        setIsLoadingMembers(true);
+        try {
+            const members = await shareService.getTripMembers(trip.id);
+            setInvitedPeople(members);
+        } catch (error) {
+            console.error('Error fetching members:', error);
+            showToast('Erro ao carregar lista de convidados', 'error');
+        } finally {
+            setIsLoadingMembers(false);
+        }
+    };
+
+    const handleUpdatePrivacy = async (mode: PrivacyMode) => {
+        setPrivacyMode(mode);
+        try {
+            await shareService.updateTripPrivacy(trip.id, mode === 'public');
+            showToast(`Viagem agora é ${mode === 'public' ? 'Pública' : 'Privada'}`, 'success');
+        } catch (error) {
+            console.error('Error updating privacy:', error);
+            // Revert on error
+            setPrivacyMode(mode === 'public' ? 'private' : 'public');
+            showToast('Erro ao atualizar privacidade', 'error');
+        }
+    };
 
     // Calculate dynamic stats
     const tripStats = useMemo(() => ({
@@ -412,7 +443,7 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
         }
     }, [shareLink, isPrivate, showToast]);
 
-    const handleAddInvite = useCallback(() => {
+    const handleAddInvite = useCallback(async () => {
         setEmailError('');
 
         if (!inviteEmail.trim()) {
@@ -430,23 +461,26 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
             return;
         }
 
-        const newPerson: InvitedPerson = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: inviteEmail.split('@')[0],
-            email: inviteEmail,
-            role: 'Visualizador',
-            status: 'Pendente',
-            initials: inviteEmail.slice(0, 2).toUpperCase(),
-        };
+        try {
+            const newMember = await shareService.inviteMember(trip.id, inviteEmail);
+            setInvitedPeople(prev => [...prev, newMember]);
+            setInviteEmail('');
+            showToast('Convite enviado com sucesso!', 'success');
+        } catch (error: any) {
+            console.error('Invite error:', error);
+            setEmailError(error.message || 'Erro ao enviar convite');
+        }
+    }, [inviteEmail, invitedPeople, trip.id, showToast]);
 
-        setInvitedPeople(prev => [...prev, newPerson]);
-        setInviteEmail('');
-        showToast('Convite adicionado', 'success');
-    }, [inviteEmail, invitedPeople, showToast]);
-
-    const handleRemoveInvite = useCallback((id: string) => {
-        setInvitedPeople(prev => prev.filter(p => p.id !== id));
-        showToast('Convite removido', 'info');
+    const handleRemoveInvite = useCallback(async (id: string) => {
+        try {
+            await shareService.removeMember(id);
+            setInvitedPeople(prev => prev.filter(p => p.id !== id));
+            showToast('Membro removido', 'info');
+        } catch (error) {
+            console.error('Remove member error:', error);
+            showToast('Erro ao remover membro', 'error');
+        }
     }, [showToast]);
 
     const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
@@ -548,13 +582,8 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
     const handlePublish = useCallback(async () => {
         setIsPublishing(true);
         try {
-            // Simulate API call
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            // TODO: Implement actual API call
-            // await shareService.updateTripPrivacy(trip.id, privacyMode === 'public');
-            // await shareService.sendInvites(trip.id, invitedPeople.filter(p => p.status === 'Pendente'));
-
+            await shareService.updateTripPrivacy(trip.id, true);
+            setPrivacyMode('public');
             showToast('Viagem publicada com sucesso!', 'success');
             onClose();
         } catch (error) {
@@ -563,7 +592,7 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
         } finally {
             setIsPublishing(false);
         }
-    }, [privacyMode, showToast, onClose]);
+    }, [trip.id, showToast, onClose]);
 
     return (
         <Modal
@@ -571,6 +600,7 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
             onClose={onClose}
             title="Compartilhar Viagem"
             size="xl"
+
         >
             {/* Header Actions */}
             <div className="flex items-center justify-between mb-6 -mt-2">
@@ -621,14 +651,14 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
                         <div className="space-y-3">
                             <PrivacyOption
                                 isSelected={!isPrivate}
-                                onClick={() => setPrivacyMode('public')}
+                                onClick={() => handleUpdatePrivacy('public')}
                                 icon="public"
                                 title="Público"
                                 description="Qualquer pessoa com o link pode visualizar sua viagem."
                             />
                             <PrivacyOption
                                 isSelected={isPrivate}
-                                onClick={() => setPrivacyMode('private')}
+                                onClick={() => handleUpdatePrivacy('private')}
                                 icon="lock"
                                 title="Privado"
                                 description="Apenas você e convidados podem ver."
@@ -693,12 +723,12 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
                                         className={emailError ? 'border-rose-300 focus:border-rose-500' : ''}
                                     />
                                 </div>
-                                <button
+                                <Button
                                     onClick={handleAddInvite}
                                     className="px-4 py-2.5 text-primary font-bold text-sm hover:bg-primary/5 rounded-xl transition-colors whitespace-nowrap"
                                 >
                                     Adicionar
-                                </button>
+                                </Button>
                             </div>
                             {emailError && (
                                 <p className="text-xs text-rose-500 flex items-center gap-1">
@@ -708,12 +738,17 @@ const ShareTripModal: React.FC<ShareTripModalProps> = ({
                             )}
                         </div>
                         <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
-                            {invitedPeople.length > 0 ? (
+                            {isLoadingMembers ? (
+                                <div className="flex justify-center p-4">
+                                    <div className="size-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                </div>
+                            ) : invitedPeople.length > 0 ? (
                                 invitedPeople.map((person) => (
                                     <InvitedPersonItem
                                         key={person.id}
                                         person={person}
                                         onRemove={handleRemoveInvite}
+                                        isOwner={true} // TODO: Check current user role
                                     />
                                 ))
                             ) : (

@@ -11,7 +11,7 @@ interface ItineraryActivityItemProps {
     onToggleComplete: (id: string) => void;
     onDetails: (activity: ItineraryActivity) => void;
     onReview: (activity: ItineraryActivity) => void;
-    onGenerateImage: (id: string) => void;
+    onEditNotes: (activity: ItineraryActivity) => void;
     onEdit: (activity: ItineraryActivity) => void;
     onDelete: (id: string) => void;
     deletingActivityId: string | null;
@@ -27,7 +27,7 @@ export const ItineraryActivityItem: React.FC<ItineraryActivityItemProps> = ({
     onToggleComplete,
     onDetails,
     onReview,
-    onGenerateImage,
+    onEditNotes,
     onEdit,
     onDelete,
     deletingActivityId,
@@ -161,16 +161,13 @@ export const ItineraryActivityItem: React.FC<ItineraryActivityItemProps> = ({
                     <span className="material-symbols-outlined text-lg">rate_review</span>
                 </button>
 
-                {/* Generate Photo Button */}
+                {/* Notes Button */}
                 <button
-                    onClick={(e) => { e.stopPropagation(); onGenerateImage(activity.id); }}
-                    disabled={activity.isGeneratingImage}
-                    title={activity.isGeneratingImage ? 'Gerando...' : 'Gerar Foto'}
-                    className="size-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+                    onClick={(e) => { e.stopPropagation(); onEditNotes(activity); }}
+                    title="Minhas Notas"
+                    className="size-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 transition-colors"
                 >
-                    <span className={`material-symbols-outlined text-lg ${activity.isGeneratingImage ? 'animate-spin' : ''}`}>
-                        {activity.isGeneratingImage ? 'progress_activity' : 'auto_awesome'}
-                    </span>
+                    <span className="material-symbols-outlined text-lg">sticky_note_2</span>
                 </button>
 
                 {/* Edit Button */}

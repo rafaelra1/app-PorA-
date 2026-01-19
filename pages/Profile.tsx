@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useTrips } from '../contexts/TripContext';
+import { useTrips } from '@/contexts/TripContext';
 import { Card, Button, Badge } from '../components/ui/Base';
 
 const Profile: React.FC = () => {

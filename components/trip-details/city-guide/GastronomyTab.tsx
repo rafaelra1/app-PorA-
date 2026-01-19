@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { CityGuide, Restaurant } from '../../../types';
+import { CityGuide, Restaurant, TypicalDish } from '../../../types';
 import { Button } from '../../ui/Base';
 import { ChevronDown, Sparkles, FileText, X, ChevronRight, Utensils, ChefHat, Search, ChevronLeft } from 'lucide-react';
 import { getGeminiService } from '../../../services/geminiService';
 import { useLocalStorage } from '../../../hooks/useLocalStorage';
+import { useIndexedDB } from '../../../hooks/useIndexedDB';
 import RestaurantDetailModal from '../modals/RestaurantDetailModal';
 import AddToItineraryModal from '../modals/AddToItineraryModal';
 import PlaceCard from './PlaceCard';
@@ -11,12 +12,7 @@ import GastronomyDiscoveryMode from './GastronomyDiscoveryMode';
 
 import { AnimatePresence, motion } from 'framer-motion';
 
-interface TypicalDish {
-    name: string;
-    description: string;
-    ingredients: string[];
-    history: string;
-}
+
 
 interface GastronomyTabProps {
     cityGuide: CityGuide | null;
@@ -89,34 +85,103 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     const [isImporting, setIsImporting] = useState(false);
 
     // Gastronomy Guide State
-    const [gastronomyGuideContent, setGastronomyGuideContent] = useState<string | null>(null);
-    const [isGeneratingGuide, setIsGeneratingGuide] = useState(false);
+
 
     // Typical Dishes State
-    const [typicalDishes, setTypicalDishes] = useLocalStorage<TypicalDish[]>(`porai_city_${cityName}_dishes`, []);
+    // Use IndexedDB for dishes as they contain base64 images that exceed localStorage limits
+    const [typicalDishes, setTypicalDishes, isDishesStorageLoading] = useIndexedDB<TypicalDish[]>(`porai_city_${cityName}_dishes`, []);
     const [isLoadingDishes, setIsLoadingDishes] = useState(false);
     const [selectedDish, setSelectedDish] = useState<TypicalDish | null>(null);
+
+    // Chat Box State
+    const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([
+        { role: 'model', text: `Olá! Sou seu guia gastronômico em ${cityName}. Pergunte-me sobre pratos típicos, onde comer ou dicas de etiqueta!` }
+    ]);
+    const [chatInput, setChatInput] = useState('');
+    const [isChatLoading, setIsChatLoading] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom of chat
+    React.useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
+
+    const handleSendChatMessage = async () => {
+        if (!chatInput.trim()) return;
+
+        const userMsg = chatInput;
+        setChatInput('');
+        setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+        setIsChatLoading(true);
+
+        try {
+            const service = getGeminiService();
+            // Convert chat history format for service
+            const history = chatMessages.map(m => ({ role: m.role, content: m.text }));
+
+            // Pass simple trip context with city name to ensure relevant answers
+            const response = await service.chat(userMsg, history, { destination: cityName });
+
+            setChatMessages(prev => [...prev, { role: 'model', text: response }]);
+        } catch (error) {
+            console.error('Error in chat:', error);
+            setChatMessages(prev => [...prev, { role: 'model', text: 'Desculpe, tive um problema ao processar sua pergunta. Tente novamente.' }]);
+        } finally {
+            setIsChatLoading(false);
+        }
+    };
 
     // Generate Typical Dishes on mount if empty
     React.useEffect(() => {
         const loadDishes = async () => {
+            // Wait for storage to load first
+            if (isDishesStorageLoading) return;
+
             if (typicalDishes.length === 0 && !isLoadingDishes && cityName) {
                 setIsLoadingDishes(true);
                 try {
                     const service = getGeminiService();
                     const dishes = await service.generateTypicalDishes(cityName);
+
                     if (dishes) {
                         setTypicalDishes(dishes);
+                        setIsLoadingDishes(false);
+
+                        // Trigger image generation for dishes without images
+                        for (let i = 0; i < dishes.length; i++) {
+                            const dish = dishes[i];
+                            if (!dish.image && !dish.aiImage) {
+                                // Update status to generating
+                                setTypicalDishes(prev => prev.map((d, idx) =>
+                                    idx === i ? { ...d, isGenerating: true } : d
+                                ));
+
+                                // Generate Icon
+                                const iconUrl = await service.generateDishIcon(dish.name);
+
+                                // Update with result
+                                if (iconUrl) {
+                                    setTypicalDishes(prev => prev.map((d, idx) =>
+                                        idx === i ? { ...d, aiImage: iconUrl, isGenerating: false } : d
+                                    ));
+                                } else {
+                                    setTypicalDishes(prev => prev.map((d, idx) =>
+                                        idx === i ? { ...d, isGenerating: false } : d
+                                    ));
+                                }
+                            }
+                        }
+                    } else {
+                        setIsLoadingDishes(false);
                     }
                 } catch (e) {
                     console.error('Error loading typical dishes:', e);
-                } finally {
                     setIsLoadingDishes(false);
                 }
             }
         };
         loadDishes();
-    }, [cityName]);
+    }, [cityName, isDishesStorageLoading, typicalDishes.length]);
 
     const handleSearchDish = (dishName: string) => {
         setSearchQuery(dishName);
@@ -279,19 +344,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
         }
     };
 
-    // Handler for generating gastronomy guide
-    const handleGenerateGastronomyGuide = async () => {
-        setIsGeneratingGuide(true);
-        try {
-            const service = getGeminiService();
-            const content = await service.generateGastronomyGuide(cityName);
-            setGastronomyGuideContent(content);
-        } catch (error) {
-            console.error('Error generating gastronomy guide:', error);
-        } finally {
-            setIsGeneratingGuide(false);
-        }
-    };
+
 
     // Simplified restaurant source logic
     // Simplified restaurant source logic
@@ -370,28 +423,42 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                         <ChevronRight className="w-5 h-5" />
                     </button>
 
-                    <div id="dishes-carousel" className="flex gap-4 overflow-x-auto pb-6 pt-2 snap-x hide-scrollbar px-1 scroll-smooth">
+                    <div id="dishes-carousel" className="flex gap-6 overflow-x-auto pb-8 pt-4 snap-x hide-scrollbar px-1 scroll-smooth">
                         {isLoadingDishes ? (
                             [1, 2, 3, 4, 5].map((i) => (
-                                <div key={i} className="min-w-[200px] h-32 bg-gray-100 rounded-xl animate-pulse flex-shrink-0" />
+                                <div key={i} className="min-w-[220px] h-48 bg-white rounded-3xl border border-gray-100 shadow-sm animate-pulse flex flex-col items-center justify-center p-6" >
+                                    <div className="w-24 h-24 bg-gray-100 rounded-full mb-4"></div>
+                                    <div className="h-4 bg-gray-100 rounded w-3/4"></div>
+                                </div>
                             ))
                         ) : typicalDishes.length > 0 ? (
                             typicalDishes.map((dish, idx) => (
                                 <div
                                     key={idx}
                                     onClick={() => setSelectedDish(dish)}
-                                    className="min-w-[200px] max-w-[200px] bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group/card snap-start"
+                                    className="min-w-[160px] max-w-[160px] bg-white border-2 border-gray-800 rounded-xl p-4 shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col items-center snap-start"
                                 >
-                                    <div>
-                                        <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center text-orange-500 mb-3 group-hover/card:scale-110 transition-transform">
-                                            <Utensils className="w-5 h-5" />
-                                        </div>
-                                        <h4 className="font-bold text-gray-800 leading-tight mb-1">{dish.name}</h4>
-                                        <p className="text-xs text-gray-500 line-clamp-2">{dish.description}</p>
+                                    <div className="relative w-24 h-24 mb-3 flex items-center justify-center">
+                                        {dish.isGenerating ? (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 rounded-lg animate-pulse">
+                                                <Sparkles className="w-6 h-6 text-orange-300 animate-spin" />
+                                            </div>
+                                        ) : (dish.aiImage || dish.image) ? (
+                                            <img
+                                                src={dish.aiImage || dish.image}
+                                                alt={dish.name}
+                                                className="w-full h-full object-contain"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full bg-orange-50 rounded-lg flex items-center justify-center text-orange-300">
+                                                <Utensils className="w-10 h-10" />
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="mt-3 flex items-center text-xs font-semibold text-orange-600">
-                                        Ver detalhes <ChevronRight className="w-3 h-3 ml-1" />
-                                    </div>
+
+                                    <h4 className="font-bold text-gray-900 text-base text-center leading-tight">
+                                        {dish.name}
+                                    </h4>
                                 </div>
                             ))
                         ) : (
@@ -400,9 +467,6 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                             </div>
                         )}
                     </div>
-                    {/* Gradient Overlays for scroll indication */}
-                    <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-white via-white/80 to-transparent pointer-events-none" />
-                    <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white via-white/50 to-transparent pointer-events-none" />
                 </div>
             </div>
 
@@ -499,40 +563,63 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                 {/* Left Column Container */}
                 <div className="flex flex-col gap-4">
                     {/* Gastronomy Guide Widget */}
-                    <div className="bg-amber-50 rounded-3xl p-5 border border-amber-100 shadow-sm relative overflow-hidden">
+                    {/* Gastronomy Chat Widget */}
+                    <div className="bg-amber-50 rounded-3xl p-5 border border-amber-100 shadow-sm relative overflow-hidden flex flex-col h-[400px]">
                         {/* Decorator */}
-                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
                             <span className="material-symbols-outlined text-6xl text-amber-600">restaurant</span>
                         </div>
 
-                        <div className="relative z-10">
+                        <div className="relative z-10 flex-none">
                             <div className="flex items-center justify-between mb-3">
-                                <h3 className="text-sm font-bold text-text-main flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-amber-600">local_dining</span> Guia Gastronômico Local
+                                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-amber-600">forum</span> Chat Gastronômico
                                 </h3>
-                                <span className="text-[10px] font-bold text-amber-600 bg-white px-2 py-0.5 rounded-full shadow-sm">AI Dicas</span>
+                                <span className="text-[10px] font-bold text-amber-600 bg-white px-2 py-0.5 rounded-full shadow-sm">Gemini 3 Flash</span>
                             </div>
+                        </div>
 
-                            {gastronomyGuideContent ? (
-                                <div
-                                    className="prose prose-sm max-w-none text-text-muted leading-relaxed mb-3"
-                                    dangerouslySetInnerHTML={{ __html: gastronomyGuideContent }}
-                                />
-                            ) : (
-                                <>
-                                    <p className="font-bold text-sm text-text-main mb-1">Antes de reservar</p>
-                                    <p className="text-xs text-text-muted line-clamp-2 mb-3">
-                                        Descubra horários típicos, pratos imperdíveis, gorjeta e muito mais.
-                                    </p>
-                                </>
+                        {/* Chat Area */}
+                        <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-3 scrollbar-thin scrollbar-thumb-amber-200 scrollbar-track-transparent">
+                            {chatMessages.map((msg, idx) => (
+                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${msg.role === 'user'
+                                        ? 'bg-amber-600 text-white rounded-tr-none'
+                                        : 'bg-white text-gray-700 shadow-sm rounded-tl-none border border-amber-100'
+                                        }`}>
+                                        {msg.text}
+                                    </div>
+                                </div>
+                            ))}
+                            {isChatLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-white text-gray-500 shadow-sm rounded-2xl rounded-tl-none border border-amber-100 px-3 py-2 text-xs flex items-center gap-1">
+                                        <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                        <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                        <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                    </div>
+                                </div>
                             )}
+                            <div ref={chatEndRef} />
+                        </div>
 
+                        {/* Input Area */}
+                        <div className="relative mt-auto flex gap-2">
+                            <input
+                                type="text"
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()}
+                                placeholder="Pergunte sobre comida..."
+                                className="flex-1 bg-white border border-amber-200 text-gray-700 text-xs rounded-xl px-3 py-2 focus:ring-1 focus:ring-amber-500 focus:outline-none placeholder:text-gray-400"
+                                disabled={isChatLoading}
+                            />
                             <button
-                                onClick={handleGenerateGastronomyGuide}
-                                disabled={isGeneratingGuide}
-                                className="w-full py-1.5 bg-white rounded-xl text-xs font-bold text-amber-600 hover:bg-amber-100 transition-colors shadow-sm disabled:opacity-50"
+                                onClick={handleSendChatMessage}
+                                disabled={!chatInput.trim() || isChatLoading}
+                                className="bg-amber-600 text-white p-2 rounded-xl hover:bg-amber-700 transition-colors disabled:opacity-50 flex items-center justify-center flex-shrink-0"
                             >
-                                {isGeneratingGuide ? 'Gerando...' : gastronomyGuideContent ? 'Atualizar Dicas' : 'Gerar com IA'}
+                                <span className="material-symbols-outlined text-sm">send</span>
                             </button>
                         </div>
                     </div>

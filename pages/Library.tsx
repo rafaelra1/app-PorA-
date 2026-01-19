@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useState, useMemo } from 'react';
 import { Card, Button, Badge, PageContainer, PageHeader, FilterBar, FilterButton } from '../components/ui/Base';
-import { useTrips } from '../contexts/TripContext';
+import { useTrips } from '@/contexts/TripContext';
 import { getGeminiService } from '../services/geminiService';
 
 interface UserDocument {
