@@ -794,10 +794,10 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                         </button>
                     </div>
 
-                    {/* Smart Generate Button */}
+                    {/* Smart Generate Button - Hidden on mobile */}
                     <button
                         onClick={handleSyncDocuments}
-                        className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 text-xs font-bold transition-all shadow-md active:scale-95 bubble-effect"
+                        className="hidden md:flex items-center gap-2 px-4 py-1.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 text-xs font-bold transition-all shadow-md active:scale-95 bubble-effect"
                     >
                         <span className="material-symbols-outlined text-base">auto_awesome</span>
                         Sincronizar Documentos
@@ -806,7 +806,7 @@ const ItineraryView: React.FC<ItineraryViewProps> = ({
                     <button
                         onClick={handleSyncGoogleCalendar}
                         disabled={isSyncingCalendar}
-                        className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-text-main hover:bg-gray-50 text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                        className="hidden md:flex items-center gap-2 px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-text-main hover:bg-gray-50 text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
                     >
                         <span className={`material-symbols-outlined text-base text-blue-600 ${isSyncingCalendar ? 'animate-spin' : ''}`}>
                             {isSyncingCalendar ? 'sync' : 'calendar_today'}
