@@ -93,7 +93,8 @@ const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
                     setQueue(prev => prev.map((it, idx) => idx === i ? validated : it));
                 } catch (err) {
                     console.error(`Validation failed for ${item.name}`, err);
-                    // Mark as error needed? validateWithPlaces returns error status generally.
+                    // Mark as error so it doesn't get stuck in 'validating'
+                    setQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'error', errorMessage: 'Falha na validação' } : it));
                 }
             }
         }

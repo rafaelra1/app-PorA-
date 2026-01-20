@@ -9,13 +9,15 @@ interface AttractionDetailModalProps {
     onClose: () => void;
     attraction: Attraction | null;
     onAddToItinerary?: (attraction: Attraction) => void;
+    cityName?: string;
 }
 
 const AttractionDetailModal: React.FC<AttractionDetailModalProps> = ({
     isOpen,
     onClose,
     attraction,
-    onAddToItinerary
+    onAddToItinerary,
+    cityName = ''
 }) => {
     const [isFavorite, setIsFavorite] = React.useState(false);
 
@@ -142,7 +144,7 @@ const AttractionDetailModal: React.FC<AttractionDetailModalProps> = ({
                     </Button>
 
                     <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(attraction.name + (attraction.address ? ' ' + attraction.address : ' ' + (attraction.city || '')))}`}
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(attraction.name + ' ' + (attraction.city || cityName))}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-1"

@@ -297,7 +297,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
         }
 
         return filtered;
-    }, [cityGuide, attractionSearch, activeFilter, hasImported, importedAttractions]);
+    }, [cityGuide, attractionSearch, activeFilter, hasImported, importedAttractions, excludedAttractions]);
 
     // Fetch real images for attractions that appear to be placeholders
     useEffect(() => {
@@ -855,6 +855,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                 isOpen={isDetailModalOpen}
                 onClose={() => setIsDetailModalOpen(false)}
                 attraction={selectedAttraction}
+                cityName={cityName}
                 onAddToItinerary={(attr) => {
                     setIsDetailModalOpen(false);
                     handleOpenAddToItinerary(attr);

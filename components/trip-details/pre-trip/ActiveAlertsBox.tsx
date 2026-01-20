@@ -9,8 +9,18 @@ interface ActiveAlertsBoxProps {
     city?: City | null;
 }
 
+// Helper to detect if this is a domestic trip (within Brazil)
+const isDomesticTrip = (country?: string): boolean => {
+    if (!country) return false;
+    const normalizedCountry = country.toLowerCase().trim();
+    return normalizedCountry === 'brasil' || normalizedCountry === 'brazil';
+};
+
 export const ActiveAlertsBox: React.FC<ActiveAlertsBoxProps> = ({ data, trip, city }) => {
     const { addTask } = useChecklist();
+
+    // Check if this is a domestic trip (Brazil)
+    const isDomestic = isDomesticTrip(city?.country) || isDomesticTrip(data.tripDuration);
 
     const handleAddAlertTask = async (title: string, description: string, category: 'documentation' | 'health' | 'other') => {
         await addTask(title, trip.id, {
@@ -23,8 +33,8 @@ export const ActiveAlertsBox: React.FC<ActiveAlertsBoxProps> = ({ data, trip, ci
     // Extract alerts from data
     const alerts = [];
 
-    // Visa/Entry Alert
-    if (data.entry) {
+    // Visa/Entry Alert - Only for international trips
+    if (data.entry && !isDomestic) {
         if (!data.entry.visaPolicy.isVisaFree) {
             alerts.push({
                 id: 'visa',
@@ -36,7 +46,7 @@ export const ActiveAlertsBox: React.FC<ActiveAlertsBoxProps> = ({ data, trip, ci
             });
         }
 
-        // Passport validity
+        // Passport validity - Only for international trips
         alerts.push({
             id: 'passport',
             type: 'entry',

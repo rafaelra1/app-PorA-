@@ -159,7 +159,7 @@ const PlaceCard: React.FC<PlaceCardProps> = ({
             className="group overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 rounded-2xl bg-white flex flex-col h-full cursor-pointer"
         >
             {/* Image Section */}
-            <div className={`relative h-56 overflow-hidden ${!image && 'bg-gray-50 flex items-center justify-center'}`}>
+            <div className={`relative aspect-video w-full overflow-hidden ${!image && 'bg-gray-50 flex items-center justify-center'}`}>
                 {image && !image.includes('placeholder') ? (
                     <img
                         src={image}

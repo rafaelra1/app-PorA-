@@ -34,8 +34,24 @@ const CityGuideLayout: React.FC<CityGuideLayoutProps> = ({
                 onCityChange={(city) => onCityChange && onCityChange(city)}
                 className="mb-6"
             />
-
-
+            {/* Navigation Tabs */}
+            <div className="flex border-b border-gray-100 mb-6 overflow-x-auto no-scrollbar">
+                {CITY_GUIDE_TABS.map(tab => {
+                    const isActive = activeCityTab === tab.id;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => onTabChange(tab.id)}
+                            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-all border-b-2 -mb-px ${isActive
+                                ? 'text-accent-main border-accent-main'
+                                : 'text-text-muted border-transparent hover:text-text-main'
+                                }`}
+                        >
+                            {tab.label}
+                        </button>
+                    );
+                })}
+            </div>
 
             <div className="w-full">
                 {children}

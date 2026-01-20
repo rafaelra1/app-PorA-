@@ -237,7 +237,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     };
 
     // Persistence: Load from localStorage
-    // Persistence: Load from localStorage
+
     React.useEffect(() => {
         if (typeof window !== 'undefined') {
             const savedExcluded = localStorage.getItem(`excluded_restaurants_${cityName}`);
@@ -255,7 +255,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     }, [cityName]);
 
     // Persistence: Save to localStorage
-    // Persistence: Save to localStorage
+
     React.useEffect(() => {
         if (typeof window !== 'undefined') {
             localStorage.setItem(`excluded_restaurants_${cityName}`, JSON.stringify(excludedRestaurants));
@@ -353,7 +353,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
             return generatedRestaurants.filter(r => !excludedRestaurants.includes(r.name));
         }
         return [];
-    }, [cityGuide, generatedRestaurants, excludedRestaurants]);
+    }, [generatedRestaurants, excludedRestaurants]);
 
     return (
         <div className="w-full animate-in fade-in duration-300">

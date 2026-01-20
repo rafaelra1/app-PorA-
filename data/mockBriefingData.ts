@@ -347,8 +347,8 @@ export const GENERIC_BRIEFING_DATA: PreTripBriefingData = {
     entry: {
         visaPolicy: {
             title: 'Requisitos de Entrada',
-            description: 'Verifique a necessidade de visto para seu destino e nacionalidade.',
-            isVisaFree: false
+            description: 'Verifique a necessidade de visto para seu destino. A maioria dos destinos populares dispensa visto para brasileiros.',
+            isVisaFree: true
         },
         documents: [
             { name: 'Passaporte (validade > 6 meses)', required: true },
@@ -386,9 +386,9 @@ export const GENERIC_BRIEFING_DATA: PreTripBriefingData = {
     },
     safety: {
         safetyLevel: {
-            status: 'caution',
-            label: 'ATENÇÃO',
-            description: 'Pesquise sobre a segurança específica do seu destino.'
+            status: 'safe',
+            label: 'VERIFIQUE',
+            description: 'Pesquise sobre a segurança específica do seu destino antes de viajar.'
         },
         numbers: [
             { label: 'Emergência', number: '112 / 911' },
