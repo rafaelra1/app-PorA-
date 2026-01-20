@@ -1,23 +1,22 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { CityGuide, Restaurant, TypicalDish } from '../../../types';
 import { Button } from '../../ui/Base';
 import { ChevronDown, Sparkles, FileText, X, ChevronRight, Utensils, ChefHat, Search, ChevronLeft } from 'lucide-react';
 import { getGeminiService } from '../../../services/geminiService';
-import { useLocalStorage } from '../../../hooks/useLocalStorage';
-import { useIndexedDB } from '../../../hooks/useIndexedDB';
 import RestaurantDetailModal from '../modals/RestaurantDetailModal';
 import AddToItineraryModal from '../modals/AddToItineraryModal';
 import PlaceCard from './PlaceCard';
 import GastronomyDiscoveryMode from './GastronomyDiscoveryMode';
 
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTrips } from '../../../contexts/TripContext';
 
 
 
 interface GastronomyTabProps {
     cityGuide: CityGuide | null;
     isLoadingGuide: boolean;
-    cityName?: string;
+    cityName: string;
     onAddToItinerary?: (data: { itemName: string; itemType: 'restaurant' | 'attraction'; date: string; time: string; notes?: string; address?: string; image?: string; category?: string }) => void;
     onTabChange?: (tab: 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map') => void;
     tripStartDate?: string;
@@ -49,7 +48,7 @@ const getCategoryStyle = (category: string = '') => {
 const GastronomyTab: React.FC<GastronomyTabProps> = ({
     cityGuide,
     isLoadingGuide,
-    cityName = 'Atenas',
+    cityName,
     onAddToItinerary,
     onTabChange,
     tripStartDate,
@@ -64,7 +63,6 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     // Search & Generation State
     const [searchQuery, setSearchQuery] = useState(cityName || '');
     const [isGenerating, setIsGenerating] = useState(false);
-    const [generatedRestaurants, setGeneratedRestaurants] = useLocalStorage<Restaurant[]>(`porai_city_${cityName}_restaurants`, []);
 
     // Discovery Mode State
     const [showDiscoveryMode, setShowDiscoveryMode] = useState(false);
@@ -76,20 +74,12 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
         goldenTip: string;
     } | null>(null);
 
-    // Exclusion State
-    const [excludedRestaurants, setExcludedRestaurants] = useState<string[]>([]);
-
     // Import State
     const [showImportModal, setShowImportModal] = useState(false);
     const [importText, setImportText] = useState('');
     const [isImporting, setIsImporting] = useState(false);
 
-    // Gastronomy Guide State
-
-
     // Typical Dishes State
-    // Use IndexedDB for dishes as they contain base64 images that exceed localStorage limits
-    const [typicalDishes, setTypicalDishes, isDishesStorageLoading] = useIndexedDB<TypicalDish[]>(`porai_city_${cityName}_dishes`, []);
     const [isLoadingDishes, setIsLoadingDishes] = useState(false);
     const [selectedDish, setSelectedDish] = useState<TypicalDish | null>(null);
 
@@ -100,6 +90,39 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     const [chatInput, setChatInput] = useState('');
     const [isChatLoading, setIsChatLoading] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
+
+    // Get trip context
+    const { selectedTrip, updateDestination } = useTrips();
+
+    // Find current destination data
+    const currentDestination = useMemo(() => {
+        return selectedTrip?.detailedDestinations?.find(d => d.name === cityName);
+    }, [selectedTrip, cityName]);
+
+    // Derived states from context
+    const generatedRestaurants = currentDestination?.restaurants || [];
+    const excludedRestaurants = currentDestination?.excludedRestaurants || [];
+    const typicalDishes = currentDestination?.typicalDishes || [];
+    const isDishesStorageLoading = false; // Always false as it's now synced from context
+
+    // Setters
+    const setGeneratedRestaurantsFunc = useCallback(async (newRestaurants: Restaurant[] | ((prev: Restaurant[]) => Restaurant[])) => {
+        if (!selectedTrip || !currentDestination) return;
+        const value = typeof newRestaurants === 'function' ? newRestaurants(generatedRestaurants) : newRestaurants;
+        await updateDestination(selectedTrip.id, currentDestination.id, { restaurants: value });
+    }, [selectedTrip, currentDestination, updateDestination, generatedRestaurants]);
+
+    const setExcludedRestaurantsFunc = useCallback(async (newExcluded: string[] | ((prev: string[]) => string[])) => {
+        if (!selectedTrip || !currentDestination) return;
+        const value = typeof newExcluded === 'function' ? newExcluded(excludedRestaurants) : newExcluded;
+        await updateDestination(selectedTrip.id, currentDestination.id, { excludedRestaurants: value });
+    }, [selectedTrip, currentDestination, updateDestination, excludedRestaurants]);
+
+    const setTypicalDishesFunc = useCallback(async (newDishes: TypicalDish[] | ((prev: TypicalDish[]) => TypicalDish[])) => {
+        if (!selectedTrip || !currentDestination) return;
+        const value = typeof newDishes === 'function' ? newDishes(typicalDishes) : newDishes;
+        await updateDestination(selectedTrip.id, currentDestination.id, { typicalDishes: value });
+    }, [selectedTrip, currentDestination, updateDestination, typicalDishes]);
 
     // Auto-scroll to bottom of chat
     React.useEffect(() => {
@@ -134,54 +157,43 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     // Generate Typical Dishes on mount if empty
     React.useEffect(() => {
         const loadDishes = async () => {
-            // Wait for storage to load first
-            if (isDishesStorageLoading) return;
+            // Wait for storage to load first or if already loading
+            if (isDishesStorageLoading || isLoadingDishes) return;
 
-            if (typicalDishes.length === 0 && !isLoadingDishes && cityName) {
+            if (typicalDishes.length === 0 && cityName) {
                 setIsLoadingDishes(true);
                 try {
                     const service = getGeminiService();
                     const dishes = await service.generateTypicalDishes(cityName);
 
-                    if (dishes) {
-                        setTypicalDishes(dishes);
-                        setIsLoadingDishes(false);
+                    if (dishes && dishes.length > 0) {
+                        await setTypicalDishesFunc(dishes);
 
-                        // Trigger image generation for dishes without images
+                        // Trigger image generation for dishes without images sequentially
                         for (let i = 0; i < dishes.length; i++) {
                             const dish = dishes[i];
                             if (!dish.image && !dish.aiImage) {
-                                // Update status to generating
-                                setTypicalDishes(prev => prev.map((d, idx) =>
-                                    idx === i ? { ...d, isGenerating: true } : d
-                                ));
-
                                 // Generate Icon
                                 const iconUrl = await service.generateDishIcon(dish.name);
 
                                 // Update with result
                                 if (iconUrl) {
-                                    setTypicalDishes(prev => prev.map((d, idx) =>
+                                    await setTypicalDishesFunc(prev => prev.map((d, idx) =>
                                         idx === i ? { ...d, aiImage: iconUrl, isGenerating: false } : d
-                                    ));
-                                } else {
-                                    setTypicalDishes(prev => prev.map((d, idx) =>
-                                        idx === i ? { ...d, isGenerating: false } : d
                                     ));
                                 }
                             }
                         }
-                    } else {
-                        setIsLoadingDishes(false);
                     }
                 } catch (e) {
                     console.error('Error loading typical dishes:', e);
+                } finally {
                     setIsLoadingDishes(false);
                 }
             }
         };
         loadDishes();
-    }, [cityName, isDishesStorageLoading, typicalDishes.length]);
+    }, [cityName, isDishesStorageLoading, typicalDishes.length, setTypicalDishesFunc]);
 
     const handleSearchDish = (dishName: string) => {
         setSearchQuery(dishName);
@@ -197,7 +209,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     const handleGenerateCuration = async () => {
         setIsGenerating(true);
         setIsGeneratingOverview(true);
-        setGeneratedRestaurants([]); // Clear previous
+        await setGeneratedRestaurantsFunc([]); // Clear previous
 
         try {
             const service = getGeminiService();
@@ -225,7 +237,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                     isOpen: true
                 }));
 
-                setGeneratedRestaurants(mappedRestaurants);
+                await setGeneratedRestaurantsFunc(mappedRestaurants);
             }
         } catch (error) {
             console.error('Error generating curation:', error);
@@ -236,34 +248,8 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
         }
     };
 
-    // Persistence: Load from localStorage
-
-    React.useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const savedExcluded = localStorage.getItem(`excluded_restaurants_${cityName}`);
-            if (savedExcluded) {
-                try {
-                    const parsed = JSON.parse(savedExcluded);
-                    if (Array.isArray(parsed)) {
-                        setExcludedRestaurants(parsed);
-                    }
-                } catch (e) {
-                    console.error('Error parsing excluded restaurants:', e);
-                }
-            }
-        }
-    }, [cityName]);
-
-    // Persistence: Save to localStorage
-
-    React.useEffect(() => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem(`excluded_restaurants_${cityName}`, JSON.stringify(excludedRestaurants));
-        }
-    }, [excludedRestaurants, cityName]);
-
     const handleDeleteRestaurant = (restaurant: Restaurant) => {
-        setExcludedRestaurants(prev => [...prev, restaurant.name]);
+        setExcludedRestaurantsFunc([...excludedRestaurants, restaurant.name]);
     };
 
     const handleGoogleMaps = (e: React.MouseEvent, restaurant?: Restaurant) => {
@@ -295,7 +281,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
     const handleDiscoverySave = (restaurant: Restaurant) => {
         // Check if already exists by name to avoid duplicates
         if (!generatedRestaurants.some(r => r.name === restaurant.name)) {
-            setGeneratedRestaurants(prev => [restaurant, ...prev]);
+            setGeneratedRestaurantsFunc([restaurant, ...generatedRestaurants]);
         }
     };
 
@@ -333,7 +319,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                     isOpen: true
                 }));
 
-                setGeneratedRestaurants(prev => [...prev, ...mapped]);
+                await setGeneratedRestaurantsFunc([...generatedRestaurants, ...mapped]);
                 setShowImportModal(false);
                 setImportText('');
             }

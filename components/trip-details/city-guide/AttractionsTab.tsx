@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
-import { useLocalStorage } from '../../../hooks/useLocalStorage';
 import { Attraction, CityGuide, DiscoveryAttraction } from '../../../types';
 import { Card, Badge } from '../../ui/Base';
 import { Sparkles, Map, Plus, Search, Star, Heart, Clock, Ticket, MapPin, Loader2, ChevronLeft, ChevronRight, Info, Calendar, X, Camera, ExternalLink, Bookmark } from 'lucide-react';
@@ -13,6 +12,7 @@ import DiscoveryMode from './DiscoveryMode';
 import { getGeminiService } from '../../../services/geminiService';
 import { googlePlacesService } from '../../../services/googlePlacesService';
 import discoveryService from '../../../services/discoveryService';
+import { useTrips } from '../../../contexts/TripContext';
 
 // Import animations
 import '../../../styles/discovery-mode.css';
@@ -35,7 +35,7 @@ interface AttractionsTabProps {
     tripStartDate?: string;
     tripEndDate?: string;
     onAddToItinerary?: (data: { itemName: string; itemType: 'restaurant' | 'attraction' | 'custom'; date: string; time: string; notes?: string; address?: string; image?: string; category?: string }) => Promise<void>;
-    cityName?: string;
+    cityName: string;
 }
 
 const CATEGORY_FILTERS = [
@@ -131,7 +131,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     tripStartDate,
     tripEndDate,
     onAddToItinerary,
-    cityName = 'esta cidade'
+    cityName
 }) => {
     const [activeFilter, setActiveFilter] = useState('all');
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -146,16 +146,65 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     const [isAddToItineraryOpen, setIsAddToItineraryOpen] = useState(false);
 
     const [selectedAttraction, setSelectedAttraction] = useState<Attraction | null>(null);
-    const [importedAttractions, setImportedAttractions] = useLocalStorage<Attraction[]>(`imported_attractions_${cityName}`, []);
-    const [excludedAttractions, setExcludedAttractions] = useLocalStorage<string[]>(`excluded_attractions_${cityName}`, []);
 
-    // Top Attractions State
-    const [topAttractions, setTopAttractions] = useLocalStorage<TopAttraction[]>(`porai_city_${cityName}_top_attractions`, []);
+    // Get trip context
+    const { selectedTrip, updateDestination } = useTrips();
+
+    // Find current destination data
+    const currentDestination = useMemo(() => {
+        return selectedTrip?.detailedDestinations?.find(d => d.name === cityName);
+    }, [selectedTrip, cityName]);
+
+    // Derived states from context (for backwards compatibility with existing logic)
+    const importedAttractions = currentDestination?.attractions || [];
+    const excludedAttractions = currentDestination?.excludedAttractions || [];
+    const topAttractions = currentDestination?.topAttractions || [];
+
     const [isLoadingTopAttractions, setIsLoadingTopAttractions] = useState(false);
     const [selectedTopAttraction, setSelectedTopAttraction] = useState<TopAttraction | null>(null);
 
+    // Persistence helpers
+    const setImportedAttractionsFunc = async (newAttractions: Attraction[] | ((prev: Attraction[]) => Attraction[])) => {
+        if (!selectedTrip || !currentDestination) return;
+        const value = typeof newAttractions === 'function' ? newAttractions(importedAttractions) : newAttractions;
+        await updateDestination(selectedTrip.id, currentDestination.id, { attractions: value });
+    };
+
+    const setExcludedAttractionsFunc = async (newExcluded: string[] | ((prev: string[]) => string[])) => {
+        if (!selectedTrip || !currentDestination) return;
+        const value = typeof newExcluded === 'function' ? newExcluded(excludedAttractions) : newExcluded;
+        await updateDestination(selectedTrip.id, currentDestination.id, { excludedAttractions: value });
+    };
+
+    const setTopAttractionsFunc = async (newTop: TopAttraction[] | ((prev: TopAttraction[]) => TopAttraction[])) => {
+        if (!selectedTrip || !currentDestination) return;
+        const value = typeof newTop === 'function' ? newTop(topAttractions) : newTop;
+        await updateDestination(selectedTrip.id, currentDestination.id, { topAttractions: value });
+    };
+
     // Store real images fetched from Google Places
     const [realImages, setRealImages] = useState<Record<string, string>>({});
+
+    // Generate Top Attractions on mount if empty
+    useEffect(() => {
+        const loadTopAttractions = async () => {
+            if (topAttractions.length === 0 && !isLoadingTopAttractions && cityName) {
+                setIsLoadingTopAttractions(true);
+                try {
+                    const service = getGeminiService();
+                    const results = await service.generateTopAttractions(cityName);
+                    if (results && results.length > 0) {
+                        setTopAttractionsFunc(results);
+                    }
+                } catch (error) {
+                    console.error('Error loading top attractions:', error);
+                } finally {
+                    setIsLoadingTopAttractions(false);
+                }
+            }
+        };
+        loadTopAttractions();
+    }, [cityName, topAttractions.length, isLoadingTopAttractions, updateDestination, selectedTrip, currentDestination]);
 
     // Persistence: Load from localStorage
     useEffect(() => {
@@ -205,10 +254,10 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     const handleDeleteAttraction = (attr: Attraction) => {
         // If it's an imported attraction, removing by name or unique ID if exists
         if (importedAttractions.some(a => a.name === attr.name)) {
-            setImportedAttractions(prev => prev.filter(a => a.name !== attr.name));
+            setImportedAttractionsFunc(importedAttractions.filter(a => a.name !== attr.name));
         } else {
             // If it's from city guide, add to excluded list
-            setExcludedAttractions(prev => [...prev, attr.name]);
+            setExcludedAttractionsFunc([...excludedAttractions, attr.name]);
         }
     };
 
@@ -240,7 +289,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
 
         // Add if not already present
         if (!importedAttractions.some(a => a.name === converted.name)) {
-            setImportedAttractions(prev => [...prev, converted]);
+            setImportedAttractionsFunc([...importedAttractions, converted]);
             setHasImported(true);
         }
     };
@@ -344,13 +393,11 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
     }, [filteredAttractions, cityName, realImages]);
 
     const handleImportWrapper = (attractions: Attraction[]) => {
-        setImportedAttractions(prev => {
-            // Filter out duplicates based on name
-            const newAttractions = attractions.filter(
-                newAttr => !prev.some(existing => existing.name.toLowerCase() === newAttr.name.toLowerCase())
-            );
-            return [...prev, ...newAttractions];
-        });
+        // Filter out duplicates based on name
+        const newAttractions = attractions.filter(
+            newAttr => !importedAttractions.some(existing => existing.name.toLowerCase() === newAttr.name.toLowerCase())
+        );
+        setImportedAttractionsFunc([...importedAttractions, ...newAttractions]);
         setHasImported(true); // Reveal the list
     };
 
@@ -608,7 +655,7 @@ const AttractionsTab: React.FC<AttractionsTabProps> = ({
                                                 };
 
                                                 if (!importedAttractions.some(a => a.name === newAttr.name)) {
-                                                    setImportedAttractions(prev => [...prev, newAttr]);
+                                                    setImportedAttractionsFunc([...importedAttractions, newAttr]);
                                                     setHasImported(true);
                                                     // Ideally show a toast here, but for now the visual feedback of the button or list update will do
                                                 }

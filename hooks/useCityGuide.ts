@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { getGeminiService } from '../services/geminiService';
 import { City, CityGuide, GroundingInfo } from '../types';
+import { useTrips } from '../contexts/TripContext';
 
 // =============================================================================
 // Types & Constants
@@ -123,18 +124,40 @@ export function useCityGuide(): UseCityGuideReturn {
     const [isCached, setIsCached] = useState(false);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+    const { selectedTrip, updateDestination } = useTrips();
+
     const fetchCityGuide = useCallback(async (city: City, forceRefresh = false) => {
+        if (!selectedTrip) return;
+
         setIsLoadingGuide(true);
         setError(null);
 
+        const currentDestination = selectedTrip.detailedDestinations?.find(d => d.id === city.id || d.name === city.name);
+
         try {
-            // Check cache first (unless forcing refresh)
+            // Check Supabase "cache" first (unless forcing refresh)
+            if (!forceRefresh && currentDestination?.guideData) {
+                setCityGuide(currentDestination.guideData);
+                setIsCached(true);
+                // We don't have a specific timestamp but we can use today or null
+                setLastUpdated(null);
+                setIsLoadingGuide(false);
+                return;
+            }
+
+            // Fallback to localStorage for migration period or if offline
             if (!forceRefresh) {
                 const cached = getFromCache(city.id);
                 if (cached) {
                     setCityGuide(cached.guide);
                     setIsCached(true);
                     setLastUpdated(new Date(cached.cachedAt));
+
+                    // Proactively sync to Supabase if missing there
+                    if (currentDestination) {
+                        updateDestination(selectedTrip.id, currentDestination.id, { guideData: cached.guide });
+                    }
+
                     setIsLoadingGuide(false);
                     return;
                 }
@@ -144,7 +167,12 @@ export function useCityGuide(): UseCityGuideReturn {
             const service = getGeminiService();
             const guide = await service.generateCityGuide(city.name, city.country);
 
-            // Save to cache
+            // Save to context/Supabase
+            if (currentDestination) {
+                await updateDestination(selectedTrip.id, currentDestination.id, { guideData: guide });
+            }
+
+            // Still save to localStorage for offline access
             saveToCache(city.id, guide);
 
             setCityGuide(guide);
@@ -157,7 +185,7 @@ export function useCityGuide(): UseCityGuideReturn {
         } finally {
             setIsLoadingGuide(false);
         }
-    }, []);
+    }, [selectedTrip, updateDestination]);
 
     const fetchGroundingInfo = useCallback(async (cityName: string) => {
         setIsLoadingGrounding(true);
@@ -180,6 +208,8 @@ export function useCityGuide(): UseCityGuideReturn {
     const invalidateCache = useCallback((cityId: string) => {
         try {
             localStorage.removeItem(getCacheKey(cityId));
+            // Note: This only invalidates local cache. 
+            // In a full implementation, we might want to clear guideData in Supabase too if forceRefresh is used.
             setIsCached(false);
         } catch (error) {
             console.error('Error invalidating cache:', error);

@@ -113,6 +113,13 @@ export interface DetailedDestination {
   endDate?: string;
   image?: string;
   editorialContent?: string;
+  attractions?: Attraction[];
+  excludedAttractions?: string[];
+  restaurants?: Restaurant[];
+  excludedRestaurants?: string[];
+  typicalDishes?: TypicalDish[];
+  topAttractions?: any[];
+  guideData?: CityGuide;
 }
 
 export interface YouTubeVideo {

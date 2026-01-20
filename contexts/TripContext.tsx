@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
-import { Trip } from '../types';
+import { Trip, DetailedDestination } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { toISODate, fromISODate } from '../lib/dateUtils';
@@ -60,6 +60,7 @@ interface TripContextType {
     deleteTrip: (id: string) => Promise<void>;
     selectTrip: (id: string | null) => void;
     setEditingTrip: (trip: Trip | undefined) => void;
+    updateDestination: (tripId: string, destinationId: string, updates: Partial<DetailedDestination>) => Promise<void>;
 }
 
 const TripContext = createContext<TripContextType | null>(null);
@@ -322,6 +323,58 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setSelectedTripId(id);
     }, []);
 
+    const updateDestination = useCallback(async (tripId: string, destinationId: string, updates: Partial<DetailedDestination>): Promise<void> => {
+        if (!user) throw new Error('Usuário não autenticado');
+
+        const tripToUpdate = trips.find(t => t.id === tripId);
+        if (!tripToUpdate) return;
+
+        // Create updated trip object
+        const updatedDestinations = (tripToUpdate.detailedDestinations || []).map(dest =>
+            dest.id === destinationId ? { ...dest, ...updates } : dest
+        );
+
+        const updatedTrip = {
+            ...tripToUpdate,
+            detailedDestinations: updatedDestinations
+        };
+
+        // Optimistic update
+        setTripsState(prev => {
+            const newState = prev.map(t => t.id === tripId ? updatedTrip : t);
+            updateCache(newState);
+            return newState;
+        });
+
+        try {
+            // Persist to Supabase
+            const { title, destination, startDate, endDate, status, coverImage, ...rest } = updatedTrip;
+
+            // We only need to update the 'detailedDestinations' part inside the JSONB 'data' column
+            // But 'rest' includes other fields like vibe, tags, etc. 
+            // The table structure seems to have separate columns for top-level fields and a 'data' column for the rest.
+
+            const { error } = await supabase
+                .from('trips')
+                .update({
+                    data: rest,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', tripId);
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error updating destination data:', error);
+            // Rollback
+            setTripsState(prev => {
+                const newState = prev.map(t => t.id === tripId ? tripToUpdate : t);
+                updateCache(newState);
+                return newState;
+            });
+            throw error;
+        }
+    }, [user, trips, updateCache]);
+
     // Helper to reload if needed (not exported but used internally)
     const fetchTrips = async () => {
         if (!user) return;
@@ -352,7 +405,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateTrip,
         deleteTrip,
         selectTrip,
-        setEditingTrip
+        setEditingTrip,
+        updateDestination
     }), [
         trips,
         selectedTripId,
@@ -362,7 +416,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addTrip,
         updateTrip,
         deleteTrip,
-        selectTrip
+        selectTrip,
+        updateDestination
     ]);
 
     return (
