@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, Clock, FileText } from 'lucide-react';
 import Modal from './Modal';
 import { toISODate } from '../../../lib/dateUtils';
+import { StyledInput } from '../../ui/StyledInput';
 
 interface AddToItineraryModalProps {
     isOpen: boolean;
@@ -129,58 +130,39 @@ const AddToItineraryModal: React.FC<AddToItineraryModalProps> = ({
 
                 {/* Date and Time Fields */}
                 <div className="grid grid-cols-2 gap-5">
-                    <div>
-                        <label className="block text-[10px] font-black text-gray-800 uppercase tracking-[0.1em] mb-2.5 ml-1">
-                            Data
-                        </label>
-                        <div className="relative group">
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                <Calendar className="w-5 h-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                            </div>
-                            <input
-                                type="date"
-                                value={date}
-                                min={min || undefined}
-                                max={max || undefined}
-                                onChange={(e) => setDate(e.target.value)}
-                                className="w-full pl-12 pr-4 py-4 bg-white border border-gray-100 rounded-2xl text-sm font-bold text-gray-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500/20 transition-all shadow-sm"
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-[10px] font-black text-gray-800 uppercase tracking-[0.1em] mb-2.5 ml-1">
-                            Horário
-                        </label>
-                        <div className="relative group">
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                <Clock className="w-5 h-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
-                            </div>
-                            <input
-                                type="time"
-                                value={time}
-                                onChange={(e) => setTime(e.target.value)}
-                                className="w-full pl-12 pr-4 py-4 bg-white border border-gray-100 rounded-2xl text-sm font-bold text-gray-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500/20 transition-all shadow-sm"
-                            />
-                        </div>
-                    </div>
+                    <StyledInput
+                        label="Data"
+                        type="date"
+                        value={date}
+                        min={min || undefined}
+                        max={max || undefined}
+                        onChange={(e) => setDate(e.target.value)}
+                        leftIcon={<Calendar className="w-5 h-5" />}
+                    />
+                    <StyledInput
+                        label="Horário"
+                        type="time"
+                        value={time}
+                        onChange={(e) => setTime(e.target.value)}
+                        leftIcon={<Clock className="w-5 h-5" />}
+                    />
                 </div>
 
                 {/* Notes Field */}
                 <div>
-                    <label className="block text-[10px] font-black text-gray-800 uppercase tracking-[0.1em] mb-2.5 ml-1">
-                        Notas <span className="text-gray-400 font-normal normal-case">(opcional)</span>
-                    </label>
+                    <div className="w-full bg-[#8B5CF6] text-white px-4 py-2 rounded-lg font-bold text-sm tracking-wide lowercase mb-1">
+                        Notas <span className="text-white/70 font-normal normal-case ml-1">(opcional)</span>
+                    </div>
                     <div className="relative group">
                         <div className="absolute left-4 top-5 pointer-events-none">
-                            <FileText className="w-5 h-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                            <FileText className="w-5 h-5 text-gray-400 group-focus-within:text-[#8B5CF6] transition-colors" />
                         </div>
                         <textarea
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             placeholder="Ex: Pedir mesa na varanda, referência do Google..."
                             rows={4}
-                            className="w-full pl-12 pr-5 py-5 bg-white border border-gray-100 rounded-[2rem] text-sm font-medium text-gray-600 focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500/20 transition-all shadow-sm resize-none"
+                            className="w-full pl-12 pr-5 py-3 bg-white border border-gray-400 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:border-[#8B5CF6] focus:ring-1 focus:ring-[#8B5CF6] transition-all shadow-sm resize-none placeholder-gray-400"
                         />
                     </div>
                 </div>

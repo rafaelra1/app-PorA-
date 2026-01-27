@@ -1,14 +1,15 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { Trip, Transport, TransportType, City } from '../../../types';
-import { useTransport } from '../../../contexts/TransportContext'; // To be connected
+import { useTransport } from '../../../contexts/TransportContext';
 import TransportCard from './TransportCard';
-import { useLocalStorage } from '../../../hooks/useLocalStorage'; // Start with local storage for migration check
+import { useLocalStorage } from '../../../hooks/useLocalStorage';
 import { Skeleton } from '../../ui/Base';
 
 interface TransportViewProps {
     trip: Trip;
-    cities?: City[]; // Made optional to avoid immediate break, but intended to be passed
+    cities?: City[];
+    cityId?: string; // Filter by specific City
     onAddClick?: () => void;
     onEditClick?: (transport: Transport) => void;
     onDeleteClick?: (id: string) => void;
@@ -18,12 +19,12 @@ interface TransportViewProps {
 const TransportView: React.FC<TransportViewProps> = ({
     trip,
     cities = [],
+    cityId,
     onAddClick,
     onEditClick,
     onDeleteClick,
     isLoading
 }) => {
-    // ... hooks ...
     const {
         transports,
         fetchTransports,
@@ -69,13 +70,17 @@ const TransportView: React.FC<TransportViewProps> = ({
         ? transports
         : transports.filter(t => t.type === transportFilter);
 
+    // Apply City Filter
+    if (cityId) {
+        displayedTransports = displayedTransports.filter(t => t.cityId === cityId);
+    }
+
     // Sort Logic
     displayedTransports = [...displayedTransports].sort((a, b) => {
-        if (sortOrder === 'newest') return 0; // Natural order (usually newest if appended) or we can implement created_at
+        if (sortOrder === 'newest') return 0;
 
         const getDate = (dateStr: string, timeStr: string) => {
             if (!dateStr) return 0;
-            // Normalize date standard YYYY-MM-DD
             let date = dateStr;
             if (dateStr.includes('/')) {
                 const [d, m, y] = dateStr.split('/');
@@ -91,7 +96,6 @@ const TransportView: React.FC<TransportViewProps> = ({
     });
 
     if (sortOrder === 'newest') {
-        // If IDs are chronological or handled via created_at, reverse might work if fetch order is preserved
         displayedTransports.reverse();
     }
 
@@ -101,8 +105,8 @@ const TransportView: React.FC<TransportViewProps> = ({
 
     return (
         <div className="space-y-6">
-            {/* Alerts Section */}
-            {(hasMissingDates || hasMissingTransports) && (
+            {/* Alerts Section (Only show if NOT filtering by city, or adapt accordingly) */}
+            {!cityId && (hasMissingDates || hasMissingTransports) && (
                 <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
                     <div className="p-2 bg-amber-100 rounded-full shrink-0">
                         <span className="material-symbols-outlined text-amber-600 text-xl">warning</span>
@@ -111,18 +115,15 @@ const TransportView: React.FC<TransportViewProps> = ({
                         <h4 className="font-bold text-amber-800 text-sm mb-1">Atenção ao Planejamento</h4>
                         <div className="text-sm text-amber-700 space-y-1">
                             {hasMissingDates && (
-                                <p>• As datas da viagem ainda não foram definidas. Defina o período para organizar melhor seus deslocamentos.</p>
+                                <p>• As datas da viagem ainda não foram definidas.</p>
                             )}
                             {hasMissingTransports && (
-                                <p>• Você adicionou cidades ao roteiro mas ainda não definiu como ir de uma para outra. Adicione os transportes entre elas.</p>
+                                <p>• Você adicionou cidades ao roteiro mas ainda não definiu como ir de uma para outra.</p>
                             )}
                         </div>
                     </div>
                     {!hasMissingDates && (
-                        <button
-                            onClick={onAddClick}
-                            className="bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                        >
+                        <button onClick={onAddClick} className="bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
                             Resolver
                         </button>
                     )}
@@ -159,41 +160,26 @@ const TransportView: React.FC<TransportViewProps> = ({
 
                     {/* Right Actions */}
                     <div className="flex items-center gap-2 w-full md:w-auto justify-end px-1">
-                        {/* Sort */}
                         <button
-                            onClick={() => setSortOrder(prev => {
-                                if (prev === 'newest') return 'date_asc';
-                                if (prev === 'date_asc') return 'oldest';
-                                return 'newest';
-                            })}
+                            onClick={() => setSortOrder(prev => prev === 'newest' ? 'date_asc' : prev === 'date_asc' ? 'oldest' : 'newest')}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-xs font-bold text-text-muted transition-all shadow-sm"
                         >
                             <span className="material-symbols-outlined text-base">swap_vert</span>
                             {sortOrder === 'newest' ? 'Recentes' : sortOrder === 'date_asc' ? 'Cronológico' : 'Antigos'}
                         </button>
 
-                        {/* View Mode */}
                         <div className="flex bg-white rounded-xl border border-gray-200 p-0.5 shadow-sm">
-                            <button
-                                onClick={() => setViewMode('list')}
-                                className={`p-1 rounded-lg transition-all ${viewMode === 'list' ? 'bg-gray-100 text-primary' : 'text-gray-400 hover:text-gray-600'}`}
-                            >
+                            <button onClick={() => setViewMode('list')} className={`p-1 rounded-lg transition-all ${viewMode === 'list' ? 'bg-gray-100 text-primary' : 'text-gray-400 hover:text-gray-600'}`}>
                                 <span className="material-symbols-outlined text-lg">view_list</span>
                             </button>
-                            <button
-                                onClick={() => setViewMode('grid')}
-                                className={`p-1 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-gray-100 text-primary' : 'text-gray-400 hover:text-gray-600'}`}
-                            >
+                            <button onClick={() => setViewMode('grid')} className={`p-1 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-gray-100 text-primary' : 'text-gray-400 hover:text-gray-600'}`}>
                                 <span className="material-symbols-outlined text-lg">grid_view</span>
                             </button>
                         </div>
 
                         <div className="w-px h-6 bg-gray-200 mx-1"></div>
 
-                        <button
-                            onClick={onAddClick}
-                            className="flex items-center gap-2 px-4 py-2 bg-primary text-text-main rounded-xl font-bold text-xs hover:bg-primary-dark transition-colors shadow-sm"
-                        >
+                        <button onClick={onAddClick} className="flex items-center gap-2 px-4 py-2 bg-primary text-text-main rounded-xl font-bold text-xs hover:bg-primary-dark transition-colors shadow-sm">
                             <span className="material-symbols-outlined text-sm">add</span>
                             Adicionar
                         </button>
@@ -222,25 +208,25 @@ const TransportView: React.FC<TransportViewProps> = ({
                     />
                 )) : (
                     <div className="relative bg-gradient-to-br from-blue-50 via-cyan-50 to-teal-50 rounded-3xl p-16 border border-blue-100/50 text-center overflow-hidden">
-                        {/* Decorative Background Elements */}
                         <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-200/20 to-cyan-200/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
                         <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-teal-200/20 to-cyan-200/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
 
-                        {/* Content */}
                         <div className="relative z-10">
                             <div className="size-24 mx-auto mb-6 bg-white rounded-3xl shadow-lg flex items-center justify-center ring-4 ring-blue-100/50">
                                 <span className="material-symbols-outlined text-5xl text-blue-500">flight</span>
                             </div>
-                            <h3 className="text-2xl font-bold text-text-main mb-3">Nenhum transporte cadastrado</h3>
+                            <h3 className="text-2xl font-bold text-text-main mb-3">
+                                {cityId ? 'Nenhum transporte para esta cidade' : 'Nenhum transporte cadastrado'}
+                            </h3>
                             <p className="text-base text-text-muted mb-8 max-w-lg mx-auto leading-relaxed">
-                                Adicione voos, trens, transfers e outros meios de transporte. Mantenha todos os seus deslocamentos organizados em um só lugar.
+                                {cityId ? 'Adicione como chegar ou sair desta cidade.' : 'Adicione voos, trens, transfers e outros meios de transporte.'}
                             </p>
                             <button
                                 onClick={onAddClick}
                                 className="group inline-flex items-center gap-2.5 px-8 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-2xl font-bold text-base hover:from-blue-600 hover:to-cyan-600 transition-all shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
                             >
                                 <span className="material-symbols-outlined text-xl group-hover:rotate-90 transition-transform duration-300">add</span>
-                                Adicionar Primeiro Transporte
+                                Adicionar Transporte
                             </button>
                         </div>
                     </div>

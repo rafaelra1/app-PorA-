@@ -610,61 +610,7 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                         </div>
                     </div>
 
-                    {/* Navigation Boxes Row */}
-                    <div className="grid grid-cols-3 gap-2">
-                        {/* Map */}
-                        <a
-                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cityName)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="relative h-24 rounded-2xl overflow-hidden group shadow-sm cursor-pointer hover:shadow-md transition-all block"
-                        >
-                            <img
-                                src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=400"
-                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                alt="Mapa"
-                            />
-                            <div className="absolute inset-0 bg-black/60 group-hover:bg-black/70 transition-colors"></div>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center p-1 drop-shadow-md">
-                                <span className="material-symbols-outlined text-2xl mb-0.5">map</span>
-                                <span className="text-[10px] font-bold">Mapa</span>
-                            </div>
-                        </a>
 
-                        {/* Attractions */}
-                        <div
-                            onClick={() => onTabChange && onTabChange('attractions')}
-                            className="relative h-24 rounded-2xl overflow-hidden group shadow-sm cursor-pointer hover:shadow-md transition-all"
-                        >
-                            <img
-                                src="https://images.unsplash.com/photo-1542051841857-5f90071e7989?auto=format&fit=crop&q=80&w=400"
-                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                alt="Atrações"
-                            />
-                            <div className="absolute inset-0 bg-black/60 group-hover:bg-black/70 transition-colors"></div>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center p-1 drop-shadow-md">
-                                <span className="material-symbols-outlined text-2xl mb-0.5">attractions</span>
-                                <span className="text-[10px] font-bold">Atrações</span>
-                            </div>
-                        </div>
-
-                        {/* About City */}
-                        <div
-                            onClick={() => onTabChange && onTabChange('info')}
-                            className="relative h-24 rounded-2xl overflow-hidden group shadow-sm cursor-pointer hover:shadow-md transition-all"
-                        >
-                            <img
-                                src="https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?auto=format&fit=crop&q=80&w=400"
-                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                alt="Sobre a Cidade"
-                            />
-                            <div className="absolute inset-0 bg-black/60 group-hover:bg-black/70 transition-colors"></div>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center p-1 drop-shadow-md">
-                                <span className="material-symbols-outlined text-2xl mb-0.5">location_city</span>
-                                <span className="text-[10px] font-bold leading-tight">Sobre a<br />Cidade</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 {/* Right Column: Curation & Restaurant Cards (2/3 width) */}
@@ -793,11 +739,14 @@ const GastronomyTab: React.FC<GastronomyTabProps> = ({
                         </div>
 
                         <div className="p-6">
+                            <div className="w-full bg-[#8B5CF6] text-white px-4 py-2 rounded-lg font-bold text-sm tracking-wide lowercase mb-1">
+                                Lista de Restaurantes
+                            </div>
                             <textarea
                                 value={importText}
                                 onChange={(e) => setImportText(e.target.value)}
                                 placeholder={`Ex: \n- Le Chateaubriand\n- Septime\n- Clown Bar`}
-                                className="w-full h-48 p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none text-sm leading-relaxed placeholder:text-gray-400"
+                                className="w-full h-48 p-4 bg-white border border-gray-400 rounded-lg focus:outline-none focus:border-[#8B5CF6] focus:ring-1 focus:ring-[#8B5CF6] transition-all resize-none text-sm leading-relaxed placeholder-gray-400 font-medium text-gray-900"
                             />
 
                             <div className="mt-6 flex justify-end gap-3">

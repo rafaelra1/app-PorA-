@@ -1,6 +1,7 @@
 import React from 'react';
 import { City, CityTab } from '../../../types';
 import { CityFilter } from '../../ui/CityFilter';
+import { CityGuideNavigation } from './CityGuideNavigation';
 import { Badge } from '../../ui/Base';
 import { CITY_GUIDE_TABS, DEFAULT_CITY_PLACEHOLDER } from '../../../constants';
 import { Loader2, Sparkles } from 'lucide-react';
@@ -27,30 +28,15 @@ const CityGuideLayout: React.FC<CityGuideLayoutProps> = ({
 }) => {
     return (
         <div className="w-full animate-in fade-in slide-in-from-right-4 duration-500 pb-10 text-left">
-            {/* City Switcher */}
-            <CityFilter
-                cities={allCities || []}
-                selectedCityId={selectedCity.id}
-                onCityChange={(city) => onCityChange && onCityChange(city)}
-                className="mb-6"
-            />
-            {/* Navigation Tabs */}
-            <div className="flex border-b border-gray-100 mb-6 overflow-x-auto no-scrollbar">
-                {CITY_GUIDE_TABS.map(tab => {
-                    const isActive = activeCityTab === tab.id;
-                    return (
-                        <button
-                            key={tab.id}
-                            onClick={() => onTabChange(tab.id)}
-                            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-all border-b-2 -mb-px ${isActive
-                                ? 'text-accent-main border-accent-main'
-                                : 'text-text-muted border-transparent hover:text-text-main'
-                                }`}
-                        >
-                            {tab.label}
-                        </button>
-                    );
-                })}
+            <div className="mb-6 space-y-6">
+                <h1 className="text-4xl font-bold text-[#1A1A1A] tracking-tight lowercase">
+                    {selectedCity.name}
+                </h1>
+
+                <CityGuideNavigation
+                    activeTab={activeCityTab}
+                    onTabChange={onTabChange}
+                />
             </div>
 
             <div className="w-full">

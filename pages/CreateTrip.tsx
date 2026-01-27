@@ -20,7 +20,7 @@ const GOOGLE_MAPS_LIBRARIES: ("places")[] = ["places"];
 const CreateTrip: React.FC = () => {
     const { user } = useAuth();
     const { showToast } = useToast();
-    const { addTrip, updateTrip, editingTrip, setEditingTrip } = useTrips();
+    const { addTrip, updateTrip, editingTrip, setEditingTrip, deleteTrip } = useTrips();
     const { setActiveTab } = useUI();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -291,6 +291,25 @@ const CreateTrip: React.FC = () => {
         setActiveTab('dashboard');
     };
 
+    const handleSubmitDelete = async () => {
+        if (!editingTrip) return;
+        if (confirm('Tem certeza que deseja apagar esta viagem?')) {
+            try {
+                // Check if deleteTrip is available, if not show error/alert as it might be missing from context mock/types sometimes although we expect it
+                if (deleteTrip) {
+                    await deleteTrip(editingTrip.id);
+                    showToast("Viagem excluída.", "success");
+                    setActiveTab('dashboard');
+                } else {
+                    showToast("Erro: Função de excluir indisponível", "error");
+                }
+            } catch (error) {
+                console.error("Error deleting trip", error);
+                showToast("Erro ao excluir viagem.", "error");
+            }
+        }
+    };
+
     const onSubmit = async (data: any) => {
         try {
             const tripData: any = {
@@ -322,418 +341,324 @@ const CreateTrip: React.FC = () => {
         : formData.participants;
     const remainingCount = formData.participants.length - displayedParticipants.length;
 
-    return (
-        <PageContainer>
-            <PageHeader
-                title={editingTrip ? 'Editar Viagem' : 'Nova Viagem'}
-                description={editingTrip ? 'Atualize os detalhes da sua viagem.' : 'Comece a planejar sua próxima aventura.'}
-                actions={
-                    <Button variant="outline" onClick={handleCancel}>
-                        Voltar
-                    </Button>
-                }
-            />
+    // Calculate duration for the card
+    const durationDays = calcDuration(formData.startDate || '', formData.endDate || '');
 
-            {/* Accessible Status Announcements */}
-            <div aria-live="polite" aria-atomic="true" className="sr-only">
-                {isGeneratingImage && "Gerando imagem com inteligência artificial..."}
-                {isOptimizing && "Sugerindo título criativo..."}
-                {isSubmittingForm && "Salvando sua viagem..."}
+    // Custom styled components for this specific design
+    const SectionLabel = ({ children }: { children: React.ReactNode }) => (
+        <div className="bg-[#9C7CF4] text-white px-4 py-2 rounded-t-lg text-sm font-medium w-full">
+            {children}
+        </div>
+    );
+
+    const StyledInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>((props, ref) => (
+        <input
+            {...props}
+            ref={ref}
+            className={`w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm outline-none focus:border-[#9C7CF4] focus:ring-1 focus:ring-[#9C7CF4] transition-all placeholder:text-gray-400 ${props.className}`}
+        />
+    ));
+
+    return (
+        <div className="flex flex-col h-full bg-[#FAFAFA] overflow-y-auto">
+            {/* Header Area */}
+            <div className="flex items-center justify-between px-8 py-6">
+                <div className="flex items-center gap-3">
+                    <div className="size-10 rounded-full bg-gray-200 overflow-hidden">
+                        <img src={user?.avatar || `https://ui-avatars.com/api/?name=${user?.name || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                        <p className="text-xs text-gray-500 font-bold uppercase">Bem Vindo</p>
+                        <h1 className="text-xl font-bold text-gray-800">{user?.name?.toUpperCase() || 'VIAJANTE'}</h1>
+                    </div>
+                </div>
+                <div className="flex gap-4">
+                    {/* Icons placeholder if needed */}
+                </div>
             </div>
 
-            <div className="max-w-4xl mx-auto">
-                {/* Draft Restore Notification */}
-                {showRestorePrompt && (
-                    <div className="bg-indigo-50 px-6 py-4 border border-indigo-100 rounded-xl mb-6 flex items-center justify-between animate-in slide-in-from-top duration-300">
-                        <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-indigo-600">history</span>
-                            <span className="text-sm font-bold text-indigo-900">Encontramos um rascunho anterior. Deseja restaurar?</span>
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    loadDraft();
-                                    setShowRestorePrompt(false);
-                                }}
-                                className="text-xs font-bold uppercase bg-white px-4 py-2 rounded-lg text-indigo-600 shadow-sm hover:bg-indigo-600 hover:text-white transition-all"
-                            >
-                                Restaurar
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    clearDraft();
-                                    setShowRestorePrompt(false);
-                                }}
-                                className="text-xs font-bold uppercase text-indigo-400 hover:text-indigo-600 px-3 py-2"
-                            >
-                                Descartar
-                            </button>
-                        </div>
-                    </div>
-                )}
+            <div className="flex-1 px-8 pb-8">
+                <button
+                    onClick={handleCancel}
+                    className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-900 mb-6 bg-gray-100 px-3 py-1.5 rounded-lg w-fit transition-colors"
+                >
+                    <span className="material-symbols-outlined text-lg mr-1">chevron_left</span>
+                    página inicial
+                </button>
 
-                <Card className="p-0 overflow-hidden shadow-soft">
-                    <form onSubmit={handleSubmit(onSubmit)} className="p-6 md:p-8 space-y-8">
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* Left Column */}
-                            <div className="space-y-6">
-                                {/* Cover Image */}
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <label className="block text-xs font-bold text-text-muted uppercase tracking-wider">Capa da Viagem</label>
-                                        <div className="flex gap-2 items-center">
-                                            <select
-                                                value={imageSize}
-                                                onChange={(e) => setImageSize(e.target.value as any)}
-                                                className="text-[10px] py-1 px-2 h-7 rounded border-gray-200 bg-gray-50 font-bold"
-                                                aria-label="Tamanho da imagem"
-                                            >
-                                                <option value="1K">1K</option>
-                                                <option value="2K">2K</option>
-                                                <option value="4K">4K</option>
-                                            </select>
-                                            <button
-                                                type="button"
-                                                disabled={isGeneratingImage}
-                                                onClick={handleGenerateImage}
-                                                className="text-[10px] font-bold text-indigo-600 flex items-center gap-1 hover:text-indigo-800 disabled:opacity-50"
-                                            >
-                                                {isGeneratingImage ? <span className="animate-spin text-[12px]">refresh</span> : <span className="material-symbols-outlined text-sm">auto_awesome</span>}
-                                                Gerar com IA
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div
-                                        onClick={triggerFileInput}
-                                        className="relative h-48 w-full rounded-xl overflow-hidden cursor-pointer group bg-gray-100 border-2 border-dashed border-gray-200 hover:border-primary transition-all shadow-inner"
-                                    >
-                                        <img
-                                            src={formData.coverImage}
-                                            alt="Trip Cover Preview"
-                                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                                        />
-                                        {isGeneratingImage && (
-                                            <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
-                                                <div className="flex flex-col items-center gap-2">
-                                                    <span className="animate-spin material-symbols-outlined text-3xl text-indigo-600">refresh</span>
-                                                    <span className="text-[10px] font-bold text-indigo-600 animate-pulse">CRIANDO ARTE...</span>
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <span className="material-symbols-outlined text-3xl mb-1">add_a_photo</span>
-                                            <span className="text-xs font-bold uppercase tracking-wider">Alterar Foto</span>
-                                        </div>
-                                    </div>
-                                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" aria-label="Upload de capa" />
-                                </div>
+                <div className="flex flex-col lg:flex-row gap-8 items-start max-w-7xl mx-auto">
 
-                                {/* Title */}
+                    {/* LEFT COLUMN - Summary Card & Menu */}
+                    <div className="w-full lg:w-1/3 space-y-4">
+                        {/* Green Card - Preview/Summary */}
+                        <div className="bg-[#D4F541] rounded-3xl p-6 relative min-h-[220px] flex flex-col justify-between shadow-sm">
+                            <div className="flex justify-between items-start">
                                 <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="block text-xs font-bold text-text-muted uppercase tracking-wider">Título da Viagem</span>
-                                        <button
-                                            type="button"
-                                            onClick={handleAISuggestion}
-                                            disabled={isOptimizing || formData.detailedDestinations.length === 0}
-                                            className="text-[10px] font-bold text-indigo-600 flex items-center gap-1 hover:text-indigo-800 disabled:opacity-30"
-                                        >
-                                            {isOptimizing ? <span className="animate-spin text-[12px]">refresh</span> : <span className="material-symbols-outlined text-sm">bolt</span>}
-                                            Sugestão rápida
-                                        </button>
-                                    </div>
-                                    <Controller
-                                        name="title"
-                                        control={control}
-                                        render={({ field }) => (
-                                            <Input
-                                                {...field}
-                                                required
-                                                error={errors.title?.message as string}
-                                                placeholder="Ex: Férias de Verão"
-                                                fullWidth
-                                            />
-                                        )}
-                                    />
+                                    <p className="text-gray-800 text-lg mb-1">Destino</p>
+                                    <h2 className="text-3xl font-black text-black leading-tight">
+                                        {formData.destination || 'SEU DESTINO'}
+                                    </h2>
                                 </div>
-
-                                {/* Status */}
-                                <div>
-                                    <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">Status</label>
-                                    <div className="flex gap-2">
-                                        <Controller
-                                            name="status"
-                                            control={control}
-                                            render={({ field }) => (
-                                                <>
-                                                    {(['planning', 'confirmed', 'completed'] as TripStatus[]).map(s => (
-                                                        <button
-                                                            key={s}
-                                                            type="button"
-                                                            onClick={() => field.onChange(s)}
-                                                            className={`flex-1 py-2.5 px-3 rounded-xl text-[10px] font-bold capitalize transition-all border-2 ${field.value === s ? 'bg-primary border-primary text-text-main' : 'bg-white border-gray-100 text-text-muted hover:border-primary/30'}`}
-                                                            aria-pressed={field.value === s}
-                                                        >
-                                                            {s === 'planning' ? 'Planejando' : s === 'confirmed' ? 'Confirmado' : 'Concluído'}
-                                                        </button>
-                                                    ))}
-                                                </>
-                                            )}
-                                        />
-                                    </div>
-                                </div>
+                                <button className="text-black/70 hover:text-black">
+                                    <span className="material-symbols-outlined text-3xl">more_vert</span>
+                                </button>
                             </div>
 
-                            {/* Right Column */}
-                            <div className="space-y-6">
-                                {/* Dates Section */}
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center">
-                                        <label className="block text-xs font-bold text-text-muted uppercase tracking-wider">Quando vai ser a viagem?</label>
-                                    </div>
-                                    <div className="flex gap-2 mb-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => setFormValue('isFlexibleDates', false)}
-                                            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all border-2 ${!formData.isFlexibleDates ? 'bg-primary border-primary text-text-main' : 'bg-white border-gray-100 text-text-muted hover:border-primary/30'}`}
-                                        >
-                                            <Icon name="calendar_month" size="sm" className="mr-1.5" />
-                                            Período Definido
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setFormValue('isFlexibleDates', true)}
-                                            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all border-2 ${formData.isFlexibleDates ? 'bg-primary border-primary text-text-main' : 'bg-white border-gray-100 text-text-muted hover:border-primary/30'}`}
-                                        >
-                                            <Icon name="event_available" size="sm" className="mr-1.5" />
-                                            Flexível
-                                        </button>
-                                    </div>
-                                    {!formData.isFlexibleDates && (
-                                        <div className="grid grid-cols-2 gap-4">
+                            <div className="mt-4">
+                                <p className="text-lg text-gray-800 font-medium">
+                                    {formData.startDate && formData.endDate
+                                        ? `${formatToDisplayDate(formData.startDate)} a ${formatToDisplayDate(formData.endDate)}`
+                                        : 'Data a definir'}
+                                </p>
+                            </div>
+
+                            <div className="flex justify-between items-end mt-4">
+                                <div className="flex -space-x-2">
+                                    {formData.participants.slice(0, 3).map((p, i) => (
+                                        <img
+                                            key={i}
+                                            src={p.avatar}
+                                            alt={p.name}
+                                            className="size-10 rounded-full border-2 border-[#D4F541] bg-white object-cover"
+                                            title={p.name}
+                                        />
+                                    ))}
+                                    {formData.participants.length > 3 && (
+                                        <div className="size-10 rounded-full border-2 border-[#D4F541] bg-white flex items-center justify-center text-xs font-bold text-gray-600">
+                                            +{formData.participants.length - 3}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Placeholder Flag or Icon */}
+                                <div className="size-8 rounded-full bg-yellow-400 flex items-center justify-center shadow-sm">
+                                    <span className="text-xs">🇧🇷</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Accordion Menu (Visual Only for now based on mockup) */}
+                        <div className="space-y-2">
+                            {['cidades', 'roteiro', 'custos', 'memórias'].map((item) => (
+                                <div key={item} className="bg-[#FFD93D] rounded-xl px-6 py-3 flex justify-between items-center font-bold text-gray-800 cursor-pointer hover:bg-[#ffe066] transition-colors">
+                                    <span>{item}</span>
+                                    <span className="material-symbols-outlined">expand_more</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* RIGHT COLUMN - Form */}
+                    <div className="w-full lg:w-2/3">
+                        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+
+                            {/* Trip Name */}
+                            <div className="space-y-0">
+                                <SectionLabel>nome da viagem</SectionLabel>
+                                <Controller
+                                    name="title"
+                                    control={control}
+                                    render={({ field }) => (
+                                        <div className="border-x border-b border-gray-200 rounded-b-lg p-3 bg-white">
+                                            <StyledInput
+                                                {...field}
+                                                placeholder="Ex: Lua de mel Rio + Petrópolis"
+                                                className="border-gray-300"
+                                            />
+                                        </div>
+                                    )}
+                                />
+                            </div>
+
+                            {/* Period */}
+                            <div className="space-y-0">
+                                <SectionLabel>período</SectionLabel>
+                                <div className="border-x border-b border-gray-200 rounded-b-lg p-3 bg-white">
+                                    <div className="flex flex-col md:flex-row gap-3">
+                                        <div className="flex-1">
                                             <Controller
                                                 name="startDate"
                                                 control={control}
                                                 render={({ field }) => (
-                                                    <div>
-                                                        <input
-                                                            {...field}
-                                                            required={!formData.isFlexibleDates}
-                                                            type="date"
-                                                            className={`w-full rounded-xl border-gray-100 bg-gray-50 py-3 px-4 text-sm font-medium ${errors.startDate ? 'border-red-300 bg-red-50' : ''}`}
-                                                            aria-label="Data de início"
-                                                        />
-                                                        <span className="text-[10px] text-text-muted mt-1 block">Início</span>
-                                                    </div>
+                                                    <StyledInput
+                                                        {...field}
+                                                        type="date"
+                                                        className="border-gray-300"
+                                                    />
                                                 )}
                                             />
+                                        </div>
+                                        <div className="flex items-center justify-center text-gray-400 font-medium">a</div>
+                                        <div className="flex-1">
                                             <Controller
                                                 name="endDate"
                                                 control={control}
                                                 render={({ field }) => (
-                                                    <div>
-                                                        <input
-                                                            {...field}
-                                                            required={!formData.isFlexibleDates}
-                                                            type="date"
-                                                            className={`w-full rounded-xl border-gray-100 bg-gray-50 py-3 px-4 text-sm font-medium ${errors.endDate ? 'border-red-300 bg-red-50' : ''}`}
-                                                            aria-label="Data de fim"
-                                                        />
-                                                        <span className="text-[10px] text-text-muted mt-1 block">Fim</span>
-                                                    </div>
+                                                    <StyledInput
+                                                        {...field}
+                                                        type="date"
+                                                        className="border-gray-300"
+                                                    />
                                                 )}
                                             />
                                         </div>
-                                    )}
-                                    {errors.endDate && <p className="text-[10px] text-red-500 font-bold">{errors.endDate.message as string}</p>}
-                                    {!formData.isFlexibleDates && duration !== null && duration > 0 && (
-                                        <span className="text-[10px] font-extrabold bg-primary/30 text-primary-dark px-2 py-0.5 rounded uppercase inline-block">
-                                            {duration} {duration === 1 ? 'dia' : 'dias'}
-                                        </span>
-                                    )}
-                                    {formData.isFlexibleDates && (
-                                        <p className="text-xs text-text-muted bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                            <Icon name="info" size="sm" className="mr-1 text-amber-500" />
-                                            Você poderá definir as datas exatas mais tarde.
-                                        </p>
-                                    )}
+                                    </div>
                                 </div>
+                            </div>
 
-                                {/* Destinations */}
-                                <div>
-                                    <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">Cidades / Destinos</label>
-                                    <div className="relative">
-                                        {!mapsLoaded ? (
-                                            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-text-muted flex items-center gap-2">
-                                                <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                                                Carregando Google Maps...
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <div className={`rounded-xl border p-2 min-h-[48px] flex flex-wrap gap-2 items-center ${errors.destination ? 'border-red-300 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
-                                                    {formData.detailedDestinations.map((dest) => (
-                                                        <div key={dest.id} className="flex items-center gap-1.5 bg-white border border-gray-200 px-2.5 py-1.5 rounded-lg shadow-sm">
-                                                            <Icon name="location_on" size="sm" className="text-primary-dark" />
-                                                            <span className="text-xs font-semibold text-text-main">{dest.name}</span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRemoveDestination(dest.id)}
-                                                                className="text-text-muted hover:text-red-500 transition-colors"
-                                                                aria-label={`Remover ${dest.name}`}
-                                                            >
-                                                                <span className="material-symbols-outlined text-sm">close</span>
-                                                            </button>
-                                                        </div>
-                                                    ))}
-                                                    <input
-                                                        type="text"
-                                                        value={value}
-                                                        onChange={e => setValue(e.target.value)}
-                                                        disabled={!ready}
-                                                        placeholder={formData.detailedDestinations.length === 0 ? "Buscar cidade..." : "Adicionar outra..."}
-                                                        className="flex-1 min-w-[150px] bg-transparent border-none outline-none text-sm font-medium text-text-main placeholder:text-text-muted"
-                                                        aria-label="Buscar destinos"
-                                                    />
+                            {/* Cities & Dates */}
+                            <div className="space-y-0">
+                                <SectionLabel>cidades</SectionLabel>
+                                <div className="border-x border-b border-gray-200 rounded-b-lg p-3 bg-white space-y-3">
+                                    {formData.detailedDestinations.map((dest) => (
+                                        <div key={dest.id} className="flex flex-col md:flex-row gap-2 items-start md:items-center">
+                                            <div className="flex-grow w-full md:w-auto relative group">
+                                                <div className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm flex items-center justify-between">
+                                                    <span>{dest.name}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveDestination(dest.id)}
+                                                        className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm">close</span>
+                                                    </button>
                                                 </div>
-                                                {errors.destination && <p className="text-[10px] text-red-500 font-bold mt-1">{errors.destination.message as string}</p>}
+                                            </div>
 
-                                                {status === 'OK' && (
-                                                    <ul className="absolute z-60 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                                                        {data.map(({ place_id, description }) => (
-                                                            <li
-                                                                key={place_id}
-                                                                onClick={() => handleSelectPlace(description, place_id)}
-                                                                className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                                                            >
-                                                                <Icon name="location_on" size="sm" className="text-gray-400" />
-                                                                <span className="text-sm text-text-main">{description}</span>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                )}
-                                            </>
+                                            <div className="flex gap-2 w-full md:w-auto">
+                                                <input
+                                                    type="date"
+                                                    value={dest.startDate || ''}
+                                                    onChange={(e) => handleDestinationDateChange(dest.id, 'startDate', e.target.value)}
+                                                    className="w-full md:w-32 bg-white border border-gray-300 rounded-lg px-2 py-2 text-xs outline-none focus:border-[#9C7CF4] text-gray-600"
+                                                    placeholder="quando?"
+                                                />
+                                                <input
+                                                    type="date"
+                                                    value={dest.endDate || ''}
+                                                    onChange={(e) => handleDestinationDateChange(dest.id, 'endDate', e.target.value)}
+                                                    className="w-full md:w-32 bg-white border border-gray-300 rounded-lg px-2 py-2 text-xs outline-none focus:border-[#9C7CF4] text-gray-600"
+                                                    placeholder="quando?"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {/* Add City Input */}
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={value}
+                                            onChange={e => setValue(e.target.value)}
+                                            disabled={!ready}
+                                            placeholder={formData.detailedDestinations.length === 0 ? "Adicionar cidade..." : "Adicionar outra cidade..."}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm outline-none focus:border-[#9C7CF4] placeholder:text-gray-400"
+                                        />
+                                        {status === 'OK' && (
+                                            <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                                                {data.map(({ place_id, description }) => (
+                                                    <li
+                                                        key={place_id}
+                                                        onClick={() => handleSelectPlace(description, place_id)}
+                                                        className="px-4 py-3 cursor-pointer hover:bg-gray-50 text-sm text-gray-700 hover:text-[#9C7CF4]"
+                                                    >
+                                                        {description}
+                                                    </li>
+                                                ))}
+                                            </ul>
                                         )}
                                     </div>
                                 </div>
+                            </div>
 
-                                {/* City Date Ranges */}
-                                {formData.detailedDestinations.length > 0 && !formData.isFlexibleDates && (
-                                    <div className="space-y-3">
-                                        <label className="block text-xs font-bold text-text-muted uppercase tracking-wider">Período em cada cidade</label>
-                                        <div className="max-h-40 overflow-y-auto pr-1 space-y-2">
-                                            {formData.detailedDestinations.map((dest) => (
-                                                <div key={dest.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                                    <div className="flex items-center gap-2 min-w-[100px] max-w-[120px]">
-                                                        <Icon name="location_on" size="sm" className="text-primary-dark" />
-                                                        <span className="text-xs font-semibold text-text-main truncate" title={dest.name}>{dest.name}</span>
-                                                    </div>
-                                                    <div className="flex-1 grid grid-cols-2 gap-2">
-                                                        <input
-                                                            type="date"
-                                                            value={dest.startDate || ''}
-                                                            min={formData.startDate}
-                                                            max={formData.endDate}
-                                                            onChange={e => handleDestinationDateChange(dest.id, 'startDate', e.target.value)}
-                                                            className="w-full rounded-lg border-gray-200 bg-white py-2 px-3 text-xs font-medium"
-                                                            aria-label={`Chegada em ${dest.name}`}
-                                                        />
-                                                        <input
-                                                            type="date"
-                                                            value={dest.endDate || ''}
-                                                            min={dest.startDate || formData.startDate}
-                                                            max={formData.endDate}
-                                                            onChange={e => handleDestinationDateChange(dest.id, 'endDate', e.target.value)}
-                                                            className="w-full rounded-lg border-gray-200 bg-white py-2 px-3 text-xs font-medium"
-                                                            aria-label={`Saída de ${dest.name}`}
-                                                        />
-                                                    </div>
+                            {/* Participants */}
+                            <div className="space-y-0">
+                                <SectionLabel>participantes</SectionLabel>
+                                <div className="border-x border-b border-gray-200 rounded-b-lg p-3 bg-white space-y-3">
+                                    {formData.participants.map((p) => (
+                                        <div key={p.id} className="flex flex-col md:flex-row gap-2 items-center">
+                                            <div className="flex-1 w-full relative group">
+                                                <div className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
+                                                    <img src={p.avatar} alt="" className="size-5 rounded-full" />
+                                                    <span className="flex-1">{p.name}</span>
+                                                    {p.id !== user?.id && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveParticipant(p.id)}
+                                                            className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <span className="material-symbols-outlined text-sm">close</span>
+                                                        </button>
+                                                    )}
                                                 </div>
-                                            ))}
+                                            </div>
+                                            <div className="w-full md:w-1/3">
+                                                <input
+                                                    type="email"
+                                                    value={p.email || ''}
+                                                    readOnly={p.id === user?.id} // Only edit email for guests usually, or allow edit if needed
+                                                    disabled={p.id === user?.id}
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm outline-none text-gray-500"
+                                                    placeholder="e-mail"
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    ))}
 
-                                {/* Participants */}
-                                <div>
-                                    <label className="block text-xs font-bold text-text-muted uppercase mb-2 tracking-wider">Participantes</label>
-                                    <div className="flex gap-2 mb-3">
-                                        <div className="flex-1 flex gap-2">
-                                            <Input
+                                    {/* Add Participant Row */}
+                                    <div className="flex flex-col md:flex-row gap-2 items-center">
+                                        <div className="flex-1 w-full">
+                                            <StyledInput
                                                 value={newParticipantName}
                                                 onChange={e => setNewParticipantName(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddParticipant())}
-                                                placeholder="Nome"
-                                                className="flex-1"
+                                                placeholder="Nome do participante"
+                                                className="border-gray-300"
                                             />
-                                            <Input
+                                        </div>
+                                        <div className="w-full md:w-1/3">
+                                            <StyledInput
                                                 value={newParticipantEmail}
                                                 onChange={e => setNewParticipantEmail(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddParticipant())}
-                                                placeholder="E-mail"
+                                                placeholder="e-mail"
                                                 type="email"
-                                                className="flex-1"
+                                                className="border-gray-300"
                                             />
                                         </div>
-                                        <button type="button" onClick={handleAddParticipant} className="bg-primary text-text-main size-10 rounded-xl flex items-center justify-center hover:bg-primary-dark transition-all active:scale-95 shrink-0" aria-label="Adicionar participante">
-                                            <Icon name="person_add" />
+                                        <button
+                                            type="button"
+                                            onClick={handleAddParticipant}
+                                            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors"
+                                        >
+                                            Adicionar
                                         </button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 min-h-[40px] items-center">
-                                        {displayedParticipants.map((p) => (
-                                            <div key={p.id} className="flex items-center gap-2 bg-gray-50 border border-gray-100 px-2 py-1.5 rounded-xl group transition-all hover:border-primary/50">
-                                                <img src={p.avatar} className="size-6 rounded-lg object-cover" alt={p.name} />
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-semibold text-text-main max-w-[100px] truncate">{p.name}</span>
-                                                    {p.email && <span className="text-[9px] text-text-muted truncate max-w-[100px]">{p.email}</span>}
-                                                </div>
-                                                {p.id !== user?.id && <button type="button" onClick={() => handleRemoveParticipant(p.id)} className="text-text-muted hover:text-red-500 transition-colors" aria-label={`Remover ${p.name}`}><span className="material-symbols-outlined text-sm">close</span></button>}
-                                                {p.id === user?.id && <span className="text-[8px] font-bold text-primary-dark uppercase px-1.5 py-0.5 bg-primary/20 rounded">Eu</span>}
-                                            </div>
-                                        ))}
-                                        {remainingCount > 0 && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsParticipantsExpanded(true)}
-                                                className="size-8 rounded-xl bg-primary/20 text-primary-dark text-[10px] font-bold flex items-center justify-center hover:bg-primary/30 transition-all border border-primary/20"
-                                            >
-                                                +{remainingCount}
-                                            </button>
-                                        )}
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Submit buttons */}
-                        <div className="flex items-center justify-between pt-8 border-t border-gray-100 gap-6">
-                            <div className="flex items-center gap-2">
-                                {lastSaved && !editingTrip && (
-                                    <div className="flex items-center gap-1.5 text-green-600 animate-in fade-in slide-in-from-left-2 duration-500">
-                                        <span className="material-symbols-outlined text-sm">cloud_done</span>
-                                        <span className="text-[10px] font-bold uppercase tracking-wider">Rascunho salvo</span>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="flex gap-4 w-full md:w-auto">
-                                <Button variant="outline" onClick={handleCancel} className="flex-1 md:flex-none" type="button">Cancelar</Button>
-                                <Button variant="dark" className="flex-1 md:flex-none min-w-[200px]" type="submit" disabled={isSubmittingForm}>
-                                    {isSubmittingForm ? (
-                                        <div className="flex items-center justify-center gap-2">
-                                            <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                                            Salvando...
-                                        </div>
-                                    ) : (
-                                        editingTrip ? 'Salvar Alterações' : 'Criar Viagem'
-                                    )}
+                            {/* Actions */}
+                            <div className="flex items-center justify-end gap-4 pt-6">
+                                <Button
+                                    type="button"
+                                    onClick={handleSubmitDelete}
+                                    className="bg-[#4A4A4A] hover:bg-gray-800 text-white px-8 py-2.5 rounded-xl font-medium"
+                                >
+                                    apagar
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    disabled={isSubmittingForm}
+                                    className="bg-[#6B5B95] hover:bg-[#5a4b7e] text-white px-8 py-2.5 rounded-xl font-medium min-w-[120px]"
+                                >
+                                    {isSubmittingForm ? 'salvando...' : 'salvar'}
                                 </Button>
                             </div>
-                        </div>
-                    </form>
-                </Card>
+
+                        </form>
+                    </div>
+                </div>
             </div>
-        </PageContainer>
+        </div>
     );
 };
 

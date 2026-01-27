@@ -44,6 +44,14 @@ import AttractionsTab from '../components/trip-details/city-guide/AttractionsTab
 import GastronomyTab from '../components/trip-details/city-guide/GastronomyTab';
 import TipsTab from '../components/trip-details/city-guide/TipsTab';
 
+// New Redesign Components
+import { SidebarDestinationCard } from '../components/trip-details/sidebar/SidebarDestinationCard';
+import { SidebarMetrics } from '../components/trip-details/sidebar/SidebarMetrics';
+import { SidebarMenu } from '../components/trip-details/sidebar/SidebarMenu';
+import { OverviewDashboard } from '../components/trip-details/overview/OverviewDashboard';
+import SmartChecklist from '../components/trip-details/SmartChecklist';
+import { LuggageView } from '../components/trip-details/checklist/LuggageView';
+
 // Modal imports
 
 import AttractionDetailModal from '../components/trip-details/modals/AttractionDetailModal';
@@ -140,6 +148,7 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             headline: existing?.headline || `Explore as maravilhas de ${dest.name}`,
             image: existing?.image || dest.image || `https://source.unsplash.com/800x600/?${encodeURIComponent(dest.name + ' city')}`,
             editorialContent: existing?.editorialContent || dest.editorialContent,
+            info: dest.info || existing?.info,
           };
         });
 
@@ -786,6 +795,20 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
 
 
   // RENDER CONTENT HELPERS
+  const nextActivity = useMemo(() => {
+    if (itineraryActivities && itineraryActivities.length > 0) {
+      const upcoming = itineraryActivities.filter(a => !a.completed);
+      if (upcoming.length > 0) {
+        return {
+          title: upcoming[0].title,
+          time: upcoming[0].time,
+          date: formatToDisplayDate(upcoming[0].date)
+        };
+      }
+    }
+    return null;
+  }, [itineraryActivities]);
+
   const renderTripDetailContent = () => {
     // Show CityGuide if a city is selected or if we are in cities tab (default to first city)
     let targetCity = selectedCity;
@@ -815,33 +838,29 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
             <InfoTab
               city={targetCity}
               cityGuide={cityGuide}
-              groundingInfo={groundingInfo}
-              groundingLinks={groundingLinks}
-              isGroundingLoading={isGroundingLoading}
-              onEditorialChange={handleUpdateEditorialContent}
-              onGenerateEditorial={() => { }}
-              isGeneratingEditorial={false}
               onTabChange={setActiveCityTab}
-              accommodations={hotels.filter(h =>
-                (h.cityId === targetCity.id) ||
-                (!h.cityId && (h.address.toLowerCase().includes(targetCity.name.toLowerCase()) || h.name.toLowerCase().includes(targetCity.name.toLowerCase())))
-              )}
-              transports={transports.filter(t => (t.arrivalCity?.toLowerCase().includes(targetCity.name.toLowerCase()) || t.arrivalLocation?.toLowerCase().includes(targetCity.name.toLowerCase())))}
-              onAddAccommodation={() => {
-                setTargetCityId(targetCity.id);
-                setIsAddAccommodationModalOpen(true);
-              }}
-              onAddTransport={() => {
-                setIsAddTransportModalOpen(true);
-              }}
-              onViewAccommodation={() => {
-                setActiveSubTab('accommodation');
-                setAccommodationFilter('all');
-              }}
-              onViewTransport={() => {
-                setActiveSubTab('transport');
-              }}
+              onEditorialChange={handleUpdateEditorialContent}
+              onGenerateEditorial={handleGenerateEditorial}
+              isGeneratingEditorial={isGeneratingEditorial}
             />
+          )}
+          {activeCityTab === 'transport' && (
+            <TransportView
+              trip={trip}
+              cities={cities}
+              cityId={targetCity.id}
+              onAddClick={() => setIsAddTransportModalOpen(true)}
+              onDeleteClick={(id) => deleteTransportContext(trip.id, id)}
+            />
+          )}
+          {activeCityTab === 'accommodation' && (
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+              <div className="size-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-gray-300 text-3xl">bed</span>
+              </div>
+              <h3 className="text-gray-900 font-bold mb-1">Hospedagem da Cidade</h3>
+              <p className="text-gray-500 text-sm">Esta visualização está em desenvolvimento.</p>
+            </div>
           )}
           {activeCityTab === 'attractions' && <AttractionsTab key={targetCity.name || 'attractions'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} attractionSearch={attractionSearch} genAspectRatio={genAspectRatio} genSize={genSize} onSearchChange={setAttractionSearch} onAspectRatioChange={setGenAspectRatio} onSizeChange={setGenSize} onAttractionClick={setSelectedAttraction} onAddManual={() => { }} onShowMap={() => setIsMapModalOpen(true)} onSuggestAI={() => { }} isSuggestingAI={false} onTabChange={(tab) => setActiveCityTab(tab)} tripStartDate={trip.startDate} tripEndDate={trip.endDate} onAddToItinerary={handleAddItineraryActivity} cityName={targetCity.name} />}
           {activeCityTab === 'gastronomy' && <GastronomyTab key={targetCity.name || 'gastronomy'} cityGuide={cityGuide} isLoadingGuide={isLoadingGuide} cityName={targetCity.name} onTabChange={(tab) => setActiveCityTab(tab)} onAddToItinerary={handleAddItineraryActivity} tripStartDate={trip.startDate} tripEndDate={trip.endDate} />}
@@ -870,23 +889,16 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
 
       case 'overview':
         return (
-          <OverviewTab
-            trip={trip}
+          <OverviewDashboard
             cities={cities}
-            hotels={hotels}
-            transports={transports}
-            activities={itineraryActivities}
-            onCityClick={(city) => {
-              // Navigate to city guide
-              handleOpenCityDetail(city);
-            }}
-            onAddCity={() => setIsAddCityModalOpen(true)}
-            onUpdateCity={handleUpdateCity}
-            onDeleteCity={handleDeleteCity}
-            onTabChange={setActiveSubTab}
-            isLoading={isLoadingHotels || isLoadingTransports || isLoadingItinerary}
+            trip={trip}
+            nextActivity={nextActivity}
           />
         );
+      case 'checklist':
+        return <SmartChecklist />;
+      case 'luggage':
+        return <LuggageView />;
       case 'itinerary':
         return <ItineraryView
           itinerary={itinerary}
@@ -1006,35 +1018,62 @@ const TripDetailsContent: React.FC<TripDetailsProps> = ({ trip, onBack, onEdit }
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-white animate-in fade-in slide-in-from-right-4 duration-500">
       {/* Header */}
-      <div className="shrink-0 bg-white border-b border-gray-100">
-        <TripDetailsHeader trip={trip} onBack={onBack} onEdit={onEdit} onShare={() => setIsShareModalOpen(true)} />
+      {/* Minimal Header */}
+      <div className="shrink-0 bg-white border-b border-gray-100 px-4 md:px-8 py-4 flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-gray-500 hover:text-[#1A1A1A] transition-colors font-medium"
+        >
+          <span className="material-symbols-outlined text-xl">arrow_back</span>
+          página inicial
+        </button>
+
+        <div className="flex items-center gap-4">
+          <button className="text-gray-400 hover:text-[#FF9F43] transition-colors">
+            <span className="material-symbols-outlined">notifications</span>
+          </button>
+          <div className="flex items-center gap-3 pl-4 border-l border-gray-100">
+            <div className="text-right hidden md:block">
+              <p className="text-xs text-gray-500 font-medium">Bem vindo</p>
+              <p className="text-sm font-bold text-[#1A1A1A]">RAFAEL</p>
+            </div>
+            <div className="size-10 bg-gray-200 rounded-full overflow-hidden border-2 border-white shadow-sm">
+              <img src="https://ui-avatars.com/api/?name=Rafael&background=0D8ABC&color=fff" alt="Profile" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Layout: Sidebar + Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Nova Navegação Lateral (vertical) */}
-        <TripNavigationSidebar
-          activeTab={activeSubTab}
-          onTabChange={setActiveSubTab}
-          tripStats={tripStats}
-          cities={cities}
-          onCitySelect={handleOpenCityDetail}
-          selectedCityId={selectedCity?.id}
-        />
+      {/* Main Layout: New Grid Structure */}
+      <div className="flex-1 overflow-y-auto w-full px-4 md:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-8 items-start">
 
-        {/* Conteúdo Principal */}
-        <main className="flex-1 overflow-y-auto relative scroll-smooth bg-white [&::-webkit-scrollbar]:hidden">
-          {/* Content */}
-          <div
-            className="p-6 md:p-8 pt-4 pb-12 space-y-6"
-            role="tabpanel"
-            id={`panel-${activeSubTab}`}
-            aria-labelledby={`tab-${activeSubTab}`}
-            tabIndex={0}
-          >
-            {renderTripDetailContent()}
-          </div>
-        </main>
+          {/* LEFT SIDEBAR */}
+          <aside className="space-y-6 lg:sticky lg:top-24">
+            <SidebarDestinationCard trip={trip} onEdit={onEdit} />
+            <SidebarMetrics trip={trip} cities={cities} />
+            <SidebarMenu
+              activeTab={activeSubTab}
+              onTabChange={setActiveSubTab}
+              activeCityTab={activeCityTab}
+              onCityTabChange={setActiveCityTab}
+              cities={cities}
+            />
+          </aside>
+
+          {/* RIGHT CONTENT AREA */}
+          <main className="flex-1">
+            {activeSubTab === 'overview' ? (
+              renderTripDetailContent()
+            ) : (
+              <div className="bg-white rounded-3xl p-6 md:p-8 min-h-[600px] shadow-sm ring-1 ring-black/5">
+                {renderTripDetailContent()}
+              </div>
+            )}
+          </main>
+
+        </div>
       </div>
 
       {/* Modals */}

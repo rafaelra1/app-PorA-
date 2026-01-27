@@ -2,7 +2,8 @@ import * as React from 'react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
-import { Select, SelectOption } from '../../ui/Select';
+import { StyledInput } from '../../ui/StyledInput';
+import { StyledSelect, SelectOption } from '../../ui/StyledSelect';
 import { Button } from '../../ui/Base';
 import { HotelReservation, DocumentAnalysisResult } from '../../../types';
 import { getGeminiService } from '../../../services/geminiService';
@@ -676,7 +677,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
 
                 {/* Hotel Name */}
                 <div>
-                    <Input
+                    <StyledInput
                         label={formData.type === 'hotel' ? 'Nome do Hotel' : 'Nome da Propriedade'}
                         value={formData.name}
                         onChange={(e) => updateField('name', e.target.value)}
@@ -693,7 +694,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* City Dropdown */}
                     <div>
-                        <Select
+                        <StyledSelect
                             label="Cidade"
                             value={formData.cityId}
                             onChange={(e) => updateField('cityId', e.target.value)}
@@ -717,7 +718,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                 {/* Address */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="md:col-span-2">
-                        <Input
+                        <StyledInput
                             label="Endereço"
                             value={formData.address}
                             onChange={(e) => updateField('address', e.target.value)}
@@ -731,7 +732,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <div className="grid grid-cols-2 gap-2">
-                            <Input
+                            <StyledInput
                                 label="Check-in"
                                 type="date"
                                 value={formData.checkIn}
@@ -739,7 +740,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                                 required
                                 fullWidth
                             />
-                            <Input
+                            <StyledInput
                                 type="time"
                                 label="Horário"
                                 value={formData.checkInTime}
@@ -750,7 +751,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                     </div>
                     <div className="space-y-2">
                         <div className="grid grid-cols-2 gap-2">
-                            <Input
+                            <StyledInput
                                 label="Check-out"
                                 type="date"
                                 value={formData.checkOut}
@@ -758,7 +759,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                                 required
                                 fullWidth
                             />
-                            <Input
+                            <StyledInput
                                 type="time"
                                 label="Horário"
                                 value={formData.checkOutTime}
@@ -772,7 +773,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                 {/* Details Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="md:col-span-1">
-                        <Input
+                        <StyledInput
                             label="Noites"
                             type="number"
                             min="1"
@@ -782,7 +783,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                         />
                     </div>
                     <div className="md:col-span-2">
-                        <Input
+                        <StyledInput
                             label="Código de Reserva"
                             value={formData.confirmation}
                             onChange={(e) => updateField('confirmation', e.target.value)}
@@ -791,7 +792,7 @@ const AddAccommodationModal: React.FC<AddAccommodationModalProps> = (props) => {
                         />
                     </div>
                     <div className="md:col-span-1">
-                        <Select
+                        <StyledSelect
                             label="Status"
                             value={formData.status}
                             onChange={(e) => updateField('status', e.target.value as 'confirmed' | 'pending')}

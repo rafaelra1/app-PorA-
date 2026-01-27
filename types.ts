@@ -47,8 +47,8 @@ export interface UserPreferences {
 }
 
 // Tab types for TripDetails navigation
-export type SubTab = 'overview' | 'pre_trip' | 'briefing' | 'itinerary' | 'map' | 'cities' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories' | 'media' | 'magazine';
-export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'tips' | 'timeline' | 'map';
+export type SubTab = 'overview' | 'pre_trip' | 'briefing' | 'itinerary' | 'map' | 'cities' | 'accommodation' | 'transport' | 'docs' | 'budget' | 'journal' | 'memories' | 'media' | 'magazine' | 'checklist' | 'luggage';
+export type CityTab = 'info' | 'attractions' | 'gastronomy' | 'restaurants' | 'tips' | 'timeline' | 'map' | 'accommodation' | 'transport' | 'search';
 export type DocsFilter = 'Tudo' | 'Reservas' | 'Pessoais' | 'Outros';
 export type ReservationType = 'hotel' | 'flight' | 'car' | 'insurance' | 'activity' | 'train' | 'bus' | 'transfer' | 'ferry' | 'other';
 export type DocumentType = ReservationType | 'passport' | 'visa' | 'vaccine' | 'other';
@@ -120,6 +120,7 @@ export interface DetailedDestination {
   typicalDishes?: TypicalDish[];
   topAttractions?: any[];
   guideData?: CityGuide;
+  info?: InfoCidade;
 }
 
 export interface YouTubeVideo {
@@ -166,6 +167,54 @@ export interface Trip {
   tags?: string[];
   generatedCoverImage?: string;
   isGeneratingCover?: boolean;
+}
+
+// =============================================================================
+// City Info / "O Que Saber Antes" Types
+// =============================================================================
+
+export interface InfoCidade {
+  // Cards rápidos
+  fuso: {
+    diferenca: string;      // "+5 horas"
+    gmt: string;            // "GMT+2"
+  };
+  moeda: {
+    nome: string;           // "Rand Sul-Africano"
+    cotacao: string;        // "R$1 = R$0,30"
+  };
+  idioma: {
+    principais: string[];   // ["Inglês", "Afrikaans", "Xhosa"]
+    observacao: string;     // "O inglês é universal"
+  };
+  tomada: {
+    tipo: string;           // "Tipo M (3 pinos grandes)"
+    voltagem: string;       // "230V / 50Hz"
+  };
+  clima: {
+    temperatura: string;    // "16°C a 28°C"
+    melhorEpoca: string;    // "Verão: Set-Mar"
+  };
+  telefone: {
+    ddi: string;            // "+27"
+    operadoras: string;     // "SIM: Airtel ou Vodacom"
+  };
+  transito: {
+    mao: string;            // "Mão Inglesa"
+    observacao: string;     // "Direção à direita"
+  };
+  agua: {
+    qualidade: string;      // "Potável"
+    observacao: string;     // "Segura para consumo"
+  };
+
+  // Conteúdo por categoria
+  categorias: {
+    entrada: string;        // Texto sobre vistos, documentos
+    cultura: string;        // Texto sobre costumes
+    custos: string;         // Texto sobre preços
+    saude: string;          // Texto sobre vacinas, hospitais
+  };
 }
 
 export interface Flight {
@@ -234,6 +283,7 @@ export interface Transport {
   confirmation: string;
   status: TransportStatus;
   documentId?: string; // Link to source document
+  cityId?: string; // Link to specific city
 }
 
 // =============================================================================
@@ -467,6 +517,7 @@ export interface City {
   restaurantsCount?: number;
   countryInfo?: CountryInfo;
   costOfLiving?: CostOfLiving;
+  info?: InfoCidade;
 }
 
 export interface Attraction {

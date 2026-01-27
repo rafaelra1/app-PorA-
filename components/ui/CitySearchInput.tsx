@@ -17,13 +17,16 @@ interface CitySearchInputProps {
     onChange?: (value: string) => void;
     className?: string; // Allow external styling overrides if needed
     fullWidth?: boolean; // Match Input component prop style
+    label?: string; // New label prop for styled input compatibility
 }
 
 export const CitySearchInput: React.FC<CitySearchInputProps> = ({
     onSelect,
     placeholder,
     value: externalValue,
-    onChange: externalOnChange
+    onChange: externalOnChange,
+    label,
+    className
 }) => {
     const {
         ready,
@@ -120,8 +123,18 @@ export const CitySearchInput: React.FC<CitySearchInputProps> = ({
 
     return (
         <div className="relative w-full" ref={inputContainerRef}>
+            {label && (
+                <div className={`
+                    w-full bg-[#8B5CF6] text-white
+                    px-4 py-2 rounded-lg
+                    font-bold text-sm tracking-wide lowercase
+                    mb-1
+                `}>
+                    {label}
+                </div>
+            )}
             <div className="relative">
-                <span className="material-symbols-outlined absolute left-4 top-3 text-gray-400">search</span>
+                <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">search</span>
                 <input
                     value={value}
                     onChange={(e) => {
@@ -129,7 +142,7 @@ export const CitySearchInput: React.FC<CitySearchInputProps> = ({
                         if (externalOnChange) externalOnChange(e.target.value);
                     }}
                     disabled={!ready}
-                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-gray-400 font-medium bg-white"
+                    className={`w-full pl-12 pr-4 py-3 rounded-lg border border-gray-400 focus:border-[#8B5CF6] focus:ring-1 focus:ring-[#8B5CF6] outline-none transition-all placeholder:text-gray-400 font-medium bg-white text-gray-900 ${className || ''}`}
                     placeholder={placeholder || "Busque por uma cidade..."}
                 />
             </div>

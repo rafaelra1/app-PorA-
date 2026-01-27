@@ -2,7 +2,8 @@ import * as React from 'react';
 import { useState, useCallback } from 'react';
 import Modal from './Modal';
 import { Input } from '../../ui/Input';
-import { Select } from '../../ui/Select';
+import { StyledInput } from '../../ui/StyledInput';
+import { StyledSelect } from '../../ui/StyledSelect';
 import { Button, DocumentUploadZone, ToggleGroup } from '../../ui/Base';
 import { Transport, TransportType, TransportStatus, DocumentAnalysisResult } from '../../../types';
 import { getGeminiService } from '../../../services/geminiService';
@@ -298,7 +299,8 @@ const LocationSection: React.FC<LocationSectionProps & { isFlight?: boolean }> =
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <Input
+                    <StyledInput
+                        label="Local / Aeroporto"
                         value={location}
                         onChange={(e) => {
                             const val = e.target.value.toUpperCase();
@@ -311,6 +313,7 @@ const LocationSection: React.FC<LocationSectionProps & { isFlight?: boolean }> =
                         className={getConfidenceColor(typeof window !== 'undefined' ? confidences['departureLocation'] || confidences['arrivalLocation'] : undefined)}
                     />
                     <CitySearchInput
+                        label="Cidade"
                         value={city}
                         onChange={onCityChange}
                         onSelect={(data) => {
@@ -320,7 +323,8 @@ const LocationSection: React.FC<LocationSectionProps & { isFlight?: boolean }> =
                     />
                 </div>
                 <div className="col-span-1 md:col-span-2 grid grid-cols-2 gap-3">
-                    <Input
+                    <StyledInput
+                        label="Data"
                         type="date"
                         value={date}
                         onChange={(e) => onDateChange(e.target.value)}
@@ -328,7 +332,8 @@ const LocationSection: React.FC<LocationSectionProps & { isFlight?: boolean }> =
                         fullWidth
                         className={getConfidenceColor(confidences['departureDate'] || confidences['arrivalDate'])}
                     />
-                    <Input
+                    <StyledInput
+                        label="Horário"
                         type="time"
                         value={time}
                         onChange={(e) => onTimeChange(e.target.value)}
@@ -796,7 +801,7 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
 
                 {/* Operator & Reference */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
+                    <StyledInput
                         label={currentTypeConfig.operatorLabel}
                         value={formData.operator}
                         onChange={(e) => updateField('operator', e.target.value)}
@@ -805,7 +810,7 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
                         fullWidth
                         className={getConfidenceColor(formData.fieldConfidences['operator'])}
                     />
-                    <Input
+                    <StyledInput
                         label={currentTypeConfig.referenceLabel}
                         value={formData.reference}
                         onChange={(e) => updateField('reference', e.target.value)}
@@ -874,7 +879,7 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
                     {formData.type !== 'car' ? (
                         <>
                             <div className="md:col-span-1">
-                                <Input
+                                <StyledInput
                                     label="Classe"
                                     value={formData.transportClass}
                                     onChange={(e) => updateField('transportClass', e.target.value)}
@@ -883,7 +888,7 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
                                 />
                             </div>
                             <div className="md:col-span-1">
-                                <Input
+                                <StyledInput
                                     label="Assento"
                                     value={formData.seat}
                                     onChange={(e) => updateField('seat', e.target.value)}
@@ -894,7 +899,7 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
                         </>
                     ) : (
                         <div className="md:col-span-2">
-                            <Input
+                            <StyledInput
                                 label="Veículo"
                                 value={formData.vehicle}
                                 onChange={(e) => updateField('vehicle', e.target.value)}
@@ -904,7 +909,7 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
                         </div>
                     )}
                     <div className="md:col-span-1">
-                        <Select
+                        <StyledSelect
                             label="Status"
                             value={formData.status}
                             onChange={(e) => updateField('status', e.target.value as TransportStatus)}
@@ -912,7 +917,7 @@ const AddTransportModal: React.FC<AddTransportModalProps> = (props) => {
                         />
                     </div>
                     <div className="md:col-span-1">
-                        <Input
+                        <StyledInput
                             label="Confirmação"
                             value={formData.confirmation}
                             onChange={(e) => updateField('confirmation', e.target.value)}

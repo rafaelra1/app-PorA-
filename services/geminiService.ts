@@ -533,6 +533,30 @@ REGRAS IMPORTANTES:
     Use formatação HTML simples (<b> para negrito, <br> para quebra de linha, listas <ul><li>).
     Retorne APENAS o texto formatado em HTML, sem markdown (ex: não use \`\`\`html).`,
 
+  cityInfo: (city: string, country: string) => `
+    Gere informações práticas e essenciais para viajantes sobre ${city}, ${country}.
+    
+    Estrutura JSON Obrigatória:
+    {
+      "fuso": { "diferenca": "Diferença vs Brasilia (ex: +4h)", "gmt": "Fuso GMT (ex: GMT+1)" },
+      "moeda": { "nome": "Nome da moeda", "cotacao": "Cotação aprox. vs Real (ex: R$1 = €0.16)" },
+      "idioma": { "principais": ["Lista de idiomas"], "observacao": "Dica rápida sobre comunicação" },
+      "tomada": { "tipo": "Tipo(s) de tomada (ex: Tipo C/F)", "voltagem": "Voltagem (ex: 230V)" },
+      "clima": { "temperatura": "Média anual ou da temporada", "melhorEpoca": "Melhores meses para ir" },
+      "telefone": { "ddi": "Código do país", "operadoras": "Principais operadoras para SIM card" },
+      "transito": { "mao": "Mão direita ou esquerda", "observacao": "Dica rápida (ex: Trânsito caótico)" },
+      "agua": { "qualidade": "Potável ou Não potável", "observacao": "Recomendação (ex: Beba engarrafada)" },
+      "categorias": {
+        "entrada": "Texto curto (max 3 frases) sobre vistos, documentos e vacinas para Brasileiros.",
+        "cultura": "Texto curto (max 3 frases) sobre costumes, etiqueta e o que evitar.",
+        "custos": "Texto curto (max 3 frases) sobre custo de vida, gorjetas e negociação.",
+        "saude": "Texto curto (max 3 frases) sobre riscos, seguro saúde e farmácias."
+      }
+    }
+    
+    Retorne APENAS o JSON válido, sem markdown.
+  `,
+
   gastronomyCuration: (city: string) => `
 Atue como um crítico gastronômico experiente e curador para um guia de viagens focado em alta qualidade culinária.
 
@@ -1546,6 +1570,20 @@ export class GeminiService {
     } catch (error) {
       console.error('Error generating city guide:', error);
       throw new Error('Failed to generate city guide');
+    }
+  }
+
+  /**
+   * Generate structured city information (O Que Saber Antes)
+   */
+  async getCityInfo(city: string, country: string): Promise<any> {
+    try {
+      const prompt = PROMPTS.cityInfo(city, country);
+      const text = await this.callGeminiAPI(prompt, undefined, undefined, 'application/json');
+      return parseJsonSafely(text, null);
+    } catch (error) {
+      console.error('Error generating city info:', error);
+      throw new Error('Failed to generate city info');
     }
   }
 
